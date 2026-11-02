@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>用户中心 · SukiSU 主题镜像</title>
+<script>
+(function () {
+  try {
+    var saved = localStorage.getItem('sukisu-admin-theme');
+    var light = saved ? saved === 'light' : window.matchMedia('(prefers-color-scheme: light)').matches;
+    document.documentElement.dataset.theme = light ? 'light' : 'dark';
+  } catch (_) {
+    document.documentElement.dataset.theme = 'dark';
+  }
+})();
+</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Urbanist:wght@400;500;600;700;800&family=Fira+Code:wght@400;500;600&display=swap');
+:root {
+  --font-sans: 'Urbanist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'Noto Sans SC', sans-serif;
+  --font-mono: 'Fira Code', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --bg: #080d1a;
+  --panel: rgba(15, 23, 42, .62);
+  --panel-2: rgba(30, 41, 59, .72);
+  --line: rgba(148, 163, 184, .18);
+  --line-strong: rgba(96, 165, 250, .34);
+  --text: #edf3ff;
+  --muted: #a6b4d4;
+  --faint: #7585a8;
+  --accent: #67e8f9;
+  --accent-2: #60a5fa;
+  --accent-3: #a78bfa;
+  --ok: #4ade80;
+  --bad: #fb7185;
+  --warn: #fbbf24;
+  --shadow: 0 28px 70px rgba(2, 6, 23, .46);
+  --input-bg: rgba(2, 6, 18, .36);
+  --gradient: linear-gradient(120deg, #22d3ee 0%, #3b82f6 48%, #8b5cf6 100%);
+  --gradient-soft: linear-gradient(135deg, rgba(34, 211, 238, .14), rgba(59, 130, 246, .09) 48%, rgba(139, 92, 246, .12));
+}
+html[data-theme="light"] {
+  --bg: #f4f7ff;
+  --panel: rgba(255, 255, 255, .78);
+  --panel-2: rgba(255, 255, 255, .92);
+  --line: rgba(100, 116, 139, .18);
+  --line-strong: rgba(37, 99, 235, .26);
+  --text: #0f172a;
+  --muted: #43536d;
+  --faint: #64748b;
+  --accent: #0e7490;
+  --accent-2: #2563eb;
+  --accent-3: #7c3aed;
+  --shadow: 0 24px 60px rgba(15, 23, 42, .12);
+  --input-bg: rgba(255, 255, 255, .74);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  background:
+    radial-gradient(900px 560px at 5% -10%, rgba(34, 211, 238, .16), transparent 62%),
+    radial-gradient(820px 540px at 100% 2%, rgba(139, 92, 246, .16), transparent 66%),
+    var(--bg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent-2); text-decoration: none; }
+.shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 64px; }
+.topbar { display: flex; align-items: center; gap: 14px; padding: 14px 20px; border: 1px solid var(--line); background: var(--panel); border-radius: 20px; backdrop-filter: blur(18px); }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand img { width: 42px; height: 42px; border-radius: 13px; background: var(--gradient-soft); }
+.brand b { display: block; font-size: 15px; }
+.brand span { color: var(--faint); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.top-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 7px 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); font-size: 11.5px; }
+.pill.ok { color: var(--ok); border-color: rgba(74, 222, 128, .28); }
+.pill.bad { color: var(--bad); border-color: rgba(251, 113, 133, .28); }
+.pill.warn { color: var(--warn); border-color: rgba(251, 191, 36, .28); }
+.avatar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--gradient); color: #fff; font-weight: 800; font-size: 13px; object-fit: cover; }
+.layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 18px; margin-top: 18px; }
+.side { display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid var(--line); background: var(--panel); border-radius: 20px; height: fit-content; position: sticky; top: 18px; }
+.side button { text-align: left; height: 40px; padding: 0 13px; border: 1px solid transparent; border-radius: 11px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; }
+.side button.active { color: var(--text); border-color: var(--line-strong); background: var(--gradient-soft); }
+.side .side-foot { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--faint); font-size: 11px; line-height: 1.7; }
+.main { min-width: 0; }
+.banner { display: none; margin-bottom: 14px; padding: 13px 16px; border-radius: 14px; border: 1px solid var(--line-strong); background: var(--gradient-soft); color: var(--muted); font-size: 12.5px; line-height: 1.7; }
+.banner.show { display: block; }
+.banner b { color: var(--text); }
+.card { border: 1px solid var(--line); background: var(--panel); border-radius: 20px; padding: 20px; margin-bottom: 14px; }
+.card h3 { margin: 0 0 6px; font-size: 17px; letter-spacing: -.01em; }
+.card .hint { margin: 0 0 16px; color: var(--faint); font-size: 12px; line-height: 1.7; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.field { display: grid; gap: 7px; margin-bottom: 13px; }
+.field label { color: var(--muted); font-size: 12px; }
+.field input, .field select, .field textarea { width: 100%; height: 44px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--input-bg); color: var(--text); font: inherit; font-size: 13px; outline: none; }
+.field input:focus, .field textarea:focus, .field select:focus { border-color: var(--line-strong); box-shadow: 0 0 0 3px rgba(96, 165, 250, .12); }
+.field textarea { min-height: 88px; height: auto; padding: 12px; resize: vertical; }
+.mention-hints { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.mention-chip { height: 28px; padding: 0 9px; border-radius: 99px; font-family: var(--font-mono); font-size: 11px; font-weight: 500; color: var(--accent-2); background: rgba(96,165,250,.08); border: 1px solid rgba(96,165,250,.2); }
+.mention-chip.active { background: var(--gradient-soft); border-color: var(--line-strong); color: var(--text); }
+.row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.upload-progress { margin: 12px 0 4px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--input-bg); }
+.upload-progress-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 7px; color: var(--muted); font-size: 11.5px; }
+.progress-track { height: 7px; overflow: hidden; border-radius: 99px; background: var(--line); }
+.progress-track i { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--gradient); transition: width .18s ease; }
+button { cursor: pointer; font: inherit; }
+.btn { height: 40px; padding: 0 15px; border-radius: 11px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font-size: 12.5px; font-weight: 650; }
+.btn.primary { border: 0; background: var(--gradient); color: #fff; }
+.btn.danger { color: var(--bad); border-color: rgba(251, 113, 133, .3); }
+.btn.small { height: 32px; padding: 0 11px; font-size: 11.5px; }
+.muted { color: var(--faint); font-size: 11.5px; }
+.mono { font-family: var(--font-mono); font-size: 11px; word-break: break-all; }
+.user-head { display: flex; align-items: center; gap: 14px; }
+.user-head .avatar { width: 56px; height: 56px; font-size: 19px; }
+.user-head b { display: block; font-size: 18px; }
+.user-head span { color: var(--faint); font-size: 12px; }
+.author-card { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--input-bg); margin-bottom: 12px; }
+.author-card .avatar { width: 40px; height: 40px; }
+.author-card b { display: block; font-size: 13px; }
+.author-card span { color: var(--faint); font-size: 11px; }
+.author-card .pill { margin-left: auto; }
+.list { display: grid; gap: 10px; }
+.item { border: 1px solid var(--line); border-radius: 14px; background: var(--input-bg); padding: 13px 14px; }
+.item-head { display: flex; align-items: center; gap: 10px; }
+.item-head b { font-size: 13.5px; }
+.item-head .pill { margin-left: auto; }
+.item-meta { color: var(--faint); font-size: 11.5px; margin-top: 6px; line-height: 1.7; }
+.flow-line { font-size: 11px; }
+.flow-ok { color: var(--ok); }
+.flow-warn { color: var(--warn); }
+.flow-bad { color: var(--bad); }
+.flow-muted { color: var(--faint); }
+.notice { padding: 11px 13px; border-radius: 11px; border: 1px solid var(--line); background: var(--input-bg); color: var(--muted); font-size: 12px; line-height: 1.7; margin-bottom: 12px; }
+.notice.ok { color: var(--ok); border-color: rgba(74, 222, 128, .28); }
+.notice.bad { color: var(--bad); border-color: rgba(251, 113, 133, .28); }
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.theme-card { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--input-bg); cursor: pointer; transition: .18s ease; }
+.theme-card:hover { border-color: var(--line-strong); transform: translateY(-2px); }
+.theme-dialog { width: min(680px, calc(100vw - 28px)); max-height: 88vh; padding: 0; border: 1px solid var(--line-strong); border-radius: 18px; background: var(--panel); color: var(--text); }
+.theme-dialog::backdrop { background: rgba(0, 0, 0, .6); backdrop-filter: blur(3px); }
+.dialog-head { display: flex; align-items: center; gap: 10px; padding: 15px 18px; border-bottom: 1px solid var(--line); }
+.dialog-head h3 { flex: 1; margin: 0; font-size: 16px; }
+.dialog-body { max-height: calc(88vh - 68px); overflow: auto; padding: 15px 18px 20px; }
+.dialog-hero { width: 100%; max-height: 280px; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); background: var(--gradient-soft); }
+.dialog-thumbs { display: flex; gap: 7px; overflow-x: auto; margin-top: 8px; }
+.dialog-thumbs button { flex: none; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: none; }
+.dialog-thumbs button.active { border-color: var(--accent); }
+.dialog-thumbs img { width: 72px; height: 46px; object-fit: cover; display: block; }
+.dialog-meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; color: var(--faint); font-size: 11.5px; }
+.dialog-meta span { padding: 3px 8px; border: 1px solid var(--line); border-radius: 99px; background: var(--input-bg); }
+.dialog-section { margin-top: 13px; }
+.dialog-section h4 { margin: 0 0 5px; font-size: 12.5px; }
+.dialog-section p { margin: 0; white-space: pre-wrap; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.sha-box { padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--input-bg); font-family: var(--font-mono); font-size: 10.5px; line-height: 1.6; word-break: break-all; color: var(--muted); }
+.theme-card img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: var(--gradient-soft); }
+.theme-body { padding: 11px 12px; }
+.theme-body b { font-size: 13px; }
+.theme-body p { margin: 5px 0 0; color: var(--faint); font-size: 11px; }
+.hidden { display: none !important; }
+.empty { padding: 26px 18px; text-align: center; border: 1px dashed var(--line); border-radius: 14px; color: var(--faint); font-size: 12px; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; padding: 10px 16px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); font-size: 12.5px; transition: .25s; z-index: 20; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+@media (max-width: 850px) { .layout { grid-template-columns: 1fr; } .side { position: static; flex-direction: row; overflow-x: auto; } .side button { white-space: nowrap; } .side .side-foot { display: none; } .grid2 { grid-template-columns: 1fr; } }
+@media (max-width: 520px) { .shell { width: calc(100% - 20px); padding-top: 18px; } .topbar { padding: 12px; } .brand span { display: none; } .card { padding: 16px; } }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="brand"><img src="/account/logo.svg" alt="SukiSU"><div><b>SukiSU 主题镜像</b><span>用户中心</span></div></div>
+    <div class="top-actions">
+      <span class="pill" id="statusPill">读取中</span>
+      <img class="avatar hidden" id="topAvatar" alt="">
+      <span class="pill" id="topUser">未登录</span>
+      <a class="btn small hidden" id="adminLink" href="/admin/">管理后台</a>
+      <button class="btn small" id="themeToggle">切换主题</button>
+      <button class="btn small" id="logoutBtn">退出</button>
+    </div>
+  </header>
+
+  <div class="banner" id="statusBanner"></div>
+
+  <div class="layout">
+    <aside class="side">
+      <button data-view="profile" class="active">个人资料</button>
+      <button data-view="security">安全设置</button>
+      <button data-view="author">作者身份</button>
+      <button data-view="upload">上传主题</button>
+      <button data-view="content">我的内容</button>
+      <div class="side-foot" id="sideInfo">—</div>
+    </aside>
+
+    <main class="main">
+      <section id="view-profile" class="view">
+        <div class="card">
+          <div class="user-head">
+            <img class="avatar" id="profileAvatar" alt="">
+            <div><b id="profileName">—</b><span id="profileHandle">—</span></div>
+            <span class="pill" id="profileStatus" style="margin-left:auto">—</span>
+          </div>
+          <div class="grid2" style="margin-top:18px">
+            <div class="field"><label for="username">用户名</label><input id="username" autocomplete="username"></div>
+            <div class="field"><label for="displayName">显示名称</label><input id="displayName" autocomplete="nickname"></div>
+          </div>
+          <div class="row">
+            <button class="btn primary" id="saveProfile">保存资料</button>
+            <input class="hidden" id="avatarFile" type="file" accept="image/webp,image/png,image/jpeg">
+            <button class="btn" id="pickAvatar">上传头像</button>
+            <span class="muted" id="avatarHint">支持 WebP / PNG / JPEG，自动压缩</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-security" class="view hidden">
+        <div class="card">
+          <h3>修改密码</h3>
+          <p class="hint">修改后当前账号的所有登录会话会失效。</p>
+          <div class="grid2">
+            <div class="field"><label for="currentPassword">当前密码</label><input id="currentPassword" type="password" autocomplete="current-password"></div>
+            <div class="field"><label for="newPassword">新密码</label><input id="newPassword" type="password" autocomplete="new-password"></div>
+            <div class="field"><label for="confirmPassword">确认新密码</label><input id="confirmPassword" type="password" autocomplete="new-password"></div>
+          </div>
+          <button class="btn primary" id="savePassword">更新密码</button>
+        </div>
+        <div class="card">
+          <h3>邮箱</h3>
+          <p class="hint" id="emailHint">—</p>
+          <div class="field"><label for="newEmail">新邮箱</label><input id="newEmail" type="email" autocomplete="email" placeholder="新邮箱地址"></div>
+          <button class="btn" id="changeEmail">发送验证邮件</button>
+        </div>
+        <div class="card">
+          <h3>GitHub</h3>
+          <p class="hint" id="githubHint">绑定 GitHub 后可以使用 GitHub 登录用户中心。</p>
+          <div class="row" id="githubActions"></div>
+        </div>
+      </section>
+
+      <section id="view-author" class="view hidden">
+        <div class="card">
+          <h3>当前作者身份</h3>
+          <p class="hint">作者 ID 是旧版管理器投稿的凭证；登录账号后管理器会优先使用账号身份。</p>
+          <div id="authorCurrent"></div>
+          <div class="row">
+            <button class="btn" id="showBind">绑定已有作者 ID</button>
+            <button class="btn" id="showNew">申请新作者身份</button>
+            <button class="btn danger" id="requestReset">申请重置作者 ID</button>
+          </div>
+        </div>
+        <div class="card hidden" id="bindCard">
+          <h3>绑定已有作者 ID</h3>
+          <p class="hint">输入之前管理器里保存的作者 ID；不存在时会自动创建新的作者申请。</p>
+          <div class="field"><label for="bindAuthorId">作者 ID</label><input id="bindAuthorId" class="mono" placeholder="16-128 位字母、数字或 . _ ~ -"></div>
+          <div class="field"><label for="bindName">作者名称</label><input id="bindName" placeholder="显示给用户的作者名"></div>
+          <div class="row"><button class="btn primary" id="submitBind">提交绑定申请</button><button class="btn" data-close="bindCard">取消</button></div>
+        </div>
+        <div class="card hidden" id="newCard">
+          <h3>申请新作者身份</h3>
+          <p class="hint">可以留空由服务器生成作者 ID；只显示一次。</p>
+          <div class="field"><label for="newAuthorId">作者 ID（可选）</label><input id="newAuthorId" class="mono" placeholder="留空自动生成"></div>
+          <div class="field"><label for="newAuthorName">作者名称</label><input id="newAuthorName" placeholder="显示给用户的作者名"></div>
+          <div class="row"><button class="btn primary" id="submitNew">提交申请</button><button class="btn" data-close="newCard">取消</button></div>
+        </div>
+        <div class="card">
+          <h3>作者申请记录</h3>
+          <div class="list" id="authorRequests"></div>
+        </div>
+      </section>
+
+      <section id="view-upload" class="view hidden">
+        <div class="card">
+          <h3>上传主题</h3>
+          <p class="hint">主题 ID 由作者编号和顺序自动生成；更新已有主题时请在下方选择，沿用原 ID。</p>
+          <div class="grid2">
+            <div class="field"><label for="userUpUpdate">更新已有主题</label><select id="userUpUpdate"><option value="">新建主题</option></select></div>
+            <div class="field"><label for="userUpAutoId">主题 ID（自动）</label><input id="userUpAutoId" readonly placeholder="正在获取…"></div>
+            <div class="field"><label for="userUpVersion">版本号</label><input id="userUpVersion" type="number" min="1" value="1"></div>
+            <div class="field"><label for="userUpName">名称</label><input id="userUpName" placeholder="主题名称"></div>
+            <div class="field"><label for="userUpTags">标签</label><input id="userUpTags" placeholder="light, pink, cute"><div class="mention-hints" data-tag-target="userUpTags">
+              <button type="button" class="mention-chip" data-tag="light">light</button>
+              <button type="button" class="mention-chip" data-tag="dark">dark</button>
+              <button type="button" class="mention-chip" data-tag="pink">pink</button>
+              <button type="button" class="mention-chip" data-tag="cute">cute</button>
+              <button type="button" class="mention-chip" data-tag="minimal">minimal</button>
+              <button type="button" class="mention-chip" data-tag="gradient">gradient</button>
+              <button type="button" class="mention-chip" data-tag="anime">anime</button>
+              <button type="button" class="mention-chip" data-tag="blue">blue</button>
+              <button type="button" class="mention-chip" data-tag="purple">purple</button>
+              <button type="button" class="mention-chip" data-tag="green">green</button>
+            </div></div>
+            <div class="field"><label for="userUpLicense">许可证</label><select id="userUpLicense"><option value="CC-BY-4.0">CC-BY-4.0</option><option value="CC-BY-SA-4.0">CC-BY-SA-4.0</option><option value="CC-BY-NC-4.0">CC-BY-NC-4.0</option><option value="CC-BY-NC-SA-4.0">CC-BY-NC-SA-4.0</option><option value="CC0-1.0">CC0-1.0</option><option value="MIT">MIT</option><option value="Apache-2.0">Apache-2.0</option><option value="GPL-3.0">GPL-3.0</option><option value="All Rights Reserved">All Rights Reserved</option><option value="">未指定</option></select></div>
+            <div class="field"><label for="userUpMin">最低管理器版本</label><input id="userUpMin" type="number" min="0" value="0"><div class="muted">默认使用当前管理器版本，可手动修改</div></div>
+            <div class="field"><label for="userUpAuthor">作者</label><input id="userUpAuthor" readonly placeholder="账号作者"></div>
+            <div class="field"><label for="userUpPackage">主题包 (.sukisu)</label><input id="userUpPackage" type="file" accept=".sukisu,application/octet-stream"></div>
+            <div class="field"><label for="userUpPreview">预览图</label><input id="userUpPreview" type="file" accept="image/webp,image/png,image/jpeg"></div>
+            <div class="field"><label for="userUpAvatar">作者头像（可选）</label><input id="userUpAvatar" type="file" accept="image/webp,image/png,image/jpeg"></div>
+            <div class="field"><label for="userUpScreenshots">截图（可多选）</label><input id="userUpScreenshots" type="file" accept="image/webp,image/png,image/jpeg" multiple></div>
+          </div>
+          <div class="field"><label for="userUpDescription">描述</label><textarea id="userUpDescription" placeholder="主题说明"></textarea><div class="muted">支持 Markdown；使用「用户名@github」格式（例如 shirkneko@github）可跳转到对应用户。</div></div>
+          <div class="field"><label for="userUpChangelog">更新说明</label><textarea id="userUpChangelog" placeholder="本次更新内容"></textarea></div>
+          <div class="upload-progress hidden" id="userUpProgress">
+            <div class="upload-progress-head">
+              <span id="userUpProgressText">准备上传…</span>
+              <span id="userUpProgressPercent">0%</span>
+            </div>
+            <div class="progress-track"><i id="userUpProgressBar"></i></div>
+          </div>
+          <div class="row">
+            <button class="btn primary" id="userUpSubmit">上传并提交审核</button>
+            <span class="muted" id="userUpHint">首次投稿需要管理员审核。</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-content" class="view hidden">
+        <div class="card">
+          <h3>已发布主题</h3>
+          <p class="hint">点击主题可预览、下载主题包或撤回下架；绑定作者身份并审核通过后，主题会显示在这里。</p>
+          <div class="theme-grid" id="themeGrid"></div>
+          <div class="empty hidden" id="themeEmpty">还没有已发布主题</div>
+        </div>
+        <div class="card">
+          <h3>已撤回主题</h3>
+          <p class="hint">撤回后保留 14 天，只有作者可以预览和下载；14 天后自动永久删除，期间可以重新发布。</p>
+          <div class="theme-grid" id="withdrawnGrid"></div>
+          <div class="empty hidden" id="withdrawnEmpty">没有已撤回主题</div>
+        </div>
+        <div class="card">
+          <h3>投稿记录</h3>
+          <p class="hint">待审核投稿可以撤回；审核通过后主题会出现在上方。</p>
+          <div class="list" id="submissionList"></div>
+          <div class="empty hidden" id="submissionEmpty">还没有投稿记录</div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<dialog class="theme-dialog" id="myThemeDialog">
+  <div class="dialog-head">
+    <h3 id="myThemeTitle">主题详情</h3>
+    <button class="btn small" id="myThemeClose" type="button">关闭</button>
+  </div>
+  <div class="dialog-body" id="myThemeBody"></div>
+</dialog>
+
+<script>
+(function () {
+  const basePath = location.pathname.replace(/\/?$/, '/');
+  const API = basePath + 'api';
+  const $ = id => document.getElementById(id);
+  let profile = null;
+  let authors = [];
+  let authorRequests = [];
+  let activeAuthor = null;
+  let revealedAuthorId = null;
+
+  function toast(message, bad) {
+    const el = $('toast');
+    el.textContent = message;
+    el.style.color = bad ? 'var(--bad)' : 'var(--text)';
+    el.classList.add('show');
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(() => el.classList.remove('show'), 3600);
+  }
+
+  async function api(path, options = {}) {
+    const headers = {
+      'X-Requested-With': 'SukiSUThemeAdmin',
+      ...(options.body && !(options.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.headers || {}),
+    };
+    const response = await fetch(API + path, {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      ...options,
+      headers,
+    });
+    if (response.status === 401) {
+      location.replace('/account/login');
+      throw new Error('请重新登录');
+    }
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) {
+      throw new Error(data.error || ('HTTP ' + response.status));
+    }
+    return data;
+  }
+
+  function uploadWithProgress(url, form, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url);
+      xhr.withCredentials = true;
+      xhr.setRequestHeader('X-Requested-With', 'SukiSUThemeAdmin');
+      xhr.upload.addEventListener('progress', event => {
+        if (event.lengthComputable && event.total > 0) {
+          onProgress(event.loaded / event.total);
+        }
+      });
+      xhr.addEventListener('load', () => {
+        let data = {};
+        try { data = JSON.parse(xhr.responseText || '{}'); } catch (_) {}
+        if (xhr.status === 401) {
+          location.replace('/account/login');
+          reject(new Error('请重新登录'));
+          return;
+        }
+        if (xhr.status < 200 || xhr.status >= 300 || data.ok === false) {
+          reject(new Error(data.error || ('HTTP ' + xhr.status)));
+          return;
+        }
+        resolve(data);
+      });
+      xhr.addEventListener('error', () => reject(new Error('网络错误')));
+      xhr.addEventListener('abort', () => reject(new Error('上传已取消')));
+      xhr.send(form);
+    });
+  }
+
+  function statusText(status) {
+    return ({ email_pending: '待验证邮箱', pending: '待审核', active: '已启用', rejected: '已拒绝', disabled: '已禁用' })[status] || status || '未知';
+  }
+
+  function statusClass(status) {
+    return status === 'active' ? 'ok' : status === 'pending' || status === 'email_pending' ? 'warn' : 'bad';
+  }
+
+  function requestStatusText(status) {
+    return ({ pending: '审核中', approved: '已通过', rejected: '已拒绝', withdrawn: '已撤回' })[status] || status || '未知';
+  }
+
+  function requestTone(status) {
+    return status === 'approved' ? 'ok' : status === 'pending' ? 'warn' : 'bad';
+  }
+
+  function assetUrl(path) {
+    return path ? API + '/preview?path=' + encodeURIComponent(path) : '';
+  }
+
+  function setView(name) {
+    document.querySelectorAll('.view').forEach(el => el.classList.add('hidden'));
+    $('view-' + name).classList.remove('hidden');
+    document.querySelectorAll('.side button[data-view]').forEach(el => el.classList.toggle('active', el.dataset.view === name));
+    if (name === 'content') {
+      loadThemes();
+      loadSubmissions();
+    }
+    if (name === 'author') loadAuthors();
+    if (name === 'upload') loadUploadView();
+  }
+
+  function renderProfile(data) {
+    profile = data.user;
+    authors = data.authors || [];
+    activeAuthor = data.activeAuthor || authors.find(a => a.status === 'active') || null;
+    const user = profile;
+    $('topUser').textContent = user.displayName || user.username;
+    $('profileName').textContent = user.displayName || user.username;
+    $('profileHandle').textContent = '@' + user.username + (user.email ? ' · ' + user.email : '');
+    $('statusPill').textContent = statusText(user.status);
+    $('statusPill').className = 'pill ' + statusClass(user.status);
+    $('profileStatus').textContent = statusText(user.status);
+    $('profileStatus').className = 'pill ' + statusClass(user.status);
+    $('username').value = user.username || '';
+    $('displayName').value = user.displayName || '';
+    if (user.avatar) {
+      $('profileAvatar').src = assetUrl(user.avatar);
+      $('topAvatar').src = assetUrl(user.avatar);
+      $('topAvatar').classList.remove('hidden');
+    } else {
+      $('topAvatar').classList.add('hidden');
+    }
+    $('adminLink').classList.toggle('hidden', user.role !== 'admin');
+    const banner = $('statusBanner');
+    if (user.status === 'email_pending') {
+      banner.innerHTML = '<b>邮箱尚未验证。</b>请打开验证邮件完成验证。';
+      banner.classList.add('show');
+    } else if (user.status === 'rejected' || user.status === 'disabled') {
+      banner.innerHTML = '<b>账号未启用。</b>' + (user.rejectionReason ? ' 原因：' + escapeHtml(user.rejectionReason) : '');
+      banner.classList.add('show');
+    } else {
+      banner.classList.remove('show');
+    }
+    $('sideInfo').textContent = (activeAuthor ? '作者：' + (activeAuthor.displayName || activeAuthor.fingerprint) : '尚未绑定作者') + '\n' + statusText(user.status);
+    $('emailHint').textContent = user.email ? '当前邮箱：' + user.email : '尚未绑定邮箱';
+    if (data.managerVersionCode && (!$('userUpMin').value || $('userUpMin').value === '0')) {
+      $('userUpMin').value = data.managerVersionCode;
+    }
+    renderSecurity(data);
+    renderAuthor();
+  }
+
+  function renderSecurity(data) {
+    const github = data.github;
+    $('githubHint').textContent = github
+      ? '已绑定 GitHub：' + (github.login || github.email || '')
+      : '绑定 GitHub 后可以使用 GitHub 登录用户中心。';
+    $('githubActions').innerHTML = '';
+    if (data.githubConfigured) {
+      const button = document.createElement('button');
+      button.className = 'btn';
+      button.textContent = github ? '解绑 GitHub' : '绑定 GitHub';
+      button.addEventListener('click', async () => {
+        if (!github) {
+          location.href = API + '/auth/github/start?link=1';
+          return;
+        }
+        if (!confirm('确认解绑 GitHub？')) return;
+        try {
+          await api('/auth/github/unlink', { method: 'POST', body: '{}' });
+          toast('已解绑 GitHub');
+          loadProfile();
+        } catch (error) { toast(error.message, true); }
+      });
+      $('githubActions').appendChild(button);
+    } else {
+      $('githubHint').textContent = 'GitHub 登录尚未配置。';
+    }
+  }
+
+  function renderAuthor() {
+    const current = $('authorCurrent');
+    if (!activeAuthor) {
+      current.innerHTML = '<div class="notice">还没有已绑定的作者身份。可以绑定已有作者 ID，或申请新的作者身份。</div>';
+    } else {
+      current.innerHTML = '<div class="author-card"><div class="avatar">' + escapeHtml((activeAuthor.displayName || 'A').slice(0, 1).toUpperCase()) + '</div><div><b>' + escapeHtml(activeAuthor.displayName || '未命名作者') + '</b><span>' + (activeAuthor.code ? '编号 ' + escapeHtml(activeAuthor.code) + ' · ' : '') + escapeHtml(activeAuthor.fingerprint || activeAuthor.hash || '') + '</span></div><span class="pill ' + statusClass(activeAuthor.status) + '">' + statusText(activeAuthor.status) + '</span></div>';
+    }
+    if (revealedAuthorId) {
+      const box = document.createElement('div');
+      box.className = 'notice ok';
+      box.innerHTML = '新作者 ID（只显示一次）：<br><span class="mono">' + escapeHtml(revealedAuthorId) + '</span><br><button class="btn small" id="copyNewAuthor">复制</button>';
+      current.prepend(box);
+      $('copyNewAuthor').addEventListener('click', () => {
+        navigator.clipboard.writeText(revealedAuthorId).then(() => toast('已复制新作者 ID')).catch(() => toast('复制失败', true));
+      });
+    }
+    const list = $('authorRequests');
+    const requests = authorRequests;
+    if (!requests.length) {
+      list.innerHTML = '<div class="empty">还没有作者申请记录</div>';
+      return;
+    }
+    list.innerHTML = '';
+    requests.forEach(item => {
+      const el = document.createElement('div');
+      el.className = 'item';
+      const kind = ({ bind: '绑定已有作者', new: '新增作者', reset: '重置作者 ID' })[item.kind] || item.kind;
+      el.innerHTML = '<div class="item-head"><b>' + escapeHtml(kind) + '</b><span class="pill ' + requestTone(item.status) + '">' + requestStatusText(item.status) + '</span></div><div class="item-meta">' + escapeHtml(item.displayName || '') + ' · ' + formatTime(item.createdAt) + (item.rejectReason ? '<br>拒绝原因：' + escapeHtml(item.rejectReason) : '') + '</div>';
+      if (item.kind === 'reset' && item.status === 'approved') {
+        const button = document.createElement('button');
+        button.className = 'btn primary small';
+        button.textContent = '生成新作者 ID';
+        button.addEventListener('click', async () => {
+          try {
+            const data = await api('/author/requests/' + encodeURIComponent(item.id) + '/generate', { method: 'POST', body: '{}' });
+            showNewAuthorId(data.authorId);
+            loadProfile();
+          } catch (error) { toast(error.message, true); }
+        });
+        el.appendChild(button);
+      }
+      list.appendChild(el);
+    });
+  }
+
+  function showNewAuthorId(authorId) {
+    if (!authorId) return;
+    revealedAuthorId = authorId;
+    renderAuthor();
+  }
+
+  async function loadProfile() {
+    try {
+      const data = await api('/profile');
+      if (!data.user) return;
+      data.requests = (await api('/author/requests')).requests || [];
+      authorRequests = data.requests;
+      renderProfile(data);
+      $('bindName').value = data.user.displayName || '';
+      $('newAuthorName').value = data.user.displayName || '';
+    } catch (error) {
+      if (!String(error.message).includes('登录')) toast(error.message, true);
+    }
+  }
+
+  async function loadAuthors() {
+    try {
+      const data = await api('/authors');
+      activeAuthor = data.activeAuthor || null;
+      authors = data.authors || [];
+      authorRequests = data.requests || [];
+      renderAuthor();
+    } catch (_) {}
+  }
+
+  async function loadThemes() {
+    try {
+      const data = await api('/my-themes');
+      const themes = data.themes || [];
+      const published = themes.filter(theme => theme.status !== 'withdrawn');
+      const withdrawn = themes.filter(theme => theme.status === 'withdrawn');
+      const grid = $('themeGrid');
+      const withdrawnGrid = $('withdrawnGrid');
+      grid.innerHTML = '';
+      withdrawnGrid.innerHTML = '';
+      $('themeEmpty').classList.toggle('hidden', published.length > 0);
+      $('withdrawnEmpty').classList.toggle('hidden', withdrawn.length > 0);
+      themes.forEach(theme => {
+        const card = document.createElement('div');
+        card.className = 'theme-card';
+        const img = theme.previewPath ? '<img src="' + assetUrl(theme.previewPath) + '" alt="">' : '';
+        const sha = String(theme.sha256 || '');
+        const shaLine = sha
+          ? '<p class="mono" title="' + escapeHtml(sha) + '">SHA-256 ' + escapeHtml(sha.slice(0, 16)) + '…</p>'
+          : '<p class="mono">SHA-256 未生成</p>';
+        const statusLine = theme.status === 'withdrawn'
+          ? '<p class="mono">已撤回 · ' + (theme.expiresAt ? '可恢复至 ' + escapeHtml(formatTime(theme.expiresAt)) : '即将删除') + '</p>'
+          : '';
+        card.innerHTML = img + '<div class="theme-body"><b>' + escapeHtml(theme.name || theme.id) + '</b><p>v' + escapeHtml(String(theme.version)) + ' · ' + escapeHtml(theme.author || '') + '</p>' + shaLine + statusLine + '</div>';
+        card.addEventListener('click', () => openMyTheme(theme));
+        (theme.status === 'withdrawn' ? withdrawnGrid : grid).appendChild(card);
+      });
+    } catch (error) { toast(error.message, true); }
+  }
+
+  function openMyTheme(theme) {
+    const dialog = $('myThemeDialog');
+    if (!dialog || typeof dialog.showModal !== 'function') return;
+    $('myThemeTitle').textContent = theme.name || theme.id || '主题详情';
+    const images = [theme.previewPath, ...(theme.screenshotPaths || [])].filter(Boolean);
+    const hero = images.length ? assetUrl(images[0]) : '';
+    const thumbs = images.length > 1
+      ? '<div class="dialog-thumbs">' + images.map((path, index) =>
+        '<button type="button" class="' + (index === 0 ? 'active' : '') + '" data-src="' + escapeHtml(assetUrl(path)) + '"><img src="' + escapeHtml(assetUrl(path)) + '" alt=""></button>'
+      ).join('') + '</div>'
+      : '';
+    const sha = String(theme.sha256 || '');
+    const withdrawn = theme.status === 'withdrawn';
+    const tags = (theme.tags || []).map(tag => '<span>' + escapeHtml(tag) + '</span>').join('');
+    const withdrawAction = withdrawn
+      ? '<button class="btn" id="myThemeRestore" type="button">重新发布</button>'
+      : '<button class="btn danger" id="myThemeWithdraw" type="button">撤回并下架</button>';
+    $('myThemeBody').innerHTML = `
+      ${hero ? '<img class="dialog-hero" id="myThemeHero" src="' + escapeHtml(hero) + '" alt="">' : ''}
+      ${thumbs}
+      <div class="dialog-meta">
+        <span>ID：${escapeHtml(theme.id || '—')}</span>
+        <span>v${escapeHtml(String(theme.version || 1))}</span>
+        <span>${escapeHtml(theme.author || '未知作者')}</span>
+        ${theme.license ? '<span>' + escapeHtml(theme.license) + '</span>' : ''}
+        ${withdrawn ? '<span>已撤回</span>' : ''}
+      </div>
+      ${withdrawn && theme.expiresAt ? '<div class="dialog-meta"><span>撤回保留至 ' + escapeHtml(formatTime(theme.expiresAt)) + '</span></div>' : ''}
+      <div class="dialog-meta">${tags}</div>
+      <div class="dialog-section">
+        <h4>SHA-256 完整性校验</h4>
+        <div class="sha-box">${sha ? escapeHtml(sha) : '未生成校验值'}</div>
+      </div>
+      <div class="dialog-section"><h4>描述</h4><p>${escapeHtml(theme.description || '暂无描述')}</p></div>
+      ${theme.changelog ? '<div class="dialog-section"><h4>更新说明</h4><p>' + escapeHtml(theme.changelog) + '</p></div>' : ''}
+      <div class="row" style="margin-top:16px">
+        <a class="btn primary" href="${escapeHtml(API + '/my-themes/' + encodeURIComponent(theme.id) + '/download')}">下载主题包</a>
+        ${withdrawAction}
+      </div>`;
+    $('myThemeBody').querySelectorAll('.dialog-thumbs button').forEach(button => {
+      button.addEventListener('click', () => {
+        const heroImage = $('myThemeHero');
+        if (heroImage) heroImage.src = button.dataset.src;
+        $('myThemeBody').querySelectorAll('.dialog-thumbs button').forEach(item => item.classList.toggle('active', item === button));
+      });
+    });
+    const withdrawButton = $('myThemeWithdraw');
+    if (withdrawButton) {
+      withdrawButton.addEventListener('click', async () => {
+        if (!confirm('确认撤回并下架该主题？撤回后主题包会从商店移除，14 天内可重新发布。')) return;
+        try {
+          await api('/my-themes/withdraw', { method: 'POST', body: JSON.stringify({ id: theme.id }) });
+          toast('主题已撤回，14 天内可重新发布');
+          dialog.close();
+          await loadThemes();
+          await loadSubmissions();
+        } catch (error) { toast(error.message, true); }
+      });
+    }
+    const restoreButton = $('myThemeRestore');
+    if (restoreButton) {
+      restoreButton.addEventListener('click', async () => {
+        if (!confirm('确认重新发布该主题？')) return;
+        try {
+          await api('/my-themes/restore', { method: 'POST', body: JSON.stringify({ id: theme.id }) });
+          toast('主题已重新发布');
+          dialog.close();
+          await loadThemes();
+          await loadSubmissions();
+        } catch (error) { toast(error.message, true); }
+      });
+    }
+    dialog.showModal();
+  }
+
+  $('myThemeClose').addEventListener('click', () => $('myThemeDialog').close());
+  $('myThemeDialog').addEventListener('click', event => {
+    if (event.target === $('myThemeDialog')) $('myThemeDialog').close();
+  });
+
+  async function loadSubmissions() {
+    try {
+      const data = await api('/submissions');
+      const items = data.submissions || [];
+      const list = $('submissionList');
+      list.innerHTML = '';
+      $('submissionEmpty').classList.toggle('hidden', items.length > 0);
+      items.forEach(item => {
+        const el = document.createElement('div');
+        el.className = 'item';
+        const preview = item.previewPath ? '<img src="' + assetUrl(item.previewPath) + '" style="width:88px;height:52px;object-fit:cover;border-radius:8px">' : '';
+        const sha = String(item.sha256 || '');
+        const shaText = sha ? 'SHA-256 ' + escapeHtml(sha.slice(0, 16)) + '…' : 'SHA-256 未生成';
+        const flow = item.status === 'approved'
+          ? '<span class="flow-ok">已提交 ✓ → 审核通过 ✓ → 已发布 ✓</span>'
+          : item.status === 'rejected'
+            ? '<span class="flow-bad">已提交 ✓ → 审核未通过 ✕</span>'
+            : item.status === 'withdrawn'
+              ? '<span class="flow-muted">已提交 ✓ → 已撤回</span>'
+              : '<span class="flow-warn">已提交 ✓ → 等待管理员审核…</span>';
+        el.innerHTML = '<div class="item-head">' + preview + '<b>' + escapeHtml(item.name || item.id) + '</b><span class="pill ' + requestTone(item.status) + '">' + requestStatusText(item.status) + '</span></div><div class="item-meta">v' + escapeHtml(String(item.version || 1)) + ' · ' + formatTime(item.submittedAt) + '<br>' + shaText + (item.rejectReason ? '<br>审核意见：' + escapeHtml(item.rejectReason) : '') + '<br><span class="flow-line">' + flow + '</span></div>';
+        if (item.status === 'pending') {
+          const button = document.createElement('button');
+          button.className = 'btn danger small';
+          button.textContent = '撤回投稿';
+          button.addEventListener('click', async () => {
+            if (!confirm('确认撤回待审核投稿？')) return;
+            try {
+              await api('/submissions/withdraw', { method: 'POST', body: JSON.stringify({ submissionId: item.submissionId }) });
+              toast('已撤回');
+              loadSubmissions();
+            } catch (error) { toast(error.message, true); }
+          });
+          el.appendChild(button);
+        }
+        list.appendChild(el);
+      });
+    } catch (error) { toast(error.message, true); }
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+  }
+
+  function formatTime(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    return isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false });
+  }
+
+  document.querySelectorAll('.side button[data-view]').forEach(button => {
+    button.addEventListener('click', () => setView(button.dataset.view));
+  });
+
+  $('saveProfile').addEventListener('click', async () => {
+    try {
+      const data = await api('/profile', {
+        method: 'POST',
+        body: JSON.stringify({ username: $('username').value.trim(), displayName: $('displayName').value.trim() }),
+      });
+      toast('资料已保存');
+      if (data.user) $('topUser').textContent = data.user.displayName;
+      loadProfile();
+    } catch (error) { toast(error.message, true); }
+  });
+
+  $('pickAvatar').addEventListener('click', () => $('avatarFile').click());
+  $('avatarFile').addEventListener('change', async () => {
+    const file = $('avatarFile').files[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append('avatar', file);
+    try {
+      await api('/avatar', { method: 'POST', body: form });
+      toast('头像已更新');
+      loadProfile();
+    } catch (error) { toast(error.message, true); }
+  });
+
+  $('savePassword').addEventListener('click', async () => {
+    const currentPassword = $('currentPassword').value;
+    const password = $('newPassword').value;
+    if (password !== $('confirmPassword').value) return toast('两次输入的密码不一致', true);
+    if (password.length < 8) return toast('密码至少 8 位', true);
+    try {
+      await api('/password', { method: 'POST', body: JSON.stringify({ currentPassword, password }) });
+      toast('密码已更新，请重新登录');
+      setTimeout(() => location.replace(basePath + 'login'), 1200);
+    } catch (error) { toast(error.message, true); }
+  });
+
+  $('changeEmail').addEventListener('click', async () => {
+    try {
+      const data = await api('/email', { method: 'POST', body: JSON.stringify({ email: $('newEmail').value.trim() }) });
+      toast(data.message || '验证邮件已发送');
+    } catch (error) { toast(error.message, true); }
+  });
+
+  $('showBind').addEventListener('click', () => { $('bindCard').classList.remove('hidden'); $('newCard').classList.add('hidden'); });
+  $('showNew').addEventListener('click', () => { $('newCard').classList.remove('hidden'); $('bindCard').classList.add('hidden'); });
+  document.querySelectorAll('[data-close]').forEach(button => {
+    button.addEventListener('click', () => $(button.dataset.close).classList.add('hidden'));
+  });
+  $('bindName').value = profile ? profile.displayName : '';
+  $('newAuthorName').value = profile ? profile.displayName : '';
+
+  $('submitBind').addEventListener('click', async () => {
+    try {
+      const data = await api('/author/requests', { method: 'POST', body: JSON.stringify({ kind: 'bind', authorId: $('bindAuthorId').value.trim(), displayName: $('bindName').value.trim() }) });
+      toast(data.alreadyBound ? '该作者已经绑定' : '绑定申请已提交');
+      $('bindCard').classList.add('hidden');
+      loadAuthors();
+    } catch (error) { toast(error.message, true); }
+  });
+
+  $('submitNew').addEventListener('click', async () => {
+    try {
+      const data = await api('/author/requests', { method: 'POST', body: JSON.stringify({ kind: 'new', authorId: $('newAuthorId').value.trim(), displayName: $('newAuthorName').value.trim() }) });
+      $('newCard').classList.add('hidden');
+      if (data.authorId) showNewAuthorId(data.authorId);
+      toast('新作者申请已提交');
+      loadAuthors();
+    } catch (error) { toast(error.message, true); }
+  });
+
+  $('requestReset').addEventListener('click', async () => {
+    if (!confirm('申请重置作者 ID？旧 ID 下的主题会保留归属。')) return;
+    try {
+      await api('/author/requests', { method: 'POST', body: JSON.stringify({ kind: 'reset' }) });
+      toast('重置申请已提交，等待管理员批准');
+      loadAuthors();
+    } catch (error) { toast(error.message, true); }
+  });
+
+  $('logoutBtn').addEventListener('click', async () => {
+    try { await api('/auth/logout', { method: 'POST', body: '{}' }); } catch (_) {}
+    location.replace(basePath + 'login');
+  });
+
+  $('themeToggle').addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('sukisu-admin-theme', next); } catch (_) {}
+  });
+
+let userUploadThemes = [];
+let userUploadNextId = '';
+
+async function loadUploadView() {
+  try {
+    const data = await api('/theme-id/next');
+    userUploadNextId = data.id || '';
+    $('userUpAutoId').value = userUploadNextId;
+    $('userUpAuthor').value = data.author?.displayName || data.author?.name || profile?.displayName || '';
+    const themes = await api('/my-themes');
+    userUploadThemes = themes.themes || [];
+    const select = $('userUpUpdate');
+    const current = select.value;
+    select.innerHTML = '<option value="">新建主题</option>';
+    userUploadThemes.forEach(theme => {
+      const option = document.createElement('option');
+      option.value = theme.id;
+      option.textContent = `${theme.id} · ${theme.name || ''} · v${theme.version}`;
+      option.dataset.version = String(theme.version || 1);
+      option.dataset.name = theme.name || '';
+      option.dataset.author = theme.author || '';
+      option.dataset.description = theme.description || '';
+      option.dataset.tags = (theme.tags || []).join(', ');
+      option.dataset.license = theme.license || '';
+      option.dataset.min = String(theme.minManagerVersion ?? 0);
+      option.dataset.changelog = theme.changelog || '';
+      select.appendChild(option);
+    });
+    if (userUploadThemes.some(theme => theme.id === current)) select.value = current;
+  } catch (error) {
+    $('userUpAutoId').value = '';
+    $('userUpHint').textContent = error.message;
+    toast('无法获取主题 ID：' + error.message, true);
+  }
+}
+
+$('userUpUpdate').addEventListener('change', async () => {
+  const option = $('userUpUpdate').selectedOptions[0];
+  if (!option || !option.value) {
+    $('userUpVersion').value = '1';
+    $('userUpName').value = '';
+    $('userUpTags').value = '';
+    $('userUpLicense').value = '';
+    $('userUpDescription').value = '';
+    $('userUpChangelog').value = '';
+    $('userUpMin').value = '0';
+    $('userUpAuthor').value = profile?.displayName || '';
+    await loadUploadView();
+    return;
+  }
+  $('userUpAutoId').value = option.value;
+  $('userUpVersion').value = String((Number(option.dataset.version) || 1) + 1);
+  $('userUpName').value = option.dataset.name || '';
+  $('userUpAuthor').value = option.dataset.author || '';
+  $('userUpDescription').value = option.dataset.description || '';
+  $('userUpTags').value = option.dataset.tags || '';
+  $('userUpLicense').value = option.dataset.license || '';
+  $('userUpMin').value = option.dataset.min || '0';
+  $('userUpChangelog').value = option.dataset.changelog || '';
+});
+
+$('userUpSubmit').addEventListener('click', async () => {
+  const updateId = $('userUpUpdate').value || '';
+  const themeId = updateId || '';
+  const version = Number($('userUpVersion').value);
+  const name = $('userUpName').value.trim();
+  const packageFile = $('userUpPackage').files[0];
+  const previewFile = $('userUpPreview').files[0];
+  if (!name) return toast('请填写主题名称', true);
+  if (!Number.isInteger(version) || version < 1) return toast('版本号无效', true);
+  if (!packageFile) return toast('请选择主题包', true);
+  if (!previewFile) return toast('请选择预览图', true);
+  const form = new FormData();
+  form.append('id', themeId);
+  form.append('version', String(version));
+  form.append('name', name);
+  form.append('author', $('userUpAuthor').value.trim() || profile?.displayName || '');
+  form.append('tags', $('userUpTags').value.trim());
+  form.append('license', $('userUpLicense').value.trim());
+  form.append('minManagerVersion', $('userUpMin').value.trim() || '0');
+  form.append('description', $('userUpDescription').value.trim());
+  form.append('changelog', $('userUpChangelog').value.trim());
+  form.append('package', packageFile);
+  form.append('preview', previewFile);
+  const avatar = $('userUpAvatar').files[0];
+  if (avatar) form.append('avatar', avatar);
+  Array.from($('userUpScreenshots').files).slice(0, 6).forEach(file => form.append('screenshots', file));
+  const button = $('userUpSubmit');
+  const progress = $('userUpProgress');
+  const progressBar = $('userUpProgressBar');
+  const progressText = $('userUpProgressText');
+  const progressPercent = $('userUpProgressPercent');
+  button.disabled = true;
+  button.textContent = '上传中…';
+  progress.classList.remove('hidden');
+  progressBar.style.width = '0%';
+  progressText.textContent = '正在上传…';
+  progressPercent.textContent = '0%';
+  try {
+    const data = await uploadWithProgress(API + '/submit', form, ratio => {
+      const percent = Math.round(Math.max(0, Math.min(1, ratio)) * 100);
+      progressBar.style.width = percent + '%';
+      progressPercent.textContent = percent + '%';
+      progressText.textContent = percent >= 100 ? '服务器校验中…' : '正在上传…';
+    });
+    progressBar.style.width = '100%';
+    progressPercent.textContent = '100%';
+    progressText.textContent = data.pending ? '已提交，等待审核' : '已发布';
+    toast(data.message || ('已提交：' + (data.id || themeId || userUploadNextId)));
+    $('userUpName').value = '';
+    $('userUpTags').value = '';
+    $('userUpLicense').value = '';
+    $('userUpDescription').value = '';
+    $('userUpChangelog').value = '';
+    $('userUpPackage').value = '';
+    $('userUpPreview').value = '';
+    $('userUpAvatar').value = '';
+    $('userUpScreenshots').value = '';
+    $('userUpUpdate').value = '';
+    $('userUpVersion').value = '1';
+    await loadUploadView();
+    await loadProfile();
+  } catch (error) {
+    progressText.textContent = '上传失败';
+    toast('上传失败：' + error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = '上传并提交审核';
+  }
+});
+
+
+document.querySelectorAll('[data-tag-target]').forEach(group => {
+  const input = $(group.dataset.tagTarget);
+  if (!input) return;
+  const sync = () => {
+    const tags = input.value.split(/[,，\n]/).map(item => item.trim()).filter(Boolean);
+    group.querySelectorAll('[data-tag]').forEach(button => {
+      button.classList.toggle('active', tags.includes(button.dataset.tag));
+    });
+  };
+  group.querySelectorAll('[data-tag]').forEach(button => {
+    button.addEventListener('click', () => {
+      const tags = input.value.split(/[,，\n]/).map(item => item.trim()).filter(Boolean);
+      const tag = button.dataset.tag;
+      const index = tags.indexOf(tag);
+      if (index >= 0) tags.splice(index, 1);
+      else if (tags.length < 10) tags.push(tag);
+      input.value = tags.join(', ');
+      sync();
+      input.focus();
+    });
+  });
+  input.addEventListener('input', sync);
+  sync();
+});
+
+  loadProfile();
+})();
+</script>
+</body>
+</html>

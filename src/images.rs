@@ -39,9 +39,7 @@ pub fn validate_image(data: &[u8], ext: &str) -> Result<(u32, u32)> {
 
 fn exif_orientation(data: &[u8]) -> Option<u32> {
     let mut cursor = Cursor::new(data);
-    let exif = exif::Reader::new()
-        .read_from_container(&mut cursor)
-        .ok()?;
+    let exif = exif::Reader::new().read_from_container(&mut cursor).ok()?;
     let field = exif.get_field(exif::Tag::Orientation, exif::In::PRIMARY)?;
     field.value.get_uint(0)
 }
@@ -82,9 +80,7 @@ fn flatten_to_rgb(image: DynamicImage) -> RgbImage {
 fn encode_jpeg(image: &RgbImage, quality: u8) -> Result<Vec<u8>> {
     let mut output = Vec::new();
     let mut encoder = JpegEncoder::new_with_quality(&mut output, quality);
-    encoder
-        .encode_image(image)
-        .context("图片压缩失败")?;
+    encoder.encode_image(image).context("图片压缩失败")?;
     Ok(output)
 }
 
@@ -93,8 +89,7 @@ pub fn optimize_image(data: Vec<u8>, ext: &str, max_edge: u32) -> Result<(Vec<u8
     if !matches!(ext.as_str(), ".webp" | ".png" | ".jpg" | ".jpeg" | ".gif") {
         bail!("不支持的图片格式");
     }
-    let mut image =
-        load_image(&data).map_err(|_| anyhow::anyhow!("图片格式无法识别"))?;
+    let mut image = load_image(&data).map_err(|_| anyhow::anyhow!("图片格式无法识别"))?;
     let (width, height) = (image.width(), image.height());
     if width == 0 || height == 0 || width > 20_000 || height > 20_000 {
         bail!("图片尺寸无效");
@@ -114,6 +109,12 @@ pub fn optimize_image(data: Vec<u8>, ext: &str, max_edge: u32) -> Result<(Vec<u8
     let mut encoded = encode_jpeg(&rgb, WEBP_QUALITY)?;
     if encoded.len() > MAX_IMAGE_BYTES {
         encoded = encode_jpeg(&rgb, 60)?;
+    }
+    if encoded.len() > MAX_IMAGE_BYTES {
+        encoded = encode_jpeg(&rgb, 45)?;
+    }
+    if encoded.len() > MAX_IMAGE_BYTES {
+        encoded = encode_jpeg(&rgb, 30)?;
     }
     if encoded.len() > MAX_IMAGE_BYTES {
         bail!("图片压缩后仍然过大");

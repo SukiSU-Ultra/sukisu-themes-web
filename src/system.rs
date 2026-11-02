@@ -3,7 +3,7 @@ use std::process::Stdio;
 use anyhow::{bail, Context, Result};
 use tokio::process::Command;
 
-fn systemctl_disabled() -> bool {
+pub fn systemctl_disabled() -> bool {
     std::env::var("THEME_DISABLE_SYSTEMCTL")
         .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
         .unwrap_or(false)
@@ -35,11 +35,48 @@ fn detached(unit: &str, delay_seconds: u32, command: &str) {
     }
 }
 
+pub fn schedule_network_apply(
+    script: &str,
+    new_port: u16,
+    old_port: u16,
+    backup_dir: &str,
+    caddyfile: &str,
+    health_host: &str,
+) -> anyhow::Result<()> {
+    if cfg!(not(target_os = "linux")) || systemctl_disabled() {
+        return Ok(());
+    }
+    let unit_name = format!("sukisu-network-{}", crate::util::random_hex(3));
+    let status = std::process::Command::new("systemd-run")
+        .args([
+            "--on-active",
+            "2",
+            "--collect",
+            "--unit",
+            &unit_name,
+            script,
+            &new_port.to_string(),
+            &old_port.to_string(),
+            backup_dir,
+            caddyfile,
+            health_host,
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .context("failed to schedule network apply")?;
+    if !status.success() {
+        bail!("systemd-run failed to schedule network apply");
+    }
+    Ok(())
+}
+
 pub fn schedule_admin_restart() {
     detached(
         "sukisu-admin-restart",
         2,
-        "systemctl restart sukisu-theme-admin",
+        "systemctl restart sukisu-theme-web",
     );
 }
 
@@ -72,41 +109,16 @@ pub async fn service_state(unit: &str) -> String {
 pub async fn reload_caddy() -> Result<()> {
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(20),
-        Command::new("systemctl")
-            .args(["reload", "caddy"])
-            .output(),
+        Command::new("systemctl").args(["reload", "caddy"]).output(),
     )
     .await
     .context("systemctl reload timed out")?
     .context("failed to run systemctl")?;
     if !output.status.success() {
         bail!(
-            "systemctl reload failed: {}",
+            "systemctl reload caddy failed: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         );
     }
     Ok(())
-}
-
-pub async fn hash_password(password: &str) -> Result<String> {
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        Command::new("caddy")
-            .args(["hash-password", "--plaintext", password])
-            .output(),
-    )
-    .await
-    .context("caddy hash-password timed out")?
-    .context("failed to run caddy hash-password")?;
-    if !output.status.success() {
-        bail!(
-            "caddy hash-password failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    let hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if hash.is_empty() {
-        bail!("caddy hash-password returned no output");
-    }
-    Ok(hash)
 }

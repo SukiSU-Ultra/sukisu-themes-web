@@ -1,10 +1,13 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use axum::body::Body;
-use axum::extract::{DefaultBodyLimit, Multipart, OriginalUri, Path as AxumPath, Query, Request, State};
+use axum::extract::{
+    DefaultBodyLimit, Extension, Multipart, OriginalUri, Path as AxumPath, Query, Request, State,
+};
 use axum::http::{HeaderMap, Method, StatusCode, Uri};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -17,12 +20,13 @@ use subtle::ConstantTimeEq;
 use tokio::io::AsyncReadExt;
 use tokio_util::io::ReaderStream;
 
+use crate::auth;
 use crate::catalog;
 use crate::config::{
     self, read_env, set_env_key, validate_s3_settings, validate_storage_root, write_storage_config,
     Backend, Paths, StorageSettings, CSRF_HEADER, CSRF_VALUE, CURRENT_FORMAT_VERSION,
     DISK_RESERVE_BYTES, MAX_BODY_BYTES, MAX_PENDING_SUBMISSIONS, MAX_SUBMISSIONS_PER_HOUR,
-    MIN_FORMAT_VERSION, STORAGE_LIMIT_BYTES, TOKEN_HEADER,
+    MIN_FORMAT_VERSION, TOKEN_HEADER,
 };
 use crate::jobs::JobManager;
 use crate::models::{JobState, StorageUsage};
@@ -35,34 +39,68 @@ use crate::util::{
 };
 
 const EMBEDDED_INDEX_HTML: &str = include_str!("../static/index.html");
+const EMBEDDED_LOGIN_HTML: &str = include_str!("../static/login.html");
+const EMBEDDED_SETUP_HTML: &str = include_str!("../static/setup.html");
+const EMBEDDED_ACCOUNT_AUTH_HTML: &str = include_str!("../static/account-auth.html");
+const EMBEDDED_ACCOUNT_HTML: &str = include_str!("../static/account.html");
 const EMBEDDED_LOGO_SVG: &[u8] = include_bytes!("../static/logo.svg");
 
 #[derive(Clone)]
 pub struct AppState {
     pub paths: Arc<Paths>,
     pub settings: Arc<StorageSettings>,
+    pub limit_bytes: Arc<AtomicU64>,
     pub store: AssetStore,
     pub http: reqwest::Client,
     pub jobs: JobManager,
     pub rate: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
+    pub account_rate: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
+    pub db: crate::db::Database,
+    pub sessions: auth::SessionStore,
+    pub login_failures: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
+    withdrawn_assets: Arc<RwLock<HashSet<String>>>,
 }
 
 impl AppState {
-    pub fn new(settings: StorageSettings) -> anyhow::Result<Self> {
+    pub async fn new(settings: StorageSettings) -> anyhow::Result<Self> {
         let paths = Arc::new(config::load_paths(&settings));
         config::ensure_storage_dirs(&paths, &settings)?;
         let store = storage::build_store(&settings)?;
+        let db = crate::db::Database::open(&paths.db).await?;
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(20))
             .build()?;
+        let limit_bytes = settings.limit_bytes;
+        let sessions = auth::SessionStore::new(db.clone());
+        let withdrawn_assets = Arc::new(RwLock::new(catalog::withdrawn_asset_keys(&paths)));
         Ok(Self {
             paths,
             settings: Arc::new(settings),
+            limit_bytes: Arc::new(AtomicU64::new(limit_bytes)),
             store,
             http,
             jobs: JobManager::new(),
             rate: Arc::new(Mutex::new(HashMap::new())),
+            account_rate: Arc::new(Mutex::new(HashMap::new())),
+            db,
+            sessions,
+            login_failures: Arc::new(Mutex::new(HashMap::new())),
+            withdrawn_assets,
         })
+    }
+
+    pub fn refresh_withdrawn_assets(&self) {
+        let keys = catalog::withdrawn_asset_keys(&self.paths);
+        if let Ok(mut guard) = self.withdrawn_assets.write() {
+            *guard = keys;
+        }
+    }
+
+    pub fn is_withdrawn_asset(&self, path: &str) -> bool {
+        self.withdrawn_assets
+            .read()
+            .map(|guard| guard.contains(path))
+            .unwrap_or(false)
     }
 }
 
@@ -72,34 +110,38 @@ pub struct ApiError {
 }
 
 impl ApiError {
-    fn new(status: StatusCode, message: impl Into<String>) -> Self {
+    pub(crate) fn new(status: StatusCode, message: impl Into<String>) -> Self {
         Self {
             status,
             message: message.into(),
         }
     }
 
-    fn bad(message: impl Into<String>) -> Self {
+    pub(crate) fn bad(message: impl Into<String>) -> Self {
         Self::new(StatusCode::BAD_REQUEST, message)
     }
 
-    fn unauthorized(message: impl Into<String>) -> Self {
+    pub(crate) fn unauthorized(message: impl Into<String>) -> Self {
         Self::new(StatusCode::UNAUTHORIZED, message)
     }
 
-    fn conflict(message: impl Into<String>) -> Self {
+    pub(crate) fn conflict(message: impl Into<String>) -> Self {
         Self::new(StatusCode::CONFLICT, message)
     }
 
-    fn not_found(message: impl Into<String>) -> Self {
+    pub(crate) fn not_found(message: impl Into<String>) -> Self {
         Self::new(StatusCode::NOT_FOUND, message)
     }
 
-    fn too_many(message: impl Into<String>) -> Self {
+    pub(crate) fn forbidden(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::FORBIDDEN, message)
+    }
+
+    pub(crate) fn too_many(message: impl Into<String>) -> Self {
         Self::new(StatusCode::TOO_MANY_REQUESTS, message)
     }
 
-    fn internal(error: impl std::fmt::Display) -> Self {
+    pub(crate) fn internal(error: impl std::fmt::Display) -> Self {
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
     }
 }
@@ -140,6 +182,10 @@ type ApiResult<T> = Result<T, ApiError>;
 
 pub fn router(state: AppState) -> Router {
     let api = Router::new()
+        .route("/login", post(login))
+        .route("/logout", post(logout))
+        .route("/session", get(session_info))
+        .route("/setup", post(setup))
         .route("/status", get(status))
         .route("/themes", get(themes))
         .route("/pending", get(pending))
@@ -161,10 +207,18 @@ pub fn router(state: AppState) -> Router {
         .route("/storage/test", post(storage_test))
         .route("/storage/root", post(storage_root))
         .route("/storage/backend", post(storage_backend))
+        .route("/storage/limit", post(storage_limit))
+        .merge(crate::admin_users::router())
+        .merge(crate::network_api::router())
+        .merge(crate::auth_settings_api::router())
+        .layer(middleware::from_fn_with_state(state.clone(), auth_guard))
         .layer(middleware::from_fn(csrf_guard));
+
+    let account_api = crate::account_api::router(state.clone());
 
     Router::new()
         .nest("/api", api)
+        .nest("/account/api", account_api)
         .route("/submit", post(submit))
         .route("/themes/{*path}", get(asset))
         .route("/previews/{*path}", get(asset))
@@ -191,6 +245,280 @@ async fn csrf_guard(request: Request, next: Next) -> Response {
     next.run(request).await
 }
 
+async fn auth_guard(State(state): State<AppState>, mut request: Request, next: Next) -> Response {
+    let path = request.uri().path().to_string();
+    let relative = path.strip_prefix("/api").unwrap_or(&path);
+    if matches!(relative, "/login" | "/session" | "/logout" | "/setup") {
+        return next.run(request).await;
+    }
+    let Some(token) = auth::session_token(request.headers(), auth::ADMIN_SESSION_COOKIE) else {
+        return ApiError::unauthorized("未登录").into_response();
+    };
+    let Some(session) = state.sessions.validate(&token, "admin").await else {
+        return ApiError::unauthorized("登录已过期，请重新登录").into_response();
+    };
+    request.extensions_mut().insert(session);
+    next.run(request).await
+}
+
+fn login_allowed(state: &AppState, ip: &str) -> bool {
+    let mut failures = state.login_failures.lock().unwrap();
+    let now = Instant::now();
+    let list = failures.entry(ip.to_string()).or_default();
+    list.retain(|stamp| now.duration_since(*stamp) < Duration::from_secs(300));
+    list.len() < 10
+}
+
+fn record_login_failure(state: &AppState, ip: &str) {
+    let mut failures = state.login_failures.lock().unwrap();
+    let now = Instant::now();
+    let list = failures.entry(ip.to_string()).or_default();
+    list.retain(|stamp| now.duration_since(*stamp) < Duration::from_secs(300));
+    list.push(now);
+    if failures.len() > 1000 {
+        let keys: Vec<String> = failures.keys().take(200).cloned().collect();
+        for key in keys {
+            failures.remove(&key);
+        }
+    }
+}
+
+fn clear_login_failures(state: &AppState, ip: &str) {
+    state.login_failures.lock().unwrap().remove(ip);
+}
+
+async fn login(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> ApiResult<Response> {
+    let value = json_body(body).await?;
+    let username = value
+        .get("username")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let password = value
+        .get("password")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    if username.is_empty() || password.is_empty() {
+        return Err(ApiError::bad("请输入用户名和密码"));
+    }
+    if !auth::admin_configured(&state.db, &state.paths).await {
+        return Err(ApiError::conflict("尚未完成初始化，请先打开初始化页面"));
+    }
+    let remote = request_ip(&headers);
+    if !login_allowed(&state, &remote) {
+        return Err(ApiError::too_many("尝试次数过多，请 5 分钟后再试"));
+    }
+
+    let user = crate::accounts::user_by_login(&state.db, &username)
+        .await
+        .map_err(ApiError::internal)?;
+    let Some(user) = user else {
+        record_login_failure(&state, &remote);
+        return Err(ApiError::unauthorized("用户名或密码错误"));
+    };
+    if !user.is_admin() || !user.is_active() {
+        record_login_failure(&state, &remote);
+        return Err(ApiError::unauthorized("用户名或密码错误"));
+    }
+    let pass = password.clone();
+    let hash = crate::accounts::user_password_hash(&state.db, &user.id)
+        .await
+        .map_err(ApiError::internal)?;
+    let verified = match hash {
+        Some(hash) => tokio::task::spawn_blocking(move || bcrypt::verify(pass, &hash))
+            .await
+            .map_err(|error| ApiError::internal(error.to_string()))?
+            .map_err(|error| ApiError::internal(error.to_string()))?,
+        None => false,
+    };
+    if !verified {
+        record_login_failure(&state, &remote);
+        return Err(ApiError::unauthorized("用户名或密码错误"));
+    }
+    clear_login_failures(&state, &remote);
+    let user_agent = header_text(&headers, "user-agent");
+    let token = state
+        .sessions
+        .create(
+            &user.id,
+            "admin",
+            auth::SESSION_TTL_SECS,
+            &user_agent,
+            &remote,
+        )
+        .await
+        .map_err(ApiError::internal)?;
+    let cookie = auth::session_cookie(
+        auth::ADMIN_SESSION_COOKIE,
+        &token,
+        "/",
+        auth::SESSION_TTL_SECS,
+        auth::request_is_secure(&headers),
+    );
+    let payload = json!({
+        "ok": true,
+        "username": user.username,
+        "expiresIn": auth::SESSION_TTL_SECS,
+    });
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json; charset=utf-8")
+        .header("Cache-Control", "no-store")
+        .header("Set-Cookie", cookie)
+        .body(Body::from(payload.to_string()))
+        .map_err(ApiError::internal)
+}
+
+async fn setup(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> ApiResult<Response> {
+    if auth::admin_configured(&state.db, &state.paths).await {
+        return Err(ApiError::conflict("控制台已经完成初始化"));
+    }
+    let value = json_body(body).await?;
+    let username = value
+        .get("username")
+        .and_then(|value| value.as_str())
+        .unwrap_or("admin")
+        .trim()
+        .to_string();
+    if !auth::valid_admin_username(&username) {
+        return Err(ApiError::bad("用户名需要 3-32 位字母、数字或 . _ -"));
+    }
+    let password = value
+        .get("password")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    if password.len() < 8 {
+        return Err(ApiError::bad("密码至少 8 位"));
+    }
+    let limit_mb = value
+        .get("limitMb")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(1200);
+    let limit_bytes = limit_mb
+        .checked_mul(1024 * 1024)
+        .ok_or_else(|| ApiError::bad("存储配额超出范围"))?;
+    config::validate_storage_limit(limit_bytes)
+        .map_err(|error| ApiError::bad(error.to_string()))?;
+
+    let pass = password.clone();
+    let hash = tokio::task::spawn_blocking(move || auth::hash_admin_password(&pass))
+        .await
+        .map_err(|error| ApiError::internal(error.to_string()))?
+        .map_err(ApiError::internal)?;
+    let user = crate::accounts::create_user(
+        &state.db,
+        crate::accounts::NewUser {
+            username: &username,
+            display_name: &username,
+            email: None,
+            password_hash: Some(&hash),
+            role: "admin",
+            status: "active",
+            email_verified: true,
+        },
+    )
+    .await
+    .map_err(|error| ApiError::bad(error.to_string()))?;
+    set_env_key(&state.paths.admin_env, "ADMIN_USERNAME", &username).map_err(ApiError::internal)?;
+    set_env_key(&state.paths.admin_env, "ADMIN_PASSWORD_HASH", &hash)
+        .map_err(ApiError::internal)?;
+    set_env_key(
+        &state.paths.storage_env,
+        "THEME_STORAGE_LIMIT_BYTES",
+        &limit_bytes.to_string(),
+    )
+    .map_err(ApiError::internal)?;
+    state.limit_bytes.store(limit_bytes, Ordering::Relaxed);
+    let _ = tokio::fs::remove_file(&state.paths.admin_password_file).await;
+
+    let token = state
+        .sessions
+        .create(
+            &user.id,
+            "admin",
+            auth::SESSION_TTL_SECS,
+            &header_text(&headers, "user-agent"),
+            &request_ip(&headers),
+        )
+        .await
+        .map_err(ApiError::internal)?;
+    let cookie = auth::session_cookie(
+        auth::ADMIN_SESSION_COOKIE,
+        &token,
+        "/",
+        auth::SESSION_TTL_SECS,
+        auth::request_is_secure(&headers),
+    );
+    let payload = json!({
+        "ok": true,
+        "username": user.username,
+        "expiresIn": auth::SESSION_TTL_SECS,
+        "limitBytes": limit_bytes,
+    });
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json; charset=utf-8")
+        .header("Cache-Control", "no-store")
+        .header("Set-Cookie", cookie)
+        .body(Body::from(payload.to_string()))
+        .map_err(ApiError::internal)
+}
+
+async fn session_info(State(state): State<AppState>, headers: HeaderMap) -> Json<Value> {
+    let token = auth::session_token(&headers, auth::ADMIN_SESSION_COOKIE);
+    let session = match token.as_deref() {
+        Some(token) => state.sessions.validate(token, "admin").await,
+        None => None,
+    };
+    let admin_username = crate::accounts::admin_username_hint(&state.db)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| auth::configured_username(&state.paths));
+    Json(json!({
+        "ok": true,
+        "authenticated": session.is_some(),
+        "username": session.as_ref().map(|session| session.username.clone()),
+        "role": session.as_ref().map(|session| session.role.clone()),
+        "adminUsername": admin_username,
+        "setupRequired": !auth::admin_configured(&state.db, &state.paths).await,
+    }))
+}
+
+async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Some(token) = auth::session_token(&headers, auth::ADMIN_SESSION_COOKIE) {
+        state.sessions.remove(&token).await;
+    }
+    if let Some(token) = auth::session_token(&headers, auth::USER_SESSION_COOKIE) {
+        state.sessions.remove(&token).await;
+    }
+    let secure = auth::request_is_secure(&headers);
+    let admin_cookie = auth::clear_session_cookie(auth::ADMIN_SESSION_COOKIE, "/", secure);
+    let user_cookie = auth::clear_session_cookie(auth::USER_SESSION_COOKIE, "/", secure);
+    let legacy_user_cookie =
+        auth::clear_session_cookie(auth::USER_SESSION_COOKIE, "/account", secure);
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json; charset=utf-8")
+        .header("Cache-Control", "no-store")
+        .header("Set-Cookie", admin_cookie)
+        .header("Set-Cookie", user_cookie)
+        .header("Set-Cookie", legacy_user_cookie)
+        .body(Body::from(json!({"ok": true}).to_string()))
+        .unwrap_or_else(|_| ApiError::internal("logout response").into_response())
+}
+
 fn read_token(paths: &Paths) -> String {
     read_env(&paths.token_env)
         .get("THEME_STORE_TOKEN")
@@ -199,14 +527,10 @@ fn read_token(paths: &Paths) -> String {
 }
 
 fn token_matches(expected: &str, provided: &str) -> bool {
-    expected.len() == provided.len()
-        && expected
-            .as_bytes()
-            .ct_eq(provided.as_bytes())
-            .into()
+    expected.len() == provided.len() && expected.as_bytes().ct_eq(provided.as_bytes()).into()
 }
 
-fn request_ip(headers: &HeaderMap) -> String {
+pub(crate) fn request_ip(headers: &HeaderMap) -> String {
     headers
         .get("x-forwarded-for")
         .and_then(|value| value.to_str().ok())
@@ -217,15 +541,19 @@ fn request_ip(headers: &HeaderMap) -> String {
         .to_string()
 }
 
-async fn json_body(body: Bytes) -> ApiResult<Value> {
+pub(crate) fn header_text(headers: &HeaderMap, name: &str) -> String {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .to_string()
+}
+
+pub(crate) async fn json_body(body: Bytes) -> ApiResult<Value> {
     if body.len() > MAX_BODY_BYTES {
-        return Err(ApiError::new(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            "请求体过大",
-        ));
+        return Err(ApiError::new(StatusCode::PAYLOAD_TOO_LARGE, "请求体过大"));
     }
-    let value: Value = serde_json::from_slice(&body)
-        .map_err(|_| ApiError::bad("invalid JSON"))?;
+    let value: Value = serde_json::from_slice(&body).map_err(|_| ApiError::bad("invalid JSON"))?;
     if !value.is_object() {
         return Err(ApiError::bad("JSON object expected"));
     }
@@ -280,28 +608,44 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
             ("测试对象存储", "POST", "/storage/test"),
             ("修改存储目录", "POST", "/storage/root"),
             ("切换存储后端", "POST", "/storage/backend"),
+            ("修改存储配额", "POST", "/storage/limit"),
             ("存储迁移进度", "GET", "/storage/job"),
+            ("用户列表", "GET", "/users"),
+            ("账号审核", "POST", "/users/{id}/approve"),
+            ("作者申请", "GET", "/author-requests"),
+            ("操作日志", "GET", "/audit"),
         ] {
             endpoints.push(json!({
                 "name": name,
                 "method": method,
                 "url": format!("{admin_api}{path}"),
-                "auth": "Basic Auth",
+                "auth": "登录会话",
             }));
         }
     }
     let (pending_count, pending_bytes) = catalog::pending_state(&state.paths);
-    let authors_count = catalog::read_authors(&state.paths).authors.len();
+    let authors_count = crate::authors::list_authors(&state.db)
+        .await
+        .map(|items| items.len())
+        .unwrap_or(0);
+    let users_count = crate::accounts::count_users(&state.db).await.unwrap_or(0);
+    let users_pending = crate::accounts::count_pending_users(&state.db)
+        .await
+        .unwrap_or(0);
+    let author_requests_pending = crate::authors::count_pending_author_requests(&state.db)
+        .await
+        .unwrap_or(0);
     let usage = catalog::storage_usage(
         &state.store,
         &state.paths,
         state.settings.backend.as_str(),
+        state.limit_bytes.load(Ordering::Relaxed),
     )
     .await;
     let storage_value = serde_json::to_value(&usage).unwrap_or_else(|_| json!({}));
     let caddy = system::service_state("caddy").await;
     let sync_timer = system::service_state("sukisu-themes-sync.timer").await;
-    let admin_service = system::service_state("sukisu-theme-admin.service").await;
+    let admin_service = system::service_state("sukisu-theme-web.service").await;
     Json(json!({
         "tokenSet": !token.is_empty(),
         "tokenHeader": TOKEN_HEADER,
@@ -312,6 +656,12 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
         "pendingCount": pending_count,
         "pendingBytes": pending_bytes,
         "authorsCount": authors_count,
+        "usersCount": users_count,
+        "usersPending": users_pending,
+        "authorRequestsPending": author_requests_pending,
+        "mailConfigured": crate::mailer::configured(&state.paths),
+        "githubConfigured": crate::oauth::GithubSettings::load(&state.paths).is_some(),
+        "managerVersionCode": crate::config::manager_version_code(&state.paths),
         "storage": storage_value,
         "storageBackend": state.settings.backend.as_str(),
         "stateDir": state.paths.root.to_string_lossy(),
@@ -334,13 +684,31 @@ async fn themes(State(state): State<AppState>) -> Json<Value> {
 }
 
 async fn pending(State(state): State<AppState>) -> Json<Value> {
-    let submissions = catalog::pending_submissions(&state.paths);
+    let mut submissions = catalog::pending_submissions(&state.paths);
+    for item in &mut submissions {
+        let user_id = item
+            .get("submitterUserId")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .to_string();
+        if !user_id.is_empty() {
+            if let Ok(Some(user)) = crate::accounts::user_by_id(&state.db, &user_id).await {
+                if let Some(object) = item.as_object_mut() {
+                    object.insert("submitterUsername".to_string(), json!(user.username));
+                    object.insert("submitterDisplayName".to_string(), json!(user.display_name));
+                    object.insert("submitterEmail".to_string(), json!(user.email));
+                }
+            }
+        }
+    }
     let count = submissions.len();
     Json(json!({"ok": true, "submissions": submissions, "count": count}))
 }
 
 async fn authors(State(state): State<AppState>) -> Json<Value> {
-    let authors = catalog::authors_list(&state.paths);
+    let authors = crate::authors::list_authors(&state.db)
+        .await
+        .unwrap_or_default();
     let count = authors.len();
     Json(json!({"ok": true, "authors": authors, "count": count}))
 }
@@ -397,9 +765,10 @@ async fn asset(
 ) -> ApiResult<Response> {
     let path = uri.path().trim_start_matches('/').to_string();
     tracing::debug!("asset request: {path}");
-    let range = headers
-        .get("Range")
-        .and_then(|value| value.to_str().ok());
+    if state.is_withdrawn_asset(&path) {
+        return Err(ApiError::not_found("not found"));
+    }
+    let range = headers.get("Range").and_then(|value| value.to_str().ok());
     let object = match state.store.serve(&path, range).await {
         Ok(object) => object,
         Err(ServeError::NotFound) => return Err(ApiError::not_found("not found")),
@@ -438,8 +807,12 @@ async fn asset(
 
 fn embedded_static(relative: &str) -> Option<(&'static [u8], &'static str)> {
     match relative {
-        "index.html" => Some((
-            EMBEDDED_INDEX_HTML.as_bytes(),
+        "index.html" => Some((EMBEDDED_INDEX_HTML.as_bytes(), "text/html; charset=utf-8")),
+        "login.html" => Some((EMBEDDED_LOGIN_HTML.as_bytes(), "text/html; charset=utf-8")),
+        "setup.html" => Some((EMBEDDED_SETUP_HTML.as_bytes(), "text/html; charset=utf-8")),
+        "account.html" => Some((EMBEDDED_ACCOUNT_HTML.as_bytes(), "text/html; charset=utf-8")),
+        "account-auth.html" => Some((
+            EMBEDDED_ACCOUNT_AUTH_HTML.as_bytes(),
             "text/html; charset=utf-8",
         )),
         "logo.svg" => Some((EMBEDDED_LOGO_SVG, "image/svg+xml")),
@@ -450,8 +823,30 @@ fn embedded_static(relative: &str) -> Option<(&'static [u8], &'static str)> {
 async fn static_file(State(state): State<AppState>, uri: Uri) -> ApiResult<Response> {
     let path = uri.path();
     tracing::debug!("static request: {path}");
+    if path == "/admin/login" || path == "/admin/login.html" {
+        return Response::builder()
+            .status(StatusCode::FOUND)
+            .header("Location", "/account/login")
+            .header("Cache-Control", "no-store")
+            .body(Body::empty())
+            .map_err(ApiError::internal);
+    }
     let relative = if path == "/" || path == "/index.html" {
         "index.html".to_string()
+    } else if path == "/login" || path == "/login.html" {
+        "account-auth.html".to_string()
+    } else if path == "/setup" || path == "/setup.html" {
+        "setup.html".to_string()
+    } else if path == "/account" || path == "/account/" || path == "/account/index.html" {
+        "account.html".to_string()
+    } else if path == "/account/login"
+        || path == "/account/register"
+        || path == "/account/reset"
+        || path == "/account/forgot"
+    {
+        "account-auth.html".to_string()
+    } else if path == "/account/logo.svg" {
+        "logo.svg".to_string()
     } else {
         path.trim_start_matches('/').to_string()
     };
@@ -548,12 +943,25 @@ async fn submit(
             "请填写有效的作者 ID（16-128 位字母、数字或 . _ ~ -）",
         ));
     }
-    let prepared = uploads::prepare_upload(form)
-        .await
-        .map_err(ApiError::bad)?;
+    let prepared = uploads::prepare_upload(form).await.map_err(ApiError::bad)?;
     let theme_id = prepared.id.clone();
     let author_hash = crate::util::author_key(&author_id);
     let author_fp = crate::util::author_fingerprint(&author_hash);
+    if crate::authors::author_by_hash(&state.db, &author_hash)
+        .await
+        .map_err(ApiError::internal)?
+        .is_none()
+    {
+        let _ = crate::authors::create_author(
+            &state.db,
+            &author_hash,
+            &author_fp,
+            &prepared.author,
+            None,
+            "pending",
+        )
+        .await;
+    }
 
     let old_meta = catalog::find_theme_meta(&state.paths, &theme_id);
     if let Some((_, old)) = &old_meta {
@@ -575,25 +983,30 @@ async fn submit(
         return Err(ApiError::conflict("该主题已在审核队列中"));
     }
 
-    let licensed = catalog::read_authors(&state.paths)
-        .authors
-        .contains_key(&author_hash);
+    let licensed = crate::authors::author_by_hash(&state.db, &author_hash)
+        .await
+        .map_err(ApiError::internal)?
+        .map(|author| author.status == "active" && author.auto_publish)
+        .unwrap_or(false);
     let owner_matches = old_meta
         .as_ref()
         .map(|(_, old)| old.author_hash.as_deref() == Some(author_hash.as_str()))
         .unwrap_or(true);
+    let limit_bytes = state.limit_bytes.load(Ordering::Relaxed);
     if licensed && owner_matches {
         let themes = uploads::publish_theme(
             &state.store,
             &state.settings,
             &state.paths,
+            limit_bytes,
             prepared,
             Some(author_hash.clone()),
             0,
             old_meta,
         )
         .await?;
-        let _ = catalog::touch_author(&state.paths, &author_hash);
+        state.refresh_withdrawn_assets();
+        let _ = crate::authors::touch_author(&state.db, &author_hash).await;
         return Ok(Json(json!({
             "ok": true,
             "pending": false,
@@ -614,10 +1027,14 @@ async fn submit(
         &state.store,
         &state.paths,
         state.settings.backend.as_str(),
+        limit_bytes,
     )
     .await;
-    if usage.used.saturating_add(new_size) > STORAGE_LIMIT_BYTES {
-        return Err(ApiError::bad("1.2 GB 存储空间不足，请稍后再试"));
+    if usage.used.saturating_add(new_size) > limit_bytes {
+        return Err(ApiError::bad(format!(
+            "{} 存储配额不足，请稍后再试或调高配额",
+            config::format_storage_size(limit_bytes)
+        )));
     }
     if usage.disk_free < new_size.saturating_add(DISK_RESERVE_BYTES) {
         return Err(ApiError::bad("主机磁盘剩余空间不足，已拒绝上传"));
@@ -630,6 +1047,7 @@ async fn submit(
         &author_fp,
         &remote,
         &submission,
+        None,
     )
     .map_err(ApiError::internal)?;
     Ok((
@@ -646,31 +1064,79 @@ async fn submit(
         .into_response())
 }
 
-async fn upload_theme(
-    State(state): State<AppState>,
-    multipart: Multipart,
-) -> ApiResult<Response> {
+async fn upload_theme(State(state): State<AppState>, multipart: Multipart) -> ApiResult<Response> {
     if state.jobs.is_running() {
         return Err(ApiError::conflict("存储迁移进行中，请稍后再试"));
     }
-    let form = uploads::parse_multipart(multipart)
+    let mut form = uploads::parse_multipart(multipart)
         .await
         .map_err(ApiError::bad)?;
-    let prepared = uploads::prepare_upload(form)
-        .await
-        .map_err(ApiError::bad)?;
-    let theme_id = prepared.id.clone();
+    let requested_id = form.id.trim().to_string();
+    let owner_hash_value = form
+        .owner_hash
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let owner = if owner_hash_value.is_empty() {
+        None
+    } else {
+        if !valid_author_hash(&owner_hash_value) {
+            return Err(ApiError::bad("作者 hash 无效"));
+        }
+        Some(
+            crate::authors::author_by_hash(&state.db, &owner_hash_value)
+                .await
+                .map_err(ApiError::internal)?
+                .ok_or_else(|| ApiError::not_found("作者不存在"))?,
+        )
+    };
+    let theme_id = if requested_id.is_empty() {
+        let Some(owner) = owner.as_ref() else {
+            return Err(ApiError::bad("新建主题需要选择作者"));
+        };
+        crate::authors::allocate_unique_theme_id(&state.db, &state.paths, &owner.hash)
+            .await
+            .map_err(ApiError::internal)?
+    } else {
+        requested_id
+    };
     let old_meta = catalog::find_theme_meta(&state.paths, &theme_id);
+    if let (Some(owner), Some((_, old))) = (owner.as_ref(), old_meta.as_ref()) {
+        if let Some(existing) = old.author_hash.as_deref() {
+            if !existing.is_empty() && existing != owner.hash.as_str() {
+                return Err(ApiError::conflict("该主题属于其他作者"));
+            }
+        }
+    }
+    let publish_owner = owner
+        .as_ref()
+        .map(|author| author.hash.clone())
+        .or_else(|| {
+            old_meta
+                .as_ref()
+                .and_then(|(_, old)| old.author_hash.clone())
+                .filter(|value| !value.is_empty())
+        });
+    if let Some(owner) = owner.as_ref() {
+        if !owner.display_name.as_deref().unwrap_or("").is_empty() {
+            form.author = owner.display_name.clone().unwrap_or_default();
+        }
+    }
+    form.id = theme_id.clone();
+    let prepared = uploads::prepare_upload(form).await.map_err(ApiError::bad)?;
     let themes = uploads::publish_theme(
         &state.store,
         &state.settings,
         &state.paths,
+        state.limit_bytes.load(Ordering::Relaxed),
         prepared,
-        None,
+        publish_owner,
         0,
         old_meta,
     )
     .await?;
+    state.refresh_withdrawn_assets();
     Ok(Json(json!({"ok": true, "id": theme_id, "themes": themes.len()})).into_response())
 }
 
@@ -680,7 +1146,11 @@ struct SubmissionBody {
     submission_id: String,
 }
 
-async fn approve(State(state): State<AppState>, body: Bytes) -> ApiResult<Response> {
+async fn approve(
+    State(state): State<AppState>,
+    Extension(actor): Extension<crate::accounts::SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Response> {
     let value = json_body(body).await?;
     let submission = value
         .get("submissionId")
@@ -695,8 +1165,8 @@ async fn approve(State(state): State<AppState>, body: Bytes) -> ApiResult<Respon
     let Some(meta) = catalog::pending_meta(&state.paths, &directory) else {
         return Err(ApiError::not_found("待审核信息损坏"));
     };
-    let prepared = uploads::load_pending_upload(&state.paths, &directory, &meta)
-        .map_err(ApiError::bad)?;
+    let prepared =
+        uploads::load_pending_upload(&state.paths, &directory, &meta).map_err(ApiError::bad)?;
     let theme_id = prepared.id.clone();
     let old_meta = catalog::find_theme_meta(&state.paths, &theme_id);
     if let Some((_, old)) = &old_meta {
@@ -719,15 +1189,83 @@ async fn approve(State(state): State<AppState>, body: Bytes) -> ApiResult<Respon
         &state.store,
         &state.settings,
         &state.paths,
+        state.limit_bytes.load(Ordering::Relaxed),
         prepared,
         author_hash.clone(),
         pending_size,
         old_meta,
     )
     .await?;
+    state.refresh_withdrawn_assets();
     if let Some(hash) = &author_hash {
         if valid_author_hash(hash) {
-            let _ = catalog::grant_author(&state.paths, hash);
+            if crate::authors::author_by_hash(&state.db, hash)
+                .await
+                .map_err(ApiError::internal)?
+                .is_none()
+            {
+                let _ = crate::authors::create_author(
+                    &state.db,
+                    hash,
+                    &meta.author_fingerprint,
+                    &meta.author,
+                    if meta.submitter_user_id.is_empty() {
+                        None
+                    } else {
+                        Some(&meta.submitter_user_id)
+                    },
+                    "active",
+                )
+                .await;
+            }
+            let _ =
+                crate::authors::set_author_status(&state.db, hash, "active", Some(&actor.user_id))
+                    .await;
+            let _ = crate::authors::set_auto_publish(&state.db, hash, true).await;
+            if !meta.submitter_user_id.is_empty() {
+                let _ = crate::authors::bind_author_to_user(
+                    &state.db,
+                    hash,
+                    &meta.submitter_user_id,
+                    Some(&meta.author),
+                )
+                .await;
+            }
+            let _ = crate::authors::touch_author(&state.db, hash).await;
+        }
+    }
+    crate::accounts::finish_submission(
+        &state.db,
+        submission,
+        "approved",
+        Some(&actor.user_id),
+        None,
+    )
+    .await
+    .ok();
+    crate::accounts::audit(
+        &state.db,
+        Some(&actor.user_id),
+        "theme.approve",
+        Some("theme"),
+        Some(&theme_id),
+        Some(submission),
+    )
+    .await
+    .ok();
+    if !meta.submitter_user_id.is_empty() {
+        if let Ok(Some(user)) =
+            crate::accounts::user_by_id(&state.db, &meta.submitter_user_id).await
+        {
+            if let Some(email) = user.email {
+                let _ = crate::mailer::send_notice(
+                    &state.paths,
+                    &email,
+                    "主题投稿已通过审核",
+                    &format!("你的主题「{}」已通过审核并发布。", meta.name),
+                )
+                .await;
+            }
         }
     }
     let _ = tokio::fs::remove_dir_all(&directory).await;
@@ -735,21 +1273,74 @@ async fn approve(State(state): State<AppState>, body: Bytes) -> ApiResult<Respon
     Ok(Json(json!({"ok": true, "id": theme_id, "themes": themes})).into_response())
 }
 
-async fn reject(State(state): State<AppState>, body: Bytes) -> ApiResult<Response> {
+async fn reject(
+    State(state): State<AppState>,
+    Extension(actor): Extension<crate::accounts::SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Response> {
     let value = json_body(body).await?;
     let submission = value
         .get("submissionId")
         .and_then(|value| value.as_str())
-        .unwrap_or("");
-    let Some(directory) = catalog::pending_dir(&state.paths, submission) else {
+        .unwrap_or("")
+        .to_string();
+    let reason = value
+        .get("reason")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let Some(directory) = catalog::pending_dir(&state.paths, &submission) else {
         return Err(ApiError::not_found("待审核主题不存在"));
     };
     if !directory.is_dir() {
         return Err(ApiError::not_found("待审核主题不存在"));
     }
+    let meta = catalog::pending_meta(&state.paths, &directory);
     tokio::fs::remove_dir_all(&directory)
         .await
         .map_err(|_| ApiError::internal("删除待审核目录失败"))?;
+    crate::accounts::finish_submission(
+        &state.db,
+        &submission,
+        "rejected",
+        Some(&actor.user_id),
+        Some(&reason),
+    )
+    .await
+    .ok();
+    crate::accounts::audit(
+        &state.db,
+        Some(&actor.user_id),
+        "theme.reject",
+        Some("theme"),
+        Some(&submission),
+        Some(&reason),
+    )
+    .await
+    .ok();
+    if let Some(meta) = meta {
+        if !meta.submitter_user_id.is_empty() {
+            if let Ok(Some(user)) =
+                crate::accounts::user_by_id(&state.db, &meta.submitter_user_id).await
+            {
+                if let Some(email) = user.email {
+                    let message = if reason.is_empty() {
+                        format!("你的主题「{}」未通过审核。", meta.name)
+                    } else {
+                        format!("你的主题「{}」未通过审核：{reason}", meta.name)
+                    };
+                    let _ = crate::mailer::send_notice(
+                        &state.paths,
+                        &email,
+                        "主题投稿审核结果",
+                        &message,
+                    )
+                    .await;
+                }
+            }
+        }
+    }
     Ok(Json(json!({"ok": true, "submissionId": submission})).into_response())
 }
 
@@ -760,7 +1351,10 @@ struct DeleteBody {
 
 async fn delete_theme(State(state): State<AppState>, body: Bytes) -> ApiResult<Response> {
     let value = json_body(body).await?;
-    let id = value.get("id").and_then(|value| value.as_str()).unwrap_or("");
+    let id = value
+        .get("id")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
     if !valid_theme_id(id) {
         return Err(ApiError::bad("invalid theme id"));
     }
@@ -776,6 +1370,7 @@ async fn delete_theme(State(state): State<AppState>, body: Bytes) -> ApiResult<R
     let themes = catalog::rebuild_catalog(&state.store, &state.paths)
         .await
         .map_err(ApiError::internal)?;
+    state.refresh_withdrawn_assets();
     Ok(Json(json!({"ok": true, "themes": themes.len()})).into_response())
 }
 
@@ -813,20 +1408,26 @@ async fn test_catalog(State(state): State<AppState>) -> ApiResult<Response> {
 }
 
 async fn reload_caddy(State(_state): State<AppState>) -> ApiResult<Response> {
-    system::reload_caddy()
-        .await
-        .map_err(|error| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, format!("system command failed: {error}")))?;
+    system::reload_caddy().await.map_err(|error| {
+        ApiError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("system command failed: {error}"),
+        )
+    })?;
     Ok(Json(json!({"ok": true, "message": "caddy reloaded"})).into_response())
 }
 
 async fn set_token(State(state): State<AppState>, body: Bytes) -> ApiResult<Response> {
     let value = json_body(body).await?;
-    let token = value.get("token").and_then(|value| value.as_str()).unwrap_or("").trim();
+    let token = value
+        .get("token")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim();
     if !valid_token(token) {
         return Err(ApiError::bad("token must be 16-128 safe characters"));
     }
-    set_env_key(&state.paths.token_env, "THEME_STORE_TOKEN", token)
-        .map_err(ApiError::internal)?;
+    set_env_key(&state.paths.token_env, "THEME_STORE_TOKEN", token).map_err(ApiError::internal)?;
     system::schedule_caddy_restart();
     Ok(Json(json!({"ok": true, "message": "token saved; caddy is restarting"})).into_response())
 }
@@ -835,20 +1436,68 @@ async fn generate_token(State(_state): State<AppState>) -> Json<Value> {
     Json(json!({"ok": true, "token": random_hex(32)}))
 }
 
-async fn set_password(State(state): State<AppState>, body: Bytes) -> ApiResult<Response> {
+async fn set_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> ApiResult<Response> {
+    let session = state
+        .sessions
+        .validate(
+            &auth::session_token(&headers, auth::ADMIN_SESSION_COOKIE).unwrap_or_default(),
+            "admin",
+        )
+        .await
+        .ok_or_else(|| ApiError::unauthorized("未登录"))?;
     let value = json_body(body).await?;
-    let password = value.get("password").and_then(|value| value.as_str()).unwrap_or("");
+    let password = value
+        .get("password")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let current_password = value
+        .get("currentPassword")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
     if password.len() < 8 || password.len() > 128 {
-        return Err(ApiError::bad("password must be 8-128 characters"));
+        return Err(ApiError::bad("密码长度需要 8-128 位"));
     }
-    let hash = system::hash_password(password).await.map_err(|error| {
-        ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, format!("could not hash the password: {error}"))
-    })?;
-    set_env_key(&state.paths.admin_env, "ADMIN_PASSWORD_HASH", &hash)
+    if current_password.is_empty() {
+        return Err(ApiError::bad("请输入当前密码"));
+    }
+    let hash = crate::accounts::user_password_hash(&state.db, &session.user_id)
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::bad("当前账号没有密码，无法修改"))?;
+    let current = current_password.clone();
+    let verified = tokio::task::spawn_blocking(move || bcrypt::verify(current, &hash))
+        .await
+        .map_err(|error| ApiError::internal(error.to_string()))?
+        .map_err(|error| ApiError::internal(error.to_string()))?;
+    if !verified {
+        return Err(ApiError::bad("当前密码不正确"));
+    }
+    let pass = password.to_string();
+    let new_hash = tokio::task::spawn_blocking(move || auth::hash_admin_password(&pass))
+        .await
+        .map_err(|error| ApiError::internal(error.to_string()))?
         .map_err(ApiError::internal)?;
-    let _ = tokio::fs::remove_file(&state.paths.admin_password_file).await;
-    system::schedule_caddy_restart();
-    Ok(Json(json!({"ok": true, "message": "password saved; re-open the page and sign in again"})).into_response())
+    crate::accounts::update_password(&state.db, &session.user_id, &new_hash)
+        .await
+        .map_err(ApiError::internal)?;
+    if session.role == "admin" {
+        set_env_key(&state.paths.admin_env, "ADMIN_PASSWORD_HASH", &new_hash)
+            .map_err(ApiError::internal)?;
+        let _ = tokio::fs::remove_file(&state.paths.admin_password_file).await;
+    }
+    state.sessions.revoke_user(&session.user_id).await;
+    Ok(Json(json!({
+        "ok": true,
+        "message": "密码已更新，请重新登录",
+        "relogin": true,
+    }))
+    .into_response())
 }
 
 async fn author_revoke(State(state): State<AppState>, body: Bytes) -> ApiResult<Response> {
@@ -862,10 +1511,26 @@ async fn author_revoke(State(state): State<AppState>, body: Bytes) -> ApiResult<
     if !valid_author_hash(&hash) {
         return Err(ApiError::bad("invalid author hash"));
     }
-    let removed = catalog::revoke_author(&state.paths, &hash).map_err(ApiError::internal)?;
-    if !removed {
+    if crate::authors::author_by_hash(&state.db, &hash)
+        .await
+        .map_err(ApiError::internal)?
+        .is_none()
+    {
         return Err(ApiError::not_found("author not found"));
     }
+    crate::authors::set_author_status(&state.db, &hash, "revoked", None)
+        .await
+        .map_err(ApiError::internal)?;
+    crate::accounts::audit(
+        &state.db,
+        None,
+        "author.revoke",
+        Some("author"),
+        Some(&hash),
+        None,
+    )
+    .await
+    .ok();
     Ok(Json(json!({"ok": true, "message": "author revoked"})).into_response())
 }
 
@@ -874,6 +1539,7 @@ async fn storage_get(State(state): State<AppState>) -> Json<Value> {
         &state.store,
         &state.paths,
         state.settings.backend.as_str(),
+        state.limit_bytes.load(Ordering::Relaxed),
     )
     .await;
     let job = state.jobs.snapshot();
@@ -925,7 +1591,10 @@ async fn storage_test(State(state): State<AppState>, body: Bytes) -> ApiResult<R
 
 async fn storage_root(State(state): State<AppState>, body: Bytes) -> ApiResult<Response> {
     let value = json_body(body).await?;
-    let root_text = value.get("root").and_then(|value| value.as_str()).unwrap_or("");
+    let root_text = value
+        .get("root")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
     let current_root = state
         .paths
         .root
@@ -936,7 +1605,10 @@ async fn storage_root(State(state): State<AppState>, body: Bytes) -> ApiResult<R
     if new_root == current_root {
         return Ok(Json(json!({"ok": true, "message": "存储目录未变化", "stateDir": new_root.to_string_lossy()})).into_response());
     }
-    let migrate = value.get("migrate").and_then(|value| value.as_bool()).unwrap_or(true);
+    let migrate = value
+        .get("migrate")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(true);
     if new_root.exists() {
         let non_empty = std::fs::read_dir(&new_root)
             .map(|mut entries| entries.next().is_some())
@@ -953,18 +1625,15 @@ async fn storage_root(State(state): State<AppState>, body: Bytes) -> ApiResult<R
     };
     let mut settings = (*state.settings).clone();
     settings.root = new_root.clone();
+    settings.limit_bytes = state.limit_bytes.load(Ordering::Relaxed);
     let paths = state.paths.clone();
     let state_clone = state.clone();
     tokio::spawn(async move {
         let result = async {
             tokio::fs::create_dir_all(&new_root).await?;
             if migrate {
-                storage::copy_state_tree(
-                    paths.root.clone(),
-                    new_root.clone(),
-                    progress.clone(),
-                )
-                .await?;
+                storage::copy_state_tree(paths.root.clone(), new_root.clone(), progress.clone())
+                    .await?;
             }
             write_storage_config(&state_clone.paths.storage_env, &settings)?;
             Ok::<(), anyhow::Error>(())
@@ -984,16 +1653,17 @@ async fn storage_root(State(state): State<AppState>, body: Bytes) -> ApiResult<R
 
 async fn storage_backend(State(state): State<AppState>, body: Bytes) -> ApiResult<Response> {
     let value = json_body(body).await?;
-    let settings = config::merge_s3_settings(&state.settings, &value)
+    let mut settings = config::merge_s3_settings(&state.settings, &value)
         .map_err(|error| ApiError::bad(error.to_string()))?;
+    settings.limit_bytes = state.limit_bytes.load(Ordering::Relaxed);
     if settings.backend == Backend::S3 {
         validate_s3_settings(&settings).map_err(|error| ApiError::bad(error.to_string()))?;
     } else {
         validate_storage_root(&settings.root.to_string_lossy(), None)
             .map_err(|error| ApiError::bad(error.to_string()))?;
     }
-    let target = storage::build_store(&settings)
-        .map_err(|error| ApiError::bad(error.to_string()))?;
+    let target =
+        storage::build_store(&settings).map_err(|error| ApiError::bad(error.to_string()))?;
     let same_target = settings.backend == state.settings.backend
         && settings.s3_endpoint == state.settings.s3_endpoint
         && settings.s3_bucket == state.settings.s3_bucket
@@ -1046,6 +1716,47 @@ async fn storage_backend(State(state): State<AppState>, body: Bytes) -> ApiResul
         }
     });
     Ok(Json(job_json(&state)).into_response())
+}
+
+async fn storage_limit(State(state): State<AppState>, body: Bytes) -> ApiResult<Response> {
+    let value = json_body(body).await?;
+    let limit_mb = value
+        .get("limitMb")
+        .and_then(|value| value.as_u64())
+        .ok_or_else(|| ApiError::bad("请输入存储配额（MB）"))?;
+    let limit_bytes = limit_mb
+        .checked_mul(1024 * 1024)
+        .ok_or_else(|| ApiError::bad("存储配额超出范围"))?;
+    config::validate_storage_limit(limit_bytes)
+        .map_err(|error| ApiError::bad(error.to_string()))?;
+
+    let usage = catalog::storage_usage(
+        &state.store,
+        &state.paths,
+        state.settings.backend.as_str(),
+        limit_bytes,
+    )
+    .await;
+    if limit_bytes < usage.used {
+        return Err(ApiError::bad(format!(
+            "配额不能低于当前已用 {}",
+            config::format_storage_size(usage.used)
+        )));
+    }
+    set_env_key(
+        &state.paths.storage_env,
+        "THEME_STORAGE_LIMIT_BYTES",
+        &limit_bytes.to_string(),
+    )
+    .map_err(ApiError::internal)?;
+    state.limit_bytes.store(limit_bytes, Ordering::Relaxed);
+    Ok(Json(json!({
+        "ok": true,
+        "message": "存储配额已更新",
+        "limit": limit_bytes,
+        "usage": usage,
+    }))
+    .into_response())
 }
 
 #[cfg(test)]

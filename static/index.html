@@ -59,6 +59,9 @@ html[data-theme="light"] {
   --text: #0f172a;
   --muted: #43536d;
   --faint: #64748b;
+  --accent: #0e7490;
+  --accent-2: #2563eb;
+  --accent-3: #7c3aed;
   --shadow: 0 24px 60px rgba(15, 23, 42, .12);
   --grid: rgba(100, 116, 139, .075);
   --input-bg: rgba(255, 255, 255, .74);
@@ -204,6 +207,102 @@ main { flex: 1; min-width: 0; padding: 34px clamp(22px, 4.5vw, 64px) 72px; }
 }
 .topbar .lead { margin: 11px 0 0; color: var(--muted); font-size: 14px; max-width: 640px; line-height: 1.7; }
 .top-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding-top: 8px; }
+
+.user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 11px 5px 5px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.user-chip .avatar-sm {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--gradient);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+.user-chip .user-name { color: var(--muted); font-size: 12px; font-weight: 600; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
+.settings-grid .card.wide { grid-column: 1 / -1; }
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 14px;
+  margin-bottom: 16px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--input-bg);
+}
+.account-row .avatar {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--gradient);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 800;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, .22);
+}
+.account-row .account-meta { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.account-row .account-meta b { font-size: 14px; }
+.account-row .account-meta span { color: var(--faint); font-size: 11.5px; }
+.account-row .pill { margin-left: auto; }
+.account-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 900px) { .account-fields { grid-template-columns: 1fr; } }
+.pill.ok { color: var(--ok); border-color: rgba(74, 222, 128, .28); background: rgba(74, 222, 128, .08); }
+[data-theme-choice].active { border-color: var(--line-strong); background: var(--gradient-soft); }
+.theme-options { display: grid; gap: 10px; }
+.theme-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  border-radius: 14px;
+}
+.theme-preview {
+  flex: none;
+  display: flex;
+  gap: 3px;
+  width: 58px;
+  height: 40px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.theme-preview i { flex: 1; border-radius: 3px; background: rgba(255, 255, 255, .14); }
+.theme-preview i:first-child { flex: none; width: 16px; background: linear-gradient(180deg, #22d3ee, #6366f1); opacity: .85; }
+.theme-preview.dark { background: #0b1020; }
+.theme-preview.light { background: #f1f5fb; border-color: #d5dfec; }
+.theme-preview.light i { background: rgba(15, 23, 42, .14); }
+.theme-preview.light i:first-child { background: linear-gradient(180deg, #0891b2, #4f46e5); }
+.theme-option-text { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.theme-option-text b { font-size: 13px; }
+.theme-option-text small { color: var(--faint); font-size: 11.5px; }
+.theme-check { flex: none; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--line); color: transparent; }
+.theme-option.active .theme-check { color: #fff; border-color: transparent; background: var(--gradient); }
+@media (max-width: 1000px) {
+  .settings-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .settings-grid .grid { grid-template-columns: 1fr !important; }
+  .user-chip .user-name { display: none; }
+}
 .pill {
   display: inline-flex;
   align-items: center;
@@ -271,7 +370,7 @@ section { scroll-margin-top: 96px; margin-top: 38px; }
 .stat .value { margin-top: 10px; font-size: 32px; font-weight: 800; letter-spacing: -.045em; line-height: 1; }
 .stat .sub { margin-top: 8px; color: var(--faint); font-size: 11.5px; }
 
-.grid { display: grid; grid-template-columns: 1.25fr .75fr; gap: 14px; margin-top: 14px; }
+.grid { display: grid; grid-template-columns: 1.25fr .75fr; gap: 14px; margin-top: 14px; align-items: start; }
 .card {
   position: relative;
   overflow: hidden;
@@ -325,6 +424,10 @@ input::placeholder, textarea::placeholder { color: var(--faint); }
 }
 .field .mini:hover { color: var(--text); background: var(--gradient-soft); }
 .row { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 12px; }
+.upload-progress { margin-top: 14px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--input-bg); }
+.upload-progress-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 7px; color: var(--muted); font-size: 11.5px; }
+.progress-track { height: 7px; overflow: hidden; border-radius: 99px; background: var(--line); }
+.progress-track i { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--gradient); transition: width .18s ease; }
 button {
   height: 40px;
   padding: 0 14px;
@@ -399,6 +502,21 @@ pre { margin: 0; padding: 17px; overflow: auto; border-radius: 15px; border: 1px
 footer { margin-top: 38px; padding-top: 18px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: 12px; color: var(--faint); font-size: 11.5px; flex-wrap: wrap; }
 
 .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 15px; }
+.theme-card { cursor: pointer; }
+.sha-tag { font-family: var(--font-mono); color: var(--ok); }
+.theme-detail-dialog { width: min(680px, calc(100vw - 32px)); max-height: 86vh; padding: 0; border: 1px solid var(--line-strong); border-radius: 20px; background: var(--panel); color: var(--text); box-shadow: var(--shadow); }
+.theme-detail-dialog::backdrop { background: rgba(0, 0, 0, .62); backdrop-filter: blur(3px); }
+.theme-detail-head { display: flex; align-items: center; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--line); }
+.theme-detail-head h3 { margin: 0; flex: 1; font-size: 17px; }
+.theme-detail-body { max-height: calc(86vh - 75px); overflow: auto; padding: 18px 20px 22px; }
+.theme-detail-hero { width: 100%; max-height: 260px; object-fit: cover; border-radius: 14px; border: 1px solid var(--line); margin-bottom: 14px; }
+.theme-detail-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; color: var(--faint); font-size: 12px; }
+.theme-detail-meta span { padding: 3px 8px; border: 1px solid var(--line); border-radius: 99px; background: var(--input-bg); }
+.theme-detail-section { margin-top: 14px; }
+.theme-detail-section h4 { margin: 0 0 6px; font-size: 13px; }
+.sha-box { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--input-bg); font-family: var(--font-mono); font-size: 11px; line-height: 1.6; word-break: break-all; color: var(--muted); }
+.sha-ok { color: var(--ok); }
+.sha-missing { color: var(--warn); }
 .theme-card {
   overflow: hidden;
   border-radius: 20px;
@@ -427,6 +545,7 @@ html[data-theme="light"] .pending-preview .fallback { background: linear-gradien
 .theme-tags span { padding: 2px 7px; border-radius: 99px; color: var(--tag-text); background: var(--tag-bg); border: 1px solid var(--tag-border); font-size: 10px; }
 .empty { padding: 36px 22px; border: 1px dashed var(--line); border-radius: 20px; background: var(--panel); color: var(--faint); font-size: 12.5px; text-align: center; }
 .empty b { display: block; margin-bottom: 5px; color: var(--muted); font-size: 13.5px; }
+.hidden { display: none !important; }
 .storage-bar { height: 8px; margin-top: 10px; overflow: hidden; border-radius: 99px; background: var(--line); }
 .storage-bar i { display: block; height: 100%; width: 0; border-radius: 99px; background: var(--gradient); transition: width .3s; }
 
@@ -446,6 +565,7 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
 .search { position: relative; flex: 1; min-width: 220px; }
 .search svg { position: absolute; left: 12px; top: 50%; width: 16px; height: 16px; color: var(--faint); transform: translateY(-50%); pointer-events: none; }
 .search input { margin: 0; padding-left: 36px; }
+.nav-label { margin: 12px 10px 3px; color: var(--faint); font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
 .nav-badge { display: none; min-width: 18px; height: 18px; margin-left: auto; padding: 0 5px; border-radius: 99px; background: rgba(251, 191, 36, .16); border: 1px solid rgba(251, 191, 36, .28); color: var(--warn); font-size: 10px; line-height: 16px; text-align: center; }
 
 .pending-card {
@@ -464,6 +584,9 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
 .pending-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .pending-preview .fallback { position: absolute; inset: 0; display: grid; place-items: center; color: var(--faint); font-size: 12px; }
 .pending-body { min-width: 0; padding: 16px 18px; }
+.user-card { grid-template-columns: minmax(0, 1fr); }
+.user-card .meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 720px) { .user-card .meta { grid-template-columns: 1fr; } }
 .pending-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 .pending-actions .validation { margin-right: auto; padding: 4px 8px; border-radius: 99px; font-size: 10.5px; }
 .pending-actions .validation.ok { color: var(--ok); background: rgba(74, 222, 128, .08); border: 1px solid rgba(74, 222, 128, .18); }
@@ -473,6 +596,7 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
 .pending-actions .reject { color: var(--bad); background: rgba(251, 113, 133, .08); border-color: rgba(251, 113, 133, .26); }
 
 .author-card { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 9px; padding: 13px 16px; border: 1px solid var(--line); border-radius: 15px; background: var(--panel); }
+.author-card b { display: block; margin-bottom: 3px; }
 .author-fp { flex: 1; min-width: 180px; color: var(--code-text); font-family: var(--font-mono); font-size: 12px; word-break: break-all; }
 .author-meta { display: flex; flex-wrap: wrap; gap: 10px; color: var(--faint); font-size: 11px; }
 .author-actions button { height: 30px; color: var(--bad); background: rgba(251, 113, 133, .08); border-color: rgba(251, 113, 133, .26); font-size: 11.5px; }
@@ -481,6 +605,7 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
 .mention-hints{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .mention-chip{height:28px;padding:0 9px;border-radius:99px;font-family:var(--font-mono);font-size:11px;font-weight:500;color:var(--accent-2);background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.2)}
 .mention-chip:hover{background:rgba(96,165,250,.15);border-color:rgba(96,165,250,.4)}
+.mention-chip.active{background:var(--gradient-soft);border-color:var(--line-strong);color:var(--text)}
 .theme-desc a,.theme-desc .mention{color:var(--accent-2);text-decoration:none;border-bottom:1px dashed rgba(96,165,250,.45)}
 .theme-desc a:hover{border-bottom-style:solid}
 .theme-desc code{padding:1px 4px;border-radius:5px;background:var(--code-bg);color:var(--code-text);font-family:var(--font-mono);font-size:.92em}
@@ -519,14 +644,21 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
       <div><h1>主题镜像</h1><p>SukiSU Ultra Console</p></div>
     </div>
     <nav>
+      <div class="nav-label">总览</div>
       <a href="#overview" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg>概览</a>
-      <a href="#pending"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 5h14v14H5z"/><path d="M8 9h8M8 13h5"/></svg>待审核 <span class="nav-badge" id="pendingNavBadge">0</span></a>
+      <div class="nav-label">账号</div>
+      <a href="#users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="8" r="3"/><path d="M3 20c.7-4 2.7-6 6-6s5.3 2 6 6"/><path d="M16 5.5a3 3 0 0 1 0 5.5M18 14c2.2.5 3.5 2.5 4 6"/></svg>用户 <span class="nav-badge" id="usersNavBadge">0</span></a>
       <a href="#authors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="5" width="17" height="14" rx="3"/><circle cx="8.5" cy="10" r="2"/><path d="M5.8 16c.4-2 1.3-3 2.7-3s2.3 1 2.7 3"/><path d="M14 9h4M14 12h4"/></svg>作者许可</a>
+      <div class="nav-label">主题</div>
+      <a href="#pending"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 5h14v14H5z"/><path d="M8 9h8M8 13h5"/></svg>待审核 <span class="nav-badge" id="pendingNavBadge">0</span></a>
       <a href="#themes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="m4 16 4.5-4.5 3 3 3-3L20 16"/><circle cx="15.5" cy="8.5" r="1.6"/></svg>主题预览</a>
       <a href="#upload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>上传主题</a>
+      <div class="nav-label">系统</div>
       <a href="#storage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/><path d="M4.5 11.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg>存储</a>
       <a href="#api"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 9 4 12l4 3M16 9l4 3-4 3M13 5l-2 14"/></svg>API 接口</a>
-      <a href="#security"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="10" width="14" height="10" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>安全与令牌</a>
+      <a href="#network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.4 3.6 5.3 3.6 8.5s-1.2 6.1-3.6 8.5c-2.4-2.4-3.6-5.3-3.6-8.5S9.6 5.9 12 3.5Z"/></svg>网络</a>
+      <a href="#auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="m4 7 8 6 8-6"/></svg>认证</a>
+      <a href="#settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H10a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V10a1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.6 1Z"/></svg>设置</a>
       <a href="#access"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><circle cx="12" cy="8" r=".8" fill="currentColor" stroke="none"/></svg>接入信息</a>
     </nav>
     <div class="side-foot">
@@ -534,7 +666,7 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
       <div class="side-line"><span>Caddy</span><b id="sideCaddy">–</b></div>
       <div class="side-line"><span>存储</span><b id="sideStorage">–</b></div>
       <div class="side-line"><span>待审核</span><b id="sidePending">–</b></div>
-      <div class="side-line"><span>版本</span><b>1.0</b></div>
+      <div class="side-line"><a href="/account/" target="_blank" style="color:var(--muted);text-decoration:none">用户中心</a><b>↗</b></div>
     </div>
   </aside>
 
@@ -543,10 +675,14 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
       <div>
         <div class="crumb" id="pageCrumb">Armbian · Overview</div>
         <h2>主题镜像控制台</h2>
-        <p class="lead">管理访问令牌、审核主题投稿，以及查看客户端需要使用的 API 地址。</p>
+        <p class="lead" id="pageLead">管理访问令牌、审核主题投稿，以及查看客户端需要使用的 API 地址。</p>
       </div>
       <div class="top-actions">
         <div class="pill"><span class="dot" id="topDot"></span><span id="topStatus">连接中…</span></div>
+        <div class="user-chip"><span class="avatar-sm" id="topAvatar">A</span><span class="user-name" id="topUser">admin</span></div>
+        <button class="icon-btn" id="logoutTop" title="退出登录" aria-label="退出登录">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h9"/></svg>
+        </button>
         <button class="icon-btn" id="themeToggle" title="切换深色/浅色">
           <svg class="theme-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2Z"/></svg>
           <svg class="theme-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M19.1 4.9l-1.6 1.6M6.5 17.5l-1.6 1.6"/></svg>
@@ -562,28 +698,23 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
         <div class="stat"><div class="label">主题数量</div><div class="value" id="themeCount">–</div><div class="sub">当前 catalog.json</div></div>
         <div class="stat"><div class="label">访问令牌</div><div class="value" id="tokenState">–</div><div class="sub" id="tokenSub">未设置</div></div>
         <div class="stat"><div class="label">Caddy</div><div class="value" id="caddyState">–</div><div class="sub">TLS / 反向代理</div></div>
-        <div class="stat"><div class="label">存储模式</div><div class="value" id="storageMode">本地</div><div class="sub" id="storageSub">1.2 GB 配额</div></div>
+        <div class="stat"><div class="label">存储模式</div><div class="value" id="storageMode">本地</div><div class="sub" id="storageSub">正在读取配额</div></div>
       </div>
 
       <div class="grid">
         <div class="card">
-          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15 7a4 4 0 1 1-3.8 5.2L4 19.4V21h2.6l1.4-1.4V18h1.6l1.2-1.2v-1.4h1.4l.8-.8A4 4 0 0 1 15 7Z"/><circle cx="16.5" cy="7.5" r="1"/></svg>访问令牌</h4>
-          <p class="hint">当前令牌不会显示在页面上。输入或生成一个新令牌后保存；保存后 Caddy 会自动重启，所有客户端需要同步更新令牌。</p>
-          <label for="tokenInput">新令牌</label>
-          <div class="field">
-            <input id="tokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="输入或生成新令牌">
-            <button class="mini" id="toggleToken" title="显示/隐藏">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.7"/></svg>
-            </button>
+          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3 4.5 6v5.5c0 4.5 3 7.5 7.5 8.5 4.5-1 7.5-4 7.5-8.5V6L12 3Z"/><path d="m9 12 2 2 4-4"/></svg>账户与令牌</h4>
+          <p class="hint">当前登录用户、访问令牌和管理服务状态。</p>
+          <div class="meta">
+            <div class="kv"><span>登录用户</span><b id="overviewUser">admin</b></div>
+            <div class="kv"><span>访问令牌</span><b id="overviewTokenState">–</b></div>
+            <div class="kv"><span>管理员服务</span><b id="overviewAdminState">–</b></div>
           </div>
-          <div class="strength"><span>令牌强度</span><span class="bar"><i id="strengthBar"></i></span><span id="strengthLabel">–</span></div>
           <div class="row">
-            <button class="primary" id="saveToken"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12.5 9.5 17 19 7.5"/></svg>保存令牌</button>
-            <button id="generateToken"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="m12 3 1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3Z"/><path d="m19 15 .8 1.8 1.7.7-1.7.7L19 20l-.8-1.8-1.7-.7 1.7-.7L19 15Z"/></svg>生成</button>
-            <button id="copyToken"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="9" y="9" width="10" height="10" rx="2"/><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg>复制</button>
+            <a class="pill" href="#settings" style="text-decoration:none">打开设置</a>
+            <button id="overviewLogout">退出登录</button>
           </div>
         </div>
-
         <div class="card">
           <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg>快捷操作</h4>
           <p class="hint">上传或删除主题后重建本地 catalog；重载只刷新 Caddy 配置。</p>
@@ -603,6 +734,39 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
             <a class="pill" id="openMirror" target="_blank" rel="noreferrer" style="text-decoration:none"><span class="dot ok"></span>打开镜像</a>
           </div>
         </div>
+      </div>
+    </section>
+
+    <section id="users" class="page">
+      <div class="section-head"><div><h3>用户</h3><p>管理账号、作者绑定和用户资料。</p></div><span class="pill" id="usersPill">–</span></div>
+      <div class="stats">
+        <div class="stat"><div class="label">用户总数</div><div class="value" id="usersStatTotal">–</div><div class="sub">已注册账号</div></div>
+        <div class="stat"><div class="label">待验证邮箱</div><div class="value" id="usersStatPending">–</div><div class="sub">验证后即可使用</div></div>
+        <div class="stat"><div class="label">作者申请</div><div class="value" id="usersStatAuthors">–</div><div class="sub">待处理绑定/重置</div></div>
+        <div class="stat"><div class="label">已禁用</div><div class="value" id="usersStatDisabled">–</div><div class="sub">不能登录或投稿</div></div>
+      </div>
+      <div class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+          <input id="userSearch" type="search" placeholder="搜索用户名、显示名、邮箱…">
+        </div>
+        <div class="row" id="userTabs">
+          <button data-user-status="pending" class="active">待验证邮箱</button>
+          <button data-user-status="author">作者申请</button>
+          <button data-user-status="all">全部用户</button>
+          <button data-user-status="disabled">已禁用</button>
+        </div>
+      </div>
+      <div id="userList"></div>
+      <div class="empty" id="userEmpty">没有符合条件的用户</div>
+      <div class="card hidden" id="userDetail">
+        <div class="section-head"><div><h3 id="userDetailName">用户详情</h3><p id="userDetailMeta">–</p></div><button id="closeUserDetail">关闭</button></div>
+        <div id="userDetailBody"></div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h4>管理员操作日志</h4>
+        <p class="hint">最近的审核、禁用、作者绑定和重置操作。</p>
+        <div class="list" id="auditList"></div>
       </div>
     </section>
 
@@ -637,17 +801,31 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
     </section>
 
     <section id="upload" class="page">
-      <div class="section-head"><div><h3>上传主题</h3><p>管理员上传会直接发布；管理器投稿会先进入待审核。纯本地存储，上限 1.2 GB。</p></div></div>
+      <div class="section-head"><div><h3>上传主题</h3><p>管理员上传会直接发布；管理器投稿会先进入待审核。当前存储配额 <span id="uploadLimitHint">–</span>。</p></div></div>
       <div class="card">
         <form id="uploadForm">
           <div class="form-grid">
-            <div><label for="upId">主题 ID</label><input id="upId" name="id" placeholder="pink-bow" required></div>
+            <div class="full"><label for="upUpdate">更新已有主题</label><select id="upUpdate"><option value="">新建主题</option></select><div class="field-hint">新建时主题 ID 由作者编号和顺序自动生成；更新时沿用原 ID。</div></div>
+            <div><label for="upAutoId">主题 ID（自动）</label><input id="upAutoId" readonly placeholder="选择作者后自动生成"></div>
             <div><label for="upVersion">版本号</label><input id="upVersion" name="version" type="number" min="1" value="1" required></div>
+            <input id="upId" name="id" type="hidden">
             <div><label for="upName">名称</label><input id="upName" name="name" placeholder="粉色蝴蝶结" required></div>
-            <div><label for="upAuthor">作者</label><input id="upAuthor" name="author" placeholder="Neko"></div>
-            <div><label for="upTags">标签</label><input id="upTags" name="tags" placeholder="light, pink, cute"></div>
-            <div><label for="upLicense">许可证</label><input id="upLicense" name="license" placeholder="CC-BY-4.0"></div>
-            <div><label for="upMin">最低管理器版本</label><input id="upMin" name="minManagerVersion" type="number" min="0" value="0"></div>
+            <div><label for="upAuthorHash">作者</label><select id="upAuthorHash" name="ownerHash"><option value="">选择作者</option></select></div>
+            <div><label for="upAuthor">作者名称</label><input id="upAuthor" name="author" readonly placeholder="选择作者后自动填写"></div>
+            <div><label for="upTags">标签</label><input id="upTags" name="tags" placeholder="light, pink, cute"><div class="mention-hints" data-tag-target="upTags">
+              <button type="button" class="mention-chip" data-tag="light">light</button>
+              <button type="button" class="mention-chip" data-tag="dark">dark</button>
+              <button type="button" class="mention-chip" data-tag="pink">pink</button>
+              <button type="button" class="mention-chip" data-tag="cute">cute</button>
+              <button type="button" class="mention-chip" data-tag="minimal">minimal</button>
+              <button type="button" class="mention-chip" data-tag="gradient">gradient</button>
+              <button type="button" class="mention-chip" data-tag="anime">anime</button>
+              <button type="button" class="mention-chip" data-tag="blue">blue</button>
+              <button type="button" class="mention-chip" data-tag="purple">purple</button>
+              <button type="button" class="mention-chip" data-tag="green">green</button>
+            </div></div>
+            <div><label for="upLicense">许可证</label><select id="upLicense" name="license"><option value="CC-BY-4.0">CC-BY-4.0</option><option value="CC-BY-SA-4.0">CC-BY-SA-4.0</option><option value="CC-BY-NC-4.0">CC-BY-NC-4.0</option><option value="CC-BY-NC-SA-4.0">CC-BY-NC-SA-4.0</option><option value="CC0-1.0">CC0-1.0</option><option value="MIT">MIT</option><option value="Apache-2.0">Apache-2.0</option><option value="GPL-3.0">GPL-3.0</option><option value="All Rights Reserved">All Rights Reserved</option><option value="">未指定</option></select></div>
+            <div><label for="upMin">最低管理器版本</label><input id="upMin" name="minManagerVersion" type="number" min="0" value="0"><div class="field-hint">默认使用当前管理器版本，可手动修改</div></div>
             <div><label for="upPackage">主题包 (.sukisu)</label><input id="upPackage" name="package" type="file" accept=".sukisu,application/octet-stream" required></div>
             <div><label for="upPreview">预览图</label><input id="upPreview" name="preview" type="file" accept="image/webp,image/png,image/jpeg" required></div>
             <div><label for="upAvatar">作者头像（可选）</label><input id="upAvatar" name="avatar" type="file" accept="image/webp,image/png,image/jpeg"></div>
@@ -655,16 +833,16 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
             <div class="full">
               <label for="upDescription">描述</label>
               <textarea id="upDescription" name="description" placeholder="主题说明，支持 Markdown"></textarea>
-              <div class="field-hint">支持 Markdown：**粗体**、*斜体*、`代码`、[链接](https://example.com)。输入 @github、@bilibili、@coolapk、@telegram 等可提及其他网站。</div>
+              <div class="field-hint">支持 Markdown：**粗体**、*斜体*、`代码`、[链接](https://example.com)。使用「用户名@github」格式（例如 shirkneko@github）可跳转到对应用户；@github 仍可跳转网站首页。</div>
               <div class="mention-hints" data-target="upDescription">
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="@github">@github</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="@gitee">@gitee</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="@bilibili">@bilibili</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="@coolapk">@coolapk</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="@telegram">@telegram</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="@weibo">@weibo</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="@xiaohongshu">@xiaohongshu</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="@xda">@xda</button>
+                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@github">Github</button>
+                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@gitee">Gitee</button>
+                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@bilibili">Bilibili</button>
+                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@coolapk">Coolapk</button>
+                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@telegram">Telegram</button>
+                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@weibo">Weibo</button>
+                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@xiaohongshu">Xiaohongshu</button>
+                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@xda">Xda</button>
               </div>
             </div>
             <div class="full">
@@ -673,16 +851,23 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
               <div class="field-hint">同样支持 Markdown 与 @ 网站提及。</div>
             </div>
           </div>
+          <div class="upload-progress hidden" id="uploadProgress">
+            <div class="upload-progress-head">
+              <span id="uploadProgressText">准备上传…</span>
+              <span id="uploadProgressPercent">0%</span>
+            </div>
+            <div class="progress-track"><i id="uploadProgressBar"></i></div>
+          </div>
           <div class="row">
             <button class="primary" type="submit" id="uploadBtn">上传并发布</button>
-            <span class="pill" id="uploadHint">单个主题包 ≤ 16 MB，图片 ≤ 2 MB（自动压缩为 WebP）</span>
+            <span class="pill" id="uploadHint">主题包 ≤ 16 MB，单张图片原始 ≤ 12 MB（自动压缩，输出 ≤ 2 MB）</span>
           </div>
         </form>
       </div>
     </section>
 
     <section id="storage" class="page">
-      <div class="section-head"><div><h3>存储</h3><p>配置站点数据目录，或把主题资源放到 S3 兼容对象存储；修改后管理服务会自动重启。</p></div><span class="pill" id="storageBackendPill">本地</span></div>
+      <div class="section-head"><div><h3>存储</h3><p>配置站点数据目录，或把主题资源放到 S3 兼容对象存储；修改目录或后端后管理服务会自动重启。</p></div><span class="pill" id="storageBackendPill">本地</span></div>
       <div class="card">
         <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/><path d="M4.5 11.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg>当前状态</h4>
         <div class="storage-grid">
@@ -693,6 +878,19 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
         </div>
         <div class="storage-bar"><i id="storagePageBar"></i></div>
         <p class="hint" id="storageUsageHint" style="margin-top:10px">正在读取存储状态…</p>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 19V5M4 19h16"/><path d="M8 15v-4M12 15V7M16 15v-6M20 15V4"/></svg>存储配额</h4>
+        <p class="hint">限制已发布资源和待审核文件的总大小；达到配额后新的上传会被拒绝。</p>
+        <div class="form-grid">
+          <div><label for="storageLimitInput">配额（MB）</label><input id="storageLimitInput" type="number" min="64" max="10485760" step="64" placeholder="1200" spellcheck="false"></div>
+          <div><label for="storageLimitUsed">当前已用</label><input id="storageLimitUsed" disabled></div>
+        </div>
+        <div class="row">
+          <button class="primary" id="storageLimitApply">保存配额</button>
+          <span class="pill" id="storageLimitHint">即时生效，无需重启</span>
+        </div>
+        <div class="field-hint">1 GB = 1024 MB；降低配额时不能低于当前已用大小。S3 模式同样按逻辑用量计算。</div>
       </div>
       <div class="card" style="margin-top:14px">
         <h4>数据目录</h4>
@@ -749,27 +947,188 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
       </div>
     </section>
 
-    <section id="security" class="page">
-      <div class="section-head"><div><h3>安全与令牌</h3><p>管理员密码和令牌说明。</p></div></div>
-      <div class="grid">
-        <div class="card">
-          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="10" width="14" height="10" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>管理员密码</h4>
-          <p class="hint">修改控制台 Basic Auth 密码。保存后 Caddy 会重启，需要重新打开页面登录。</p>
-          <label for="newPassword">新密码</label>
-          <input id="newPassword" type="password" autocomplete="new-password" placeholder="至少 8 位">
-          <label for="confirmPassword" style="margin-top:10px">确认新密码</label>
-          <input id="confirmPassword" type="password" autocomplete="new-password" placeholder="再次输入">
-          <div class="row"><button class="primary" id="savePassword">更新管理员密码</button></div>
-          <p class="hint" style="margin:12px 0 0">初始密码在 <span class="inline-code">/etc/sukisu-theme-admin/admin-password</span>，修改成功后会删除该文件。</p>
+    <section id="auth" class="page">
+      <div class="section-head"><div><h3>认证与邮件</h3><p>配置邮箱验证、SMTP 发件服务和 GitHub OAuth 登录。</p></div><span class="pill" id="authPill">–</span></div>
+      <div class="stats">
+        <div class="stat"><div class="label">邮件验证</div><div class="value" id="authMailState">–</div><div class="sub">SMTP 发件服务</div></div>
+        <div class="stat"><div class="label">GitHub 登录</div><div class="value" id="authGithubState">–</div><div class="sub">OAuth App</div></div>
+        <div class="stat"><div class="label">用户中心</div><div class="value" id="authAccountState">–</div><div class="sub" id="authAccountUrl">–</div></div>
+        <div class="stat"><div class="label">生效方式</div><div class="value">即时</div><div class="sub">保存后无需重启</div></div>
+      </div>
+      <div class="card">
+        <h4>SMTP 邮件</h4>
+        <p class="hint">用于注册验证、找回密码和审核结果通知。密码留空表示保持现有密码。</p>
+        <div class="form-grid">
+          <div><label for="smtpHost">SMTP 主机</label><input id="smtpHost" placeholder="smtp.example.com" spellcheck="false"></div>
+          <div><label for="smtpPort">端口</label><input id="smtpPort" type="number" min="1" max="65535" placeholder="587"></div>
+          <div><label for="smtpUsername">用户名</label><input id="smtpUsername" autocomplete="off" spellcheck="false"><div class="field-hint">Gmail 需填写完整邮箱地址</div></div>
+          <div><label for="smtpPassword">密码</label><input id="smtpPassword" type="password" autocomplete="new-password" placeholder="留空保持现有"><div class="field-hint">Gmail 使用应用专用密码，不是账号密码</div></div>
+          <div><label for="smtpFrom">发件人</label><input id="smtpFrom" placeholder="SukiSU <no-reply@example.com>" spellcheck="false"></div>
+          <div><label for="smtpTls">TLS 模式</label><select id="smtpTls"><option value="starttls">STARTTLS (587)</option><option value="tls">隐式 TLS (465)</option><option value="none">无 TLS</option></select></div>
+        </div>
+        <label class="check"><input id="clearSmtpPassword" type="checkbox"> 清除已保存的 SMTP 密码</label>
+        <div class="row">
+          <button class="primary" id="saveAuth">保存认证配置</button>
+          <input id="testEmailTo" type="email" placeholder="测试收件邮箱" style="max-width:240px">
+          <button id="testEmailBtn">发送测试邮件</button>
+        </div>
+        <p class="field-hint">未配置 SMTP 时邮箱注册会返回 503；本地开发可设置 THEME_DEV_MODE=1，邮件链接写入日志。</p>
+        <p class="field-hint">Gmail 示例：smtp.gmail.com / 587 / STARTTLS，用户名填写完整 Gmail 地址，密码填写 Google 应用专用密码。</p>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h4>GitHub OAuth</h4>
+        <p class="hint">用于用户中心 GitHub 登录和绑定。Secret 留空表示保持现有。</p>
+        <div class="form-grid">
+          <div><label for="githubClientId">Client ID</label><input id="githubClientId" spellcheck="false"></div>
+          <div><label for="githubClientSecret">Client Secret</label><input id="githubClientSecret" type="password" autocomplete="new-password" placeholder="留空保持现有"></div>
+          <div class="full"><label for="githubCallback">回调地址</label><input id="githubCallback" spellcheck="false" placeholder="https://example.com/account/api/auth/github/callback"></div>
+        </div>
+        <label class="check"><input id="clearGithubSecret" type="checkbox"> 清除已保存的 GitHub Secret</label>
+        <div class="row">
+          <button class="primary" id="saveGithub">保存 GitHub 配置</button>
+          <button id="testGithubBtn">检查 GitHub 配置</button>
+        </div>
+        <p class="field-hint">回调地址必须与 GitHub OAuth App 中填写的一致；修改后立即生效。</p>
+      </div>
+    </section>
+
+    <section id="network" class="page">
+      <div class="section-head"><div><h3>网络</h3><p>配置管理服务监听地址、端口、公开域名和访问地址。</p></div><span class="pill" id="networkPill">–</span></div>
+      <div class="stats">
+        <div class="stat"><div class="label">管理服务</div><div class="value" id="networkService">–</div><div class="sub">sukisu-theme-web.service</div></div>
+        <div class="stat"><div class="label">Caddy</div><div class="value" id="networkCaddy">–</div><div class="sub">反向代理</div></div>
+        <div class="stat"><div class="label">监听</div><div class="value" id="networkListen">–</div><div class="sub">管理服务内部地址</div></div>
+        <div class="stat"><div class="label">Caddy 上游</div><div class="value" id="networkUpstream">–</div><div class="sub">反向代理目标</div></div>
+      </div>
+      <div class="card">
+        <h4>监听地址</h4>
+        <p class="hint">修改端口后 Caddy 上游会同步更新并自动重启。建议保持 127.0.0.1，由 Caddy/反向代理对外提供服务。</p>
+        <div class="form-grid">
+          <div><label for="networkBind">监听 IP</label><input id="networkBind" placeholder="127.0.0.1" spellcheck="false"><div class="field-hint">可填 127.0.0.1、0.0.0.0、::1 或服务器具体 IP</div></div>
+          <div><label for="networkPort">端口</label><input id="networkPort" type="number" min="1" max="65535" step="1" placeholder="8090"></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h4>公开域名与地址</h4>
+        <p class="hint">域名每行一个，可包含端口。DNS、证书和 TLS 终止仍需在 Caddy/Lucky/域名服务中配置。</p>
+        <div class="form-grid">
+          <div class="full"><label for="networkDomains">公开域名</label><textarea id="networkDomains" placeholder="themes.example.com&#10;themes.example.com:8443"></textarea></div>
+          <div class="full"><label for="networkPublicUrl">镜像公开地址</label><input id="networkPublicUrl" placeholder="https://themes.example.com/" spellcheck="false"></div>
+          <div><label for="networkAdminUrl">管理后台地址</label><input id="networkAdminUrl" placeholder="https://themes.example.com/admin/" spellcheck="false"></div>
+          <div><label for="networkAccountUrl">用户中心地址</label><input id="networkAccountUrl" placeholder="https://themes.example.com/account/" spellcheck="false"></div>
+          <div class="full"><label for="networkGithubCallback">GitHub 回调地址</label><input id="networkGithubCallback" placeholder="https://themes.example.com/account/api/auth/github/callback" spellcheck="false"></div>
+        </div>
+        <div class="row">
+          <button class="primary" id="networkApply">保存并生效</button>
+          <button id="networkTest">测试地址</button>
+          <span class="pill" id="networkHint">自动更新配置并重启</span>
+        </div>
+        <p class="field-hint">保存后会备份配置、更新 Caddyfile、2 秒后重启管理服务；新端口或 Caddy 启动失败会自动回滚。</p>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h4>网络诊断</h4>
+        <div class="meta" id="networkDiag"></div>
+      </div>
+    </section>
+
+    <section id="settings" class="page">
+      <div class="section-head"><div><h3>设置</h3><p>账户、访问令牌、站点信息、存储与外观。</p></div></div>
+      <div class="settings-grid">
+        <div class="card wide">
+          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="4" width="16" height="16" rx="5"/><circle cx="12" cy="10" r="2.6"/><path d="M7.5 18c.7-2.4 2.2-3.6 4.5-3.6s3.8 1.2 4.5 3.6"/></svg>账户</h4>
+          <p class="hint">当前登录用户和密码管理。</p>
+          <div class="account-row">
+            <div class="avatar" id="accountAvatar">A</div>
+            <div class="account-meta"><b id="accountName">admin</b><span>管理员 · <span id="sessionState">已登录</span></span></div>
+            <span class="pill ok" id="sessionPill">已登录</span>
+          </div>
+          <div class="form-grid" style="margin-bottom:12px">
+            <div><label for="adminUsername">用户名</label><input id="adminUsername" autocomplete="username" spellcheck="false" placeholder="管理员用户名"></div>
+          </div>
+          <div class="row" style="margin:-2px 0 14px"><button id="saveUsername">保存用户名</button><span class="field-hint" style="margin:0">修改后下次登录使用新用户名</span></div>
+          <div class="account-fields">
+            <div>
+              <label for="currentPassword">当前密码</label>
+              <div class="field">
+                <input id="currentPassword" type="password" autocomplete="current-password" placeholder="输入当前密码">
+                <button class="mini" type="button" data-toggle-password="currentPassword" title="显示/隐藏密码"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.7"/></svg></button>
+              </div>
+            </div>
+            <div>
+              <label for="newPassword">新密码</label>
+              <div class="field">
+                <input id="newPassword" type="password" autocomplete="new-password" placeholder="至少 8 位">
+                <button class="mini" type="button" data-toggle-password="newPassword" title="显示/隐藏密码"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.7"/></svg></button>
+              </div>
+              <div class="strength"><span>密码强度</span><span class="bar"><i id="passwordStrengthBar"></i></span><span id="passwordStrengthLabel">–</span></div>
+            </div>
+            <div>
+              <label for="confirmPassword">确认新密码</label>
+              <div class="field">
+                <input id="confirmPassword" type="password" autocomplete="new-password" placeholder="再次输入">
+              </div>
+            </div>
+          </div>
+          <div class="row" style="margin-top:14px">
+            <button class="primary" id="savePassword">更新密码</button>
+            <button id="logoutSettings">退出登录</button>
+          </div>
+          <p class="field-hint">修改成功后需要重新登录。</p>
         </div>
         <div class="card">
-          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3 4.5 6v5.5c0 4.5 3 7.5 7.5 8.5 4.5-1 7.5-4 7.5-8.5V6L12 3Z"/><path d="m9 12 2 2 4-4"/></svg>安全说明</h4>
+          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15 7a4 4 0 1 1-3.8 5.2L4 19.4V21h2.6l1.4-1.4V18h1.6l1.2-1.2v-1.4h1.4l.8-.8A4 4 0 0 1 15 7Z"/><circle cx="16.5" cy="7.5" r="1"/></svg>访问令牌</h4>
+          <p class="hint">当前令牌不会显示在页面上。输入或生成一个新令牌后保存；保存后 Caddy 会自动重启，所有客户端需要同步更新令牌。</p>
+          <label for="tokenInput">新令牌</label>
+          <div class="field">
+            <input id="tokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="输入或生成新令牌">
+            <button class="mini" id="toggleToken" title="显示/隐藏">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.7"/></svg>
+            </button>
+          </div>
+          <div class="strength"><span>令牌强度</span><span class="bar"><i id="strengthBar"></i></span><span id="strengthLabel">–</span></div>
+          <div class="row">
+            <button class="primary" id="saveToken"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12.5 9.5 17 19 7.5"/></svg>保存令牌</button>
+            <button id="generateToken"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="m12 3 1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3Z"/><path d="m19 15 .8 1.8 1.7.7-1.7.7L19 20l-.8-1.8-1.7-.7 1.7-.7L19 15Z"/></svg>生成</button>
+            <button id="copyToken"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="9" y="9" width="10" height="10" rx="2"/><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg>复制</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.4 3.6 5.3 3.6 8.5s-1.2 6.1-3.6 8.5c-2.4-2.4-3.6-5.3-3.6-8.5S9.6 5.9 12 3.5Z"/></svg>站点信息</h4>
+          <p class="hint">镜像和管理后台的公开地址。</p>
           <div class="meta">
-            <div class="kv"><span>后台入口</span><b>Basic Auth + HTTPS</b></div>
-            <div class="kv"><span>后台监听</span><b class="url">127.0.0.1:8090</b></div>
-            <div class="kv"><span>镜像认证</span><b>X-Sukisu-Theme-Token</b></div>
-            <div class="kv"><span>令牌保存</span><b>/etc/sukisu-themes/store.env</b></div>
-            <div class="kv"><span>密码哈希</span><b>/etc/sukisu-theme-admin/admin.env</b></div>
+            <div class="kv"><span>镜像地址</span><b class="url" id="settingsPublicUrl">–</b></div>
+            <div class="kv"><span>管理后台</span><b class="url" id="settingsAdminUrl">–</b></div>
+            <div class="kv"><span>目录 API</span><b class="url" id="settingsCatalogUrl">–</b></div>
+            <div class="kv"><span>健康检查</span><b class="url" id="settingsHealthUrl">–</b></div>
+          </div>
+          <div class="row"><a class="pill" href="#access" style="text-decoration:none">查看接入信息</a></div>
+        </div>
+        <div class="card">
+          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/><path d="M4.5 11.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg>存储</h4>
+          <p class="hint">主题资源与元数据的存储方式。</p>
+          <div class="meta">
+            <div class="kv"><span>资源后端</span><b id="settingsStorageMode">–</b></div>
+            <div class="kv"><span>已用 / 配额</span><b id="settingsStorageUsed">–</b></div>
+            <div class="kv"><span>数据目录</span><b class="url" id="settingsStorageDir">–</b></div>
+          </div>
+          <div class="storage-bar"><i id="settingsStorageBar"></i></div>
+          <div class="row"><a class="pill" href="#storage" style="text-decoration:none">打开存储设置</a></div>
+        </div>
+        <div class="card">
+          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M19.1 4.9l-1.6 1.6M6.5 17.5l-1.6 1.6"/></svg>外观</h4>
+          <p class="hint">控制台配色，保存在当前浏览器。</p>
+          <div class="theme-options">
+            <button class="theme-option" data-theme-choice="dark">
+              <span class="theme-preview dark"><i></i><i></i><i></i></span>
+              <span class="theme-option-text"><b>深色</b><small>低亮度界面，适合夜间使用</small></span>
+              <span class="theme-check"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></span>
+            </button>
+            <button class="theme-option" data-theme-choice="light">
+              <span class="theme-preview light"><i></i><i></i><i></i></span>
+              <span class="theme-option-text"><b>浅色</b><small>明亮清爽，适合日间使用</small></span>
+              <span class="theme-check"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></span>
+            </button>
           </div>
         </div>
       </div>
@@ -785,18 +1144,25 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
           <div class="kv"><span>管理后台</span><b class="url" id="adminUrl">–</b></div>
           <div class="kv"><span>管理 API 基础</span><b class="url" id="adminApiBase">–</b></div>
           <div class="kv"><span>请求头</span><b class="url">X-Sukisu-Theme-Token</b></div>
-          <div class="kv"><span>后台服务</span><b class="url">sukisu-theme-admin.service</b></div>
         </div>
       </div>
     </section>
-
-    <footer><span>SukiSU Ultra · Armbian theme mirror console</span><span id="footerUrl">–</span></footer>
   </main>
 </div>
 <div class="toast" id="toast"></div>
+<dialog class="theme-detail-dialog" id="themeDetailDialog">
+  <div class="theme-detail-head">
+    <h3 id="themeDetailTitle">主题详情</h3>
+    <button class="btn small" id="themeDetailClose" type="button">关闭</button>
+  </div>
+  <div class="theme-detail-body" id="themeDetailBody"></div>
+</dialog>
 
 <script>
-const API = '/admin/api';
+const BASE_PATH = location.pathname.replace(/\/?$/, '/');
+const API = BASE_PATH + 'api';
+const LOGIN_URL = '/account/login';
+const SETUP_URL = BASE_PATH + 'setup';
 const $ = id => document.getElementById(id);
 let tokenVisible = false;
 let statusData = null;
@@ -820,12 +1186,47 @@ async function api(path, options = {}) {
       ...(options.headers || {}),
     },
   });
+  if (response.status === 401) {
+    location.replace(LOGIN_URL);
+    throw new Error('登录已过期，请重新登录');
+  }
   if (!response.ok) {
     let message = 'HTTP ' + response.status;
     try { const data = await response.json(); if (data.error) message = data.error; } catch (_) {}
     throw new Error(message);
   }
   return response.json();
+}
+
+function uploadWithProgress(url, form, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader('X-Requested-With', 'SukiSUThemeAdmin');
+    xhr.upload.addEventListener('progress', event => {
+      if (event.lengthComputable && event.total > 0) {
+        onProgress(event.loaded / event.total);
+      }
+    });
+    xhr.addEventListener('load', () => {
+      let data = {};
+      try { data = JSON.parse(xhr.responseText || '{}'); } catch (_) {}
+      if (xhr.status === 401) {
+        location.replace(LOGIN_URL);
+        reject(new Error('登录已过期，请重新登录'));
+        return;
+      }
+      if (xhr.status < 200 || xhr.status >= 300 || data.ok === false) {
+        reject(new Error(data.error || ('HTTP ' + xhr.status)));
+        return;
+      }
+      resolve(data);
+    });
+    xhr.addEventListener('error', () => reject(new Error('网络错误')));
+    xhr.addEventListener('abort', () => reject(new Error('上传已取消')));
+    xhr.send(form);
+  });
 }
 
 function stateText(state) {
@@ -876,10 +1277,92 @@ function updateStrength() {
   $('strengthLabel').textContent = label;
 }
 
+function passwordStrength(value) {
+  let score = 0;
+  if (value.length >= 8) score++;
+  if (value.length >= 12) score++;
+  if (/[a-z]/.test(value) && /[A-Z]/.test(value)) score++;
+  if (/[0-9]/.test(value)) score++;
+  if (/[^A-Za-z0-9]/.test(value)) score++;
+  const pct = Math.min(100, score * 20);
+  return { pct, label: pct >= 80 ? '强' : pct >= 40 ? '中' : '弱' };
+}
+
+function updatePasswordStrength() {
+  const { pct, label } = passwordStrength($('newPassword').value);
+  $('passwordStrengthBar').style.width = pct + '%';
+  $('passwordStrengthLabel').textContent = label;
+}
+
 function copyText(text, message = '已复制') {
   navigator.clipboard.writeText(text)
     .then(() => toast(message))
     .catch(() => toast('复制失败，请手动选择', 'bad'));
+}
+
+let sessionUser = 'admin';
+
+function setUser(name) {
+  sessionUser = (name || 'admin').trim() || 'admin';
+  const initial = sessionUser.slice(0, 1).toUpperCase();
+  ['topUser', 'accountName', 'overviewUser'].forEach(id => {
+    const el = $(id);
+    if (el) el.textContent = sessionUser;
+  });
+  ['topAvatar', 'accountAvatar'].forEach(id => {
+    const el = $(id);
+    if (el) el.textContent = initial;
+  });
+  ['settingsUserPill', 'settingsUserPill2'].forEach(id => {
+    const el = $(id);
+    if (el) el.textContent = sessionUser;
+  });
+  const usernameInput = $('adminUsername');
+  if (usernameInput) usernameInput.value = sessionUser;
+}
+
+async function loadSession() {
+  try {
+    const response = await fetch(API + '/session', {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: { 'X-Requested-With': 'SukiSUThemeAdmin' },
+    });
+    if (!response.ok) {
+      location.replace(LOGIN_URL);
+      return false;
+    }
+    const data = await response.json().catch(() => ({}));
+    if (data.setupRequired) {
+      location.replace(SETUP_URL);
+      return false;
+    }
+    if (!data.authenticated) {
+      location.replace(LOGIN_URL);
+      return false;
+    }
+    setUser(data.username || 'admin');
+    return true;
+  } catch (_) {
+    location.replace(LOGIN_URL);
+    return false;
+  }
+}
+
+async function logout() {
+  try {
+    await fetch(API + '/logout', {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'SukiSUThemeAdmin',
+      },
+      body: '{}',
+    });
+  } catch (_) {}
+  location.replace(LOGIN_URL);
 }
 
 function renderEndpoints(endpoints) {
@@ -913,11 +1396,35 @@ function render(status) {
   const used = Number(storage.used || 0);
   const limit = Number(storage.limit || 0);
   $('storageMode').textContent = status.storageBackend === 's3' ? 'S3 对象存储' : '本地';
+  $('overviewTokenState').textContent = status.tokenSet ? '已设置' : '未设置';
+  $('overviewTokenState').style.color = status.tokenSet ? 'var(--ok)' : 'var(--bad)';
+  $('overviewAdminState').textContent = stateText(status.adminService);
+  $('settingsPublicUrl').textContent = status.publicUrl || '–';
+  $('settingsAdminUrl').textContent = status.adminUrl || '–';
+  $('settingsCatalogUrl').textContent = status.catalogUrl || '–';
+  $('settingsHealthUrl').textContent = status.healthUrl || '–';
+  $('settingsStorageMode').textContent = status.storageBackend === 's3' ? 'S3 对象存储' : '本地磁盘';
+  $('settingsStorageUsed').textContent = formatStorage(used) + ' / ' + formatStorage(limit);
+  $('settingsStorageDir').textContent = status.stateDir || '–';
+  $('settingsStorageBar').style.width = limit ? Math.min(100, used / limit * 100) + '%' : '0%';
   $('storageText').textContent = formatStorage(used) + ' / ' + formatStorage(limit);
   $('storageBar').style.width = limit ? Math.min(100, used / limit * 100) + '%' : '0%';
   $('sideStorage').textContent = formatStorage(used) + ' / ' + formatStorage(limit);
   $('sidePending').textContent = (status.pendingCount ?? 0) + ' 个';
-  $('storageSub').textContent = formatStorage(used) + ' 已用 / 1.2 GB';
+  updateUserStats({
+    total: status.usersCount ?? 0,
+    pending: status.usersPending ?? 0,
+    authorRequests: status.authorRequestsPending ?? 0,
+  });
+  $('storageSub').textContent = formatStorage(used) + ' 已用 / ' + formatStorage(limit);
+  $('uploadLimitHint').textContent = formatStorage(limit);
+  if (status.managerVersionCode && (!$('upMin').value || $('upMin').value === '0')) {
+    $('upMin').value = status.managerVersionCode;
+  }
+  if (document.activeElement !== $('storageLimitInput')) {
+    $('storageLimitInput').value = Math.round(limit / (1024 * 1024));
+  }
+  $('storageLimitUsed').value = formatStorage(used);
   $('sideStatus').textContent = status.caddy === 'active' ? '镜像运行中' : 'Caddy ' + stateText(status.caddy);
   setDot($('sideDot'), status.caddy);
   setDot($('topDot'), status.caddy);
@@ -929,7 +1436,6 @@ function render(status) {
   $('healthUrl').textContent = status.healthUrl || '–';
   $('adminUrl').textContent = status.adminUrl || '–';
   $('adminApiBase').textContent = status.adminApiBase || '–';
-  $('footerUrl').textContent = status.publicUrl || '';
   $('openMirror').href = status.publicUrl || '#';
   renderEndpoints(status.endpoints);
   const catalogUrl = status.catalogUrl || '<catalog-url>';
@@ -958,6 +1464,23 @@ const SITE_MENTIONS = {
   afdian: 'https://afdian.com',
 };
 
+function userMentionUrl(user, platform) {
+  const name = encodeURIComponent(user);
+  switch (platform.toLowerCase()) {
+    case 'github': return 'https://github.com/' + name;
+    case 'gitee': return 'https://gitee.com/' + name;
+    case 'bilibili': return /^\d+$/.test(user) ? 'https://space.bilibili.com/' + name : 'https://search.bilibili.com/all?keyword=' + name;
+    case 'coolapk': return 'https://www.coolapk.com/u/' + name;
+    case 'telegram': return 'https://t.me/' + name;
+    case 'weibo': return 'https://weibo.com/' + name;
+    case 'xiaohongshu': return 'https://www.xiaohongshu.com/user/profile/' + name;
+    case 'xda': return 'https://xdaforums.com/m/' + name + '/';
+    case 'youtube': return 'https://www.youtube.com/@' + name;
+    case 'afdian': return 'https://afdian.com/a/' + name;
+    default: return '';
+  }
+}
+
 function renderInlineMarkdown(value) {
   let html = escapeHtml(value);
   html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
@@ -965,6 +1488,11 @@ function renderInlineMarkdown(value) {
   html = html.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
   html = html.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
     '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+  html = html.replace(/(^|[^\w@])([A-Za-z0-9._-]+)@(github|gitee|bilibili|coolapk|telegram|weibo|xiaohongshu|xda|youtube|afdian)(?![\w.-]*\.)/gi,
+    (match, prefix, user, platform) => {
+      const url = userMentionUrl(user, platform);
+      return url ? `${prefix}<a class="mention" href="${url}" target="_blank" rel="noreferrer">${user}@${platform}</a>` : match;
+    });
   html = html.replace(/(^|[^\w@])@([A-Za-z0-9_-]+)/g, (match, prefix, name) => {
     const url = SITE_MENTIONS[name.toLowerCase()];
     return url
@@ -1044,6 +1572,9 @@ function renderThemeGrid() {
           <span>格式 v${escapeHtml(theme.formatVersion ?? 1)}</span>
           ${theme.author ? `<span class="author">${avatar}作者：${escapeHtml(theme.author)}</span>` : ''}
           <span>${formatSize(theme.size)}</span>
+          ${theme.sha256
+            ? `<span class="sha-tag" title="${escapeHtml(theme.sha256)}">SHA-256 ${escapeHtml(theme.sha256.slice(0, 12))}…</span>`
+            : '<span class="sha-missing">缺少 SHA-256</span>'}
           <span>已发布</span>
         </div>
         <div class="theme-desc">${renderInlineMarkdown(theme.description || '暂无描述')}</div>
@@ -1053,16 +1584,69 @@ function renderThemeGrid() {
     const image = card.querySelector('.theme-preview img');
     if (image) {
       image.addEventListener('error', () => {
+        if (!image.dataset.retried) {
+          image.dataset.retried = '1';
+          const base = image.getAttribute('src') || '';
+          image.src = base + (base.includes('?') ? '&' : '?') + 'retry=' + Date.now();
+          return;
+        }
         image.replaceWith(Object.assign(document.createElement('div'), {
           className: 'fallback',
           textContent: '预览图加载失败',
         }));
       });
     }
-    card.querySelector('.theme-delete').addEventListener('click', () => deleteTheme(theme.id));
+    card.addEventListener('click', () => openThemeDetail(theme));
+    card.querySelector('.theme-delete').addEventListener('click', event => {
+      event.stopPropagation();
+      deleteTheme(theme.id);
+    });
     grid.appendChild(card);
   });
 }
+
+function openThemeDetail(theme) {
+  const dialog = $('themeDetailDialog');
+  if (!dialog || typeof dialog.showModal !== 'function') return;
+  $('themeDetailTitle').textContent = theme.name || theme.id || '主题详情';
+  const preview = theme.previewUrl
+    ? `<img class="theme-detail-hero" src="${escapeHtml(theme.previewUrl)}" alt="${escapeHtml(theme.name)}" loading="lazy">`
+    : '';
+  const tags = (theme.tags || [])
+    .map(tag => `<span>${escapeHtml(tag)}</span>`).join('');
+  const sha = String(theme.sha256 || '');
+  const verified = theme.verified !== false && sha.length === 64;
+  $('themeDetailBody').innerHTML = `
+    ${preview}
+    <div class="theme-detail-meta">
+      <span>ID：${escapeHtml(theme.id || '—')}</span>
+      <span>v${escapeHtml(theme.version || 1)}</span>
+      <span>格式 v${escapeHtml(theme.formatVersion ?? 1)}</span>
+      <span>${formatSize(theme.size)}</span>
+      ${theme.license ? `<span>${escapeHtml(theme.license)}</span>` : ''}
+      ${theme.updatedAt ? `<span>${escapeHtml(formatTime(theme.updatedAt))}</span>` : ''}
+    </div>
+    <div class="theme-detail-meta">${tags}</div>
+    <div class="theme-detail-section">
+      <h4>SHA-256 完整性校验</h4>
+      <div class="sha-box">${sha ? escapeHtml(sha) : '未生成校验值'}</div>
+      <p class="hint ${verified ? 'sha-ok' : 'sha-missing'}">${verified ? '已生成 SHA-256 校验值，管理器下载时会自动校验并在不一致时拒绝安装。' : '缺少有效的 SHA-256 校验值，建议重新上传或重建目录。'}</p>
+    </div>
+    <div class="theme-detail-section">
+      <h4>作者</h4>
+      <p>${escapeHtml(theme.author || '未知')}</p>
+    </div>
+    <div class="theme-detail-section">
+      <h4>描述</h4>
+      <div>${renderInlineMarkdown(theme.description || '暂无描述')}</div>
+    </div>`;
+  dialog.showModal();
+}
+
+$('themeDetailClose').addEventListener('click', () => $('themeDetailDialog').close());
+$('themeDetailDialog').addEventListener('click', event => {
+  if (event.target === $('themeDetailDialog')) $('themeDetailDialog').close();
+});
 
 function renderPending(submissions) {
   pendingItems = submissions || [];
@@ -1104,7 +1688,11 @@ function renderPendingList() {
           <span>格式 v${escapeHtml(item.formatVersion ?? 1)}</span>
           ${item.author ? `<span class="author">${avatar}作者：${escapeHtml(item.author)}</span>` : ''}
           ${item.authorFingerprint ? `<span>作者 ID：${escapeHtml(item.authorFingerprint)}</span>` : ''}
+          ${item.submitterUsername ? `<span>投稿账号：@${escapeHtml(item.submitterUsername)}${item.submitterDisplayName ? ' · ' + escapeHtml(item.submitterDisplayName) : ''}</span>` : ''}
           <span>${formatSize(item.size)}</span>
+          ${item.sha256
+            ? `<span class="sha-tag" title="${escapeHtml(item.sha256)}">SHA-256 ${escapeHtml(item.sha256.slice(0, 12))}…</span>`
+            : '<span class="sha-missing">缺少 SHA-256</span>'}
           <span>${formatTime(item.submittedAt)}</span>
         </div>
         <div class="theme-desc">${renderInlineMarkdown(item.description || '暂无描述')}</div>
@@ -1118,6 +1706,12 @@ function renderPendingList() {
     const image = card.querySelector('.pending-preview img');
     if (image) {
       image.addEventListener('error', () => {
+        if (!image.dataset.retried) {
+          image.dataset.retried = '1';
+          const base = image.getAttribute('src') || '';
+          image.src = base + (base.includes('?') ? '&' : '?') + 'retry=' + Date.now();
+          return;
+        }
         image.replaceWith(Object.assign(document.createElement('div'), {
           className: 'fallback',
           textContent: '预览图加载失败',
@@ -1134,6 +1728,7 @@ let authorItems = [];
 
 function renderAuthors(authors) {
   authorItems = authors || [];
+  populateUploadAuthors();
   const list = $('authorsList');
   list.innerHTML = '';
   $('authorsPill').textContent = authorItems.length + ' 位';
@@ -1144,11 +1739,13 @@ function renderAuthors(authors) {
     card.innerHTML = `
       <span class="author-fp">${escapeHtml(author.fingerprint || author.hash)}</span>
       <span class="author-meta">
-        <span>批准：${formatTime(author.approvedAt)}</span>
-        <span>最近：${formatTime(author.lastUsedAt)}</span>
+        <b>${escapeHtml(author.name || '未命名作者')}</b>
+        <span>${author.code ? '编号 ' + escapeHtml(author.code) + ' · ' : ''}${author.username ? '@' + escapeHtml(author.username) : '未绑定账号'} · ${escapeHtml(author.status || 'active')}</span>
+        <span>批准：${formatTime(author.approvedAt)} · 最近：${formatTime(author.lastUsedAt)}</span>
       </span>
-      <span class="author-actions"><button class="revoke">撤销许可</button></span>`;
-    card.querySelector('.revoke').addEventListener('click', () => revokeAuthor(author.hash, author.fingerprint));
+      <span class="author-actions">${author.status === 'revoked' ? '<span class="pill bad">已撤销</span>' : '<button class="revoke">撤销许可</button>'}</span>`;
+    const revoke = card.querySelector('.revoke');
+    if (revoke) revoke.addEventListener('click', () => revokeAuthor(author.hash, author.fingerprint));
     list.appendChild(card);
   });
 }
@@ -1193,11 +1790,12 @@ async function approvePending(submissionId) {
 }
 
 async function rejectPending(submissionId) {
-  if (!confirm('拒绝并删除这个投稿？')) return;
+  const reason = prompt('拒绝原因（会发送给投稿用户，可留空）：', '');
+  if (reason === null) return;
   try {
     await api('/reject', {
       method: 'POST',
-      body: JSON.stringify({ submissionId }),
+      body: JSON.stringify({ submissionId, reason }),
     });
     toast('已拒绝该投稿');
     await refresh(true);
@@ -1221,6 +1819,7 @@ async function loadThemes() {
   try {
     const data = await api('/themes');
     renderThemes(data.themes || []);
+    populateUploadThemes(data.themes || []);
   } catch (error) {
     $('themePill').textContent = '加载失败';
     $('themeEmpty').style.display = 'block';
@@ -1239,6 +1838,554 @@ async function loadPending() {
     $('pendingNavBadge').style.display = 'none';
   }
 }
+
+let userStatus = 'pending';
+let userQuery = '';
+let selectedUserId = null;
+
+function userStatusText(status) {
+  return ({ email_pending: '待验证邮箱', pending: '待审核', active: '已启用', rejected: '已拒绝', disabled: '已禁用' })[status] || status || '未知';
+}
+
+function userTone(status) {
+  if (status === 'active') return 'ok';
+  if (status === 'pending' || status === 'email_pending') return 'warn';
+  return 'bad';
+}
+
+function userPill(status) {
+  return `<span class="pill ${userTone(status)}">${escapeHtml(userStatusText(status))}</span>`;
+}
+
+function updateUserStats(counts) {
+  const total = counts && counts.total != null ? counts.total : '–';
+  const pending = counts && counts.pending != null ? counts.pending : '–';
+  const authorRequests = counts && counts.authorRequests != null ? counts.authorRequests : '–';
+  const disabled = counts && counts.disabled != null ? counts.disabled : '–';
+  $('usersStatTotal').textContent = total;
+  $('usersStatPending').textContent = pending;
+  $('usersStatAuthors').textContent = authorRequests;
+  $('usersStatDisabled').textContent = disabled;
+  $('usersPill').textContent = `${total} 位用户`;
+  const badge = $('usersNavBadge');
+  const pendingTotal = Number(pending || 0) + Number(authorRequests || 0);
+  badge.textContent = pendingTotal > 99 ? '99+' : String(pendingTotal);
+  badge.style.display = pendingTotal > 0 ? '' : 'none';
+}
+
+function renderUsers(users) {
+  const list = $('userList');
+  list.innerHTML = '';
+  $('userEmpty').style.display = users.length ? 'none' : 'block';
+  users.forEach(user => {
+    const card = document.createElement('div');
+    card.className = 'pending-card user-card';
+    const authorText = user.authorName ? `${user.authorName} · ${user.authorStatus || ''}` : '未绑定作者';
+    card.innerHTML = `
+      <div class="pending-body">
+        <div class="section-head" style="margin:0 0 8px">
+          <div><h4 style="margin:0">${escapeHtml(user.displayName || user.username)} ${userPill(user.status)}</h4>
+          <p class="hint" style="margin:4px 0 0">@${escapeHtml(user.username)}${user.email ? ' · ' + escapeHtml(user.email) : ''}</p></div>
+          <span class="pill">${escapeHtml(user.role === 'admin' ? '管理员' : '用户')}</span>
+        </div>
+        <div class="meta">
+          <div class="kv"><span>邮箱验证</span><b>${user.emailVerified ? '已完成' : '未完成'}</b></div>
+          <div class="kv"><span>作者身份</span><b>${escapeHtml(authorText)}</b></div>
+          <div class="kv"><span>注册时间</span><b>${escapeHtml(formatTime(user.createdAt))}</b></div>
+        </div>
+        <div class="row" style="margin-top:12px"></div>
+      </div>`;
+    const actions = card.querySelector('.row');
+    const add = (label, action, kind) => {
+      const button = document.createElement('button');
+      button.textContent = label;
+      if (kind === 'primary') button.className = 'primary';
+      if (kind === 'danger') button.className = 'reject';
+      button.addEventListener('click', () => runUserAction(user, action));
+      actions.appendChild(button);
+    };
+    if (user.status === 'pending' || user.status === 'email_pending') {
+      if (user.emailVerified) add('通过审核', 'approve', 'primary');
+      add('拒绝', 'reject', 'danger');
+    }
+    if (user.status === 'active') {
+      add('禁用', 'disable', 'danger');
+      add('重置密码', 'reset-password');
+    }
+    if (user.status === 'disabled' || user.status === 'rejected') add('启用', 'enable');
+    add('查看详情', 'detail');
+    list.appendChild(card);
+  });
+}
+
+async function runUserAction(user, action) {
+  try {
+    if (action === 'detail') {
+      await loadUserDetail(user.id);
+      return;
+    }
+    if (action === 'reject') {
+      const reason = prompt('拒绝原因（可留空）：', '');
+      if (reason === null) return;
+      await api(`/users/${user.id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });
+      toast('已拒绝该账号');
+    } else if (action === 'reset-password') {
+      if (!confirm('发送密码重置邮件给该用户？')) return;
+      const data = await api(`/users/${user.id}/reset-password`, { method: 'POST', body: '{}' });
+      toast(data.message || '重置邮件已发送');
+      return;
+    } else {
+      if (!confirm(`确认对 ${user.username} 执行「${action}」？`)) return;
+      const data = await api(`/users/${user.id}/${action}`, { method: 'POST', body: '{}' });
+      toast(data.message || '操作完成');
+    }
+    await loadUsers();
+    await refresh(true);
+  } catch (error) {
+    toast(error.message, 'bad');
+  }
+}
+
+async function loadUserDetail(id) {
+  try {
+    const data = await api(`/users/${id}`);
+    selectedUserId = id;
+    const user = data.user;
+    $('userDetail').classList.remove('hidden');
+    $('userDetailName').textContent = user.displayName || user.username;
+    $('userDetailMeta').textContent = `@${user.username} · ${user.email || '无邮箱'} · ${userStatusText(user.status)}`;
+    const authorsHtml = (data.authors || []).map(author => `
+      <div class="author-card">
+        <div class="avatar">${escapeHtml((author.displayName || 'A').slice(0, 1).toUpperCase())}</div>
+        <div><b>${escapeHtml(author.displayName || '未命名作者')}</b><span class="author-fp">${escapeHtml(author.fingerprint || author.hash)}</span></div>
+        <span class="pill ${userTone(author.status)}">${escapeHtml(({ active: '已启用', pending: '待审核', retired: '已停用', revoked: '已撤销' })[author.status] || author.status)}</span>
+      </div>`).join('') || '<div class="empty">未绑定作者身份</div>';
+    const submissions = (data.submissions || []).slice(0, 12).map(item => `
+      <div class="item"><div class="item-head"><b>${escapeHtml(item.name || item.id)}</b><span class="pill ${userTone(item.status)}">${escapeHtml(item.status)}</span></div>
+      <div class="item-meta">v${escapeHtml(String(item.version || 1))} · ${escapeHtml(formatTime(item.submittedAt))}${item.rejectReason ? ' · ' + escapeHtml(item.rejectReason) : ''}</div></div>`).join('') || '<div class="empty">没有投稿记录</div>';
+    $('userDetailBody').innerHTML = `
+      <div class="meta">
+        <div class="kv"><span>用户 ID</span><b class="author-fp">${escapeHtml(user.id)}</b></div>
+        <div class="kv"><span>角色</span><b>${escapeHtml(user.role)}</b></div>
+        <div class="kv"><span>邮箱验证</span><b>${user.emailVerified ? '已完成' : '未完成'}</b></div>
+        <div class="kv"><span>主题数量</span><b>${data.themeCount || 0}</b></div>
+        <div class="kv"><span>注册时间</span><b>${escapeHtml(formatTime(user.createdAt))}</b></div>
+      </div>
+      <div class="row" style="margin:14px 0">
+        <button id="detailApprove">通过审核</button>
+        <button id="detailDisable">禁用账号</button>
+        <button id="detailEnable">启用账号</button>
+        <button id="detailResetPassword">重置密码</button>
+        <button id="detailResetAuthor">重置作者 ID</button>
+        <button id="detailBindAuthor">绑定作者</button>
+        <button id="detailRole">${user.role === 'admin' ? '取消管理员' : '设为管理员'}</button>
+      </div>
+      <div style="margin-bottom:16px"><h4>作者身份</h4>${authorsHtml}</div>
+      <div><h4>最近投稿</h4>${submissions}</div>`;
+    $('detailApprove').addEventListener('click', () => detailAction('approve'));
+    $('detailDisable').addEventListener('click', () => detailAction('disable'));
+    $('detailEnable').addEventListener('click', () => detailAction('enable'));
+    $('detailResetPassword').addEventListener('click', () => detailAction('reset-password'));
+    $('detailResetAuthor').addEventListener('click', () => resetAuthor(id));
+    $('detailBindAuthor').addEventListener('click', () => bindAuthor(id));
+    $('detailRole').addEventListener('click', () => setRole(id, user.role === 'admin' ? 'user' : 'admin'));
+    $('userDetail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch (error) {
+    toast(error.message, 'bad');
+  }
+}
+
+async function detailAction(action) {
+  if (!selectedUserId) return;
+  if (!confirm(`确认执行「${action}」？`)) return;
+  try {
+    const data = await api(`/users/${selectedUserId}/${action}`, { method: 'POST', body: '{}' });
+    toast(data.message || '操作完成');
+    await loadUserDetail(selectedUserId);
+    await loadUsers();
+  } catch (error) { toast(error.message, 'bad'); }
+}
+
+async function resetAuthor(id) {
+  if (!confirm('生成新的作者 ID？旧 ID 会停用，旧主题保留归属。')) return;
+  try {
+    const data = await api(`/users/${id}/author/reset`, { method: 'POST', body: '{}' });
+    const box = document.createElement('div');
+    box.className = 'notice ok';
+    box.innerHTML = `新作者 ID（只显示一次）：<br><span class="author-fp">${escapeHtml(data.authorId)}</span><br><button id="copyAuthorId">复制</button>`;
+    $('userDetailBody').prepend(box);
+    $('copyAuthorId').addEventListener('click', () => copyText(data.authorId, '作者 ID 已复制'));
+    toast('作者 ID 已重置');
+    await loadUserDetail(id);
+  } catch (error) { toast(error.message, 'bad'); }
+}
+
+async function bindAuthor(id) {
+  const hash = prompt('输入要绑定的作者 hash（64 位十六进制）：', '');
+  if (!hash) return;
+  try {
+    await api(`/users/${id}/author/bind`, { method: 'POST', body: JSON.stringify({ authorHash: hash.trim() }) });
+    toast('作者已绑定');
+    await loadUserDetail(id);
+  } catch (error) { toast(error.message, 'bad'); }
+}
+
+async function setRole(id, role) {
+  if (!confirm(`确认将用户角色改为 ${role}？`)) return;
+  try {
+    await api(`/users/${id}/role`, { method: 'POST', body: JSON.stringify({ role }) });
+    toast('角色已更新');
+    await loadUserDetail(id);
+    await loadUsers();
+  } catch (error) { toast(error.message, 'bad'); }
+}
+
+function renderAuthorRequests(requests) {
+  const list = $('userList');
+  list.innerHTML = '';
+  $('userEmpty').style.display = requests.length ? 'none' : 'block';
+  if (!requests.length) {
+    $('userEmpty').innerHTML = '<b>没有待处理的作者申请</b>用户绑定或新增作者后会出现在这里。';
+    return;
+  }
+  requests.forEach(item => {
+    const card = document.createElement('div');
+    card.className = 'pending-card user-card';
+    const kind = ({ bind: '绑定已有作者', new: '新增作者', reset: '重置作者 ID' })[item.kind] || item.kind;
+    card.innerHTML = `<div class="pending-body">
+      <div class="section-head" style="margin:0 0 8px"><div><h4 style="margin:0">${escapeHtml(kind)}</h4>
+      <p class="hint" style="margin:4px 0 0">${escapeHtml(item.userDisplayName || item.username)} · @${escapeHtml(item.username)}</p></div>${userPill(item.status)}</div>
+      <div class="meta">
+        <div class="kv"><span>作者名称</span><b>${escapeHtml(item.displayName || '–')}</b></div>
+        <div class="kv"><span>作者 hash</span><b class="author-fp">${escapeHtml(item.authorHash || '–')}</b></div>
+        <div class="kv"><span>申请时间</span><b>${escapeHtml(formatTime(item.createdAt))}</b></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="primary" data-action="approve">通过</button>
+        <button class="reject" data-action="reject">拒绝</button>
+      </div>
+    </div>`;
+    card.querySelector('[data-action="approve"]').addEventListener('click', () => reviewAuthorRequest(item.id, 'approve'));
+    card.querySelector('[data-action="reject"]').addEventListener('click', () => reviewAuthorRequest(item.id, 'reject'));
+    list.appendChild(card);
+  });
+}
+
+async function reviewAuthorRequest(id, action) {
+  let body = {};
+  if (action === 'reject') {
+    const reason = prompt('拒绝原因（可留空）：', '');
+    if (reason === null) return;
+    body = { reason };
+  } else if (!confirm('通过这个作者申请？')) {
+    return;
+  }
+  try {
+    const data = await api(`/author-requests/${id}/${action}`, { method: 'POST', body: JSON.stringify(body) });
+    toast(data.message || '操作完成');
+    await loadUsers();
+    await refresh(true);
+  } catch (error) { toast(error.message, 'bad'); }
+}
+
+async function loadAudit() {
+  try {
+    const data = await api('/audit?limit=50');
+    const items = data.items || [];
+    $('auditList').innerHTML = items.length ? items.map(item => `
+      <div class="item"><div class="item-head"><b>${escapeHtml(item.action)}</b><span class="pill">${escapeHtml(item.actor || 'system')}</span></div>
+      <div class="item-meta">${escapeHtml(item.targetType || '')} ${escapeHtml(item.targetId || '')} · ${escapeHtml(formatTime(item.createdAt))}${item.detail ? '<br>' + escapeHtml(item.detail) : ''}</div></div>`).join('') : '<div class="empty">还没有操作记录</div>';
+  } catch (_) {}
+}
+
+async function loadUsers() {
+  try {
+    if (userStatus === 'author') {
+      const data = await api('/author-requests?status=pending');
+      renderAuthorRequests(data.requests || []);
+      const counts = await api('/users?status=all');
+      updateUserStats(counts.counts || {});
+      loadAudit();
+      return;
+    }
+    const status = userStatus === 'all' ? '' : userStatus;
+    const data = await api(`/users?status=${encodeURIComponent(status)}&q=${encodeURIComponent(userQuery)}`);
+    renderUsers(data.users || []);
+    updateUserStats(data.counts || {});
+    loadAudit();
+  } catch (error) {
+    $('userEmpty').style.display = 'block';
+    $('userEmpty').textContent = '用户列表加载失败：' + error.message;
+  }
+}
+
+$('userSearch').addEventListener('input', () => {
+  userQuery = $('userSearch').value.trim();
+  clearTimeout(loadUsers.timer);
+  loadUsers.timer = setTimeout(loadUsers, 250);
+});
+document.querySelectorAll('[data-user-status]').forEach(button => {
+  button.addEventListener('click', () => {
+    document.querySelectorAll('[data-user-status]').forEach(item => item.classList.toggle('active', item === button));
+    userStatus = button.dataset.userStatus;
+    selectedUserId = null;
+    $('userDetail').classList.add('hidden');
+    loadUsers();
+  });
+});
+$('closeUserDetail').addEventListener('click', () => {
+  $('userDetail').classList.add('hidden');
+  selectedUserId = null;
+});
+
+async function loadNetwork() {
+  try {
+    const data = await api('/network');
+    const settings = data.settings || {};
+    $('networkBind').value = settings.bind || '';
+    $('networkPort').value = settings.port || '';
+    $('networkDomains').value = (settings.domains || []).join('\n');
+    $('networkPublicUrl').value = settings.publicUrl || '';
+    $('networkAdminUrl').value = settings.adminUrl || '';
+    $('networkAccountUrl').value = settings.accountUrl || '';
+    $('networkGithubCallback').value = settings.githubCallback || '';
+    $('networkService').textContent = stateText(data.adminService);
+    $('networkCaddy').textContent = stateText(data.caddy);
+    $('networkListen').textContent = `${settings.bind || '–'}:${settings.port || '–'}`;
+    $('networkUpstream').textContent = data.upstream || '–';
+    $('networkPill').textContent = data.systemctlDisabled ? '本地模式' : '已连接';
+    $('networkDiag').innerHTML = [
+      `<div class="kv"><span>Caddyfile</span><b class="url">${escapeHtml(data.caddyfile || '–')}</b></div>`,
+      `<div class="kv"><span>Caddy 上游匹配</span><b>${data.caddyUpstreamFound ? '是' : '否'}</b></div>`,
+      `<div class="kv"><span>systemctl</span><b>${data.systemctlDisabled ? '已禁用' : '可用'}</b></div>`,
+      `<div class="kv"><span>公开域名</span><b>${escapeHtml((settings.domains || []).join(', ') || '–')}</b></div>`,
+      `<div class="kv"><span>管理服务</span><b>${escapeHtml(stateText(data.adminService))}</b></div>`,
+      `<div class="kv"><span>Caddy</span><b>${escapeHtml(stateText(data.caddy))}</b></div>`,
+    ].join('');
+  } catch (error) {
+    toast('网络状态读取失败：' + error.message, 'bad');
+  }
+}
+
+function networkPayload() {
+  return {
+    bind: $('networkBind').value.trim(),
+    port: Number($('networkPort').value),
+    domains: $('networkDomains').value.split(/\n|,/).map(item => item.trim()).filter(Boolean),
+    publicUrl: $('networkPublicUrl').value.trim(),
+    adminUrl: $('networkAdminUrl').value.trim(),
+    accountUrl: $('networkAccountUrl').value.trim(),
+    githubCallback: $('networkGithubCallback').value.trim(),
+  };
+}
+
+$('networkTest').addEventListener('click', async () => {
+  try {
+    const data = await api('/network/test', { method: 'POST', body: JSON.stringify(networkPayload()) });
+    toast(data.message || '配置有效');
+  } catch (error) {
+    toast('测试失败：' + error.message, 'bad');
+  }
+});
+
+$('networkApply').addEventListener('click', async () => {
+  const payload = networkPayload();
+  if (!payload.bind || !Number.isInteger(payload.port) || payload.port < 1 || payload.port > 65535) {
+    toast('请填写有效的监听 IP 和端口', 'bad');
+    return;
+  }
+  if (!payload.domains.length) {
+    toast('至少填写一个公开域名', 'bad');
+    return;
+  }
+  if (!confirm('保存后管理服务将重启，期间后台会短暂中断。确认继续？')) return;
+  try {
+    const data = await api('/network', { method: 'POST', body: JSON.stringify(payload) });
+    toast(data.message || '网络配置已保存');
+    if (data.restart) {
+      setTimeout(() => location.reload(), 6000);
+    } else {
+      loadNetwork();
+    }
+  } catch (error) {
+    toast('保存失败：' + error.message, 'bad');
+  }
+});
+
+async function loadAuthSettings() {
+  try {
+    const data = await api('/auth-settings');
+    $('smtpHost').value = data.smtpHost || '';
+    $('smtpPort').value = data.smtpPort || 587;
+    $('smtpUsername').value = data.smtpUsername || '';
+    $('smtpFrom').value = data.smtpFrom || '';
+    $('smtpTls').value = data.smtpTls || 'starttls';
+    $('smtpPassword').value = '';
+    $('smtpPassword').placeholder = data.smtpPasswordConfigured ? '已保存，留空保持现有' : 'SMTP 密码';
+    $('githubClientId').value = data.githubClientId || '';
+    $('githubClientSecret').value = '';
+    $('githubClientSecret').placeholder = data.githubClientSecretConfigured ? '已保存，留空保持现有' : 'GitHub Client Secret';
+    $('githubCallback').value = data.githubCallback || '';
+    $('authMailState').textContent = data.smtpConfigured ? '已配置' : '未配置';
+    $('authMailState').style.color = data.smtpConfigured ? 'var(--ok)' : 'var(--bad)';
+    $('authGithubState').textContent = data.githubConfigured ? '已配置' : '未配置';
+    $('authGithubState').style.color = data.githubConfigured ? 'var(--ok)' : 'var(--bad)';
+    $('authAccountState').textContent = '用户中心';
+    $('authAccountUrl').textContent = data.accountUrl || '–';
+    $('authPill').textContent = data.smtpConfigured && data.githubConfigured ? '全部已配置' : '部分配置';
+    $('authPill').className = 'pill ' + (data.smtpConfigured && data.githubConfigured ? 'ok' : 'warn');
+  } catch (error) {
+    toast('认证配置读取失败：' + error.message, 'bad');
+  }
+}
+
+function authPayload(clearSmtp, clearGithub) {
+  return {
+    smtpHost: $('smtpHost').value.trim(),
+    smtpPort: Number($('smtpPort').value) || 587,
+    smtpUsername: $('smtpUsername').value.trim(),
+    smtpPassword: $('smtpPassword').value,
+    smtpFrom: $('smtpFrom').value.trim(),
+    smtpTls: $('smtpTls').value,
+    githubClientId: $('githubClientId').value.trim(),
+    githubClientSecret: $('githubClientSecret').value,
+    githubCallback: $('githubCallback').value.trim(),
+    clearSmtpPassword: clearSmtp,
+    clearGithubSecret: clearGithub,
+  };
+}
+
+async function saveAuthSettings(clearSmtp, clearGithub) {
+  try {
+    const data = await api('/auth-settings', {
+      method: 'POST',
+      body: JSON.stringify(authPayload(clearSmtp, clearGithub)),
+    });
+    toast(data.message || '认证配置已保存');
+    $('smtpPassword').value = '';
+    $('githubClientSecret').value = '';
+    $('clearSmtpPassword').checked = false;
+    $('clearGithubSecret').checked = false;
+    await loadAuthSettings();
+    await refresh(true);
+  } catch (error) {
+    toast('保存失败：' + error.message, 'bad');
+  }
+}
+
+$('saveAuth').addEventListener('click', () => saveAuthSettings($('clearSmtpPassword').checked, false));
+$('saveGithub').addEventListener('click', () => saveAuthSettings(false, $('clearGithubSecret').checked));
+
+$('testEmailBtn').addEventListener('click', async () => {
+  const to = $('testEmailTo').value.trim();
+  if (!to) {
+    toast('请先填写测试收件邮箱', 'bad');
+    return;
+  }
+  try {
+    const data = await api('/auth-settings/test-email', { method: 'POST', body: JSON.stringify({ to }) });
+    toast(data.message || '测试邮件已发送');
+  } catch (error) {
+    toast('发送失败：' + error.message, 'bad');
+  }
+});
+
+$('testGithubBtn').addEventListener('click', async () => {
+  try {
+    const data = await api('/auth-settings/test-github', { method: 'POST', body: '{}' });
+    toast(data.message || 'GitHub 配置有效');
+    if (data.callback) $('githubCallback').value = data.callback;
+  } catch (error) {
+    toast('检查失败：' + error.message, 'bad');
+  }
+});
+
+function populateUploadAuthors() {
+  const select = $('upAuthorHash');
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = '<option value="">选择作者</option>';
+  authorItems.forEach(author => {
+    const option = document.createElement('option');
+    option.value = author.hash;
+    const name = author.name || author.userDisplayName || author.username || author.fingerprint || author.hash.slice(0, 8);
+    option.textContent = `${name}${author.code ? ' · ' + author.code : ''} · ${author.status || ''}`;
+    option.dataset.name = author.name || author.userDisplayName || '';
+    option.dataset.code = author.code || '';
+    select.appendChild(option);
+  });
+  if (authorItems.some(author => author.hash === current)) select.value = current;
+}
+
+function populateUploadThemes(themes) {
+  const select = $('upUpdate');
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = '<option value="">新建主题</option>';
+  themes.forEach(theme => {
+    const option = document.createElement('option');
+    option.value = theme.id;
+    option.textContent = `${theme.id} · ${theme.name || ''} · v${theme.version}`;
+    option.dataset.version = String(theme.version || 1);
+    option.dataset.author = theme.author || '';
+    select.appendChild(option);
+  });
+  if (themes.some(theme => theme.id === current)) select.value = current;
+}
+
+async function refreshAutoThemeId() {
+  if (!($('upAuthorHash') && $('upAutoId'))) return;
+  const hash = $('upAuthorHash').value;
+  if (!hash || $('upUpdate').value) {
+    if (!hash && !$('upUpdate').value) {
+      $('upAutoId').value = '';
+      $('upId').value = '';
+    }
+    return;
+  }
+  try {
+    const data = await api('/theme-id/next?authorHash=' + encodeURIComponent(hash));
+    $('upAutoId').value = data.id || '';
+    $('upId').value = '';
+    if (data.author) {
+      $('upAuthor').value = data.author.displayName || data.author.name || '';
+      if (data.author.code) {
+        const option = Array.from($('upAuthorHash').options).find(item => item.value === hash);
+        if (option && !option.textContent.includes(data.author.code)) {
+          option.textContent = `${option.textContent.split(' · ')[0]} · ${data.author.code} · ${data.author.status || ''}`;
+        }
+      }
+    }
+  } catch (error) {
+    $('upAutoId').value = '';
+    $('upId').value = '';
+    toast('自动主题 ID 获取失败：' + error.message, 'bad');
+  }
+}
+
+$('upAuthorHash').addEventListener('change', () => {
+  const option = $('upAuthorHash').selectedOptions[0];
+  $('upAuthor').value = option?.dataset.name || '';
+  if (!$('upUpdate').value) refreshAutoThemeId();
+});
+
+$('upUpdate').addEventListener('change', () => {
+  const select = $('upUpdate');
+  const option = select.selectedOptions[0];
+  if (!option || !option.value) {
+    $('upId').value = '';
+    $('upAutoId').value = '';
+    $('upVersion').value = '1';
+    $('upAuthor').value = '';
+    refreshAutoThemeId();
+    return;
+  }
+  $('upId').value = option.value;
+  $('upAutoId').value = option.value;
+  $('upVersion').value = String((Number(option.dataset.version) || 1) + 1);
+  $('upAuthorHash').value = '';
+  $('upAuthor').value = option.dataset.author || '';
+});
 
 let storageJobTimer = null;
 
@@ -1304,6 +2451,10 @@ async function loadStorage() {
       : '0%';
     $('storageUsageHint').textContent =
       `资源 ${formatStorage(usage.assets)} · 待审核 ${formatStorage(usage.pending)} · 配额 ${formatStorage(usage.limit)}`;
+    if (document.activeElement !== $('storageLimitInput')) {
+      $('storageLimitInput').value = Math.round(Number(usage.limit || 0) / (1024 * 1024));
+    }
+    $('storageLimitUsed').value = formatStorage(usage.used);
     $('storageRootInput').value = data.stateDir || '';
     const s3 = data.s3 || {};
     $('s3Endpoint').value = s3.endpoint || '';
@@ -1326,6 +2477,27 @@ async function loadStorage() {
 }
 
 $('storageBackendSelect').addEventListener('change', updateStorageBackendFields);
+
+$('storageLimitApply').addEventListener('click', async () => {
+  const limitMb = Number($('storageLimitInput').value);
+  if (!Number.isInteger(limitMb) || limitMb < 64 || limitMb > 10485760) {
+    toast('配额需要在 64 MB 到 10 TB 之间', 'bad');
+    return;
+  }
+  try {
+    const data = await api('/storage/limit', {
+      method: 'POST',
+      body: JSON.stringify({ limitMb }),
+    });
+    toast(data.message || '存储配额已更新');
+    const usage = data.usage || {};
+    $('storageLimitUsed').value = formatStorage(usage.used);
+    await loadStorage();
+    await refresh(true);
+  } catch (error) {
+    toast('保存配额失败：' + error.message, 'bad');
+  }
+});
 
 $('storageTest').addEventListener('click', async () => {
   const backend = $('storageBackendSelect').value;
@@ -1399,14 +2571,32 @@ async function refresh(silent = false) {
 
 const PAGE_LABELS = {
   overview: 'Overview',
+  users: 'Users',
   pending: 'Review queue',
   authors: 'Author licenses',
   themes: 'Theme preview',
   upload: 'Upload theme',
   storage: 'Storage',
   api: 'API endpoints',
-  security: 'Security',
+  network: 'Network',
+  auth: 'Auth',
+  settings: 'Settings',
   access: 'Access info',
+};
+
+const PAGE_LEADS = {
+  overview: '管理访问令牌、审核主题投稿，以及查看客户端需要使用的 API 地址。',
+  users: '管理用户账号、作者绑定申请、资料和权限。',
+  pending: '检查投稿预览、作者信息与包内容，通过后立即写入 catalog。',
+  authors: '维护可信作者指纹与自动发布许可。',
+  themes: '浏览已发布主题，检查预览图、截图和下载信息。',
+  upload: '从主题包或当前设备预设创建投稿，并在发布前校验内容。',
+  storage: '切换本地磁盘或 S3 兼容存储，查看用量并迁移现有资源。',
+  api: '查看客户端接入所需的目录、资源和鉴权接口。',
+  network: '配置管理服务监听地址、端口、公开域名和访问地址。',
+  auth: '配置邮箱验证、SMTP 和 GitHub OAuth。',
+  settings: '管理管理员账户、访问令牌、站点信息、存储与外观。',
+  access: '查看镜像域名、管理后台入口和客户端接入方式。',
 };
 
 function showPage(id, smooth = false) {
@@ -1422,7 +2612,12 @@ function showPage(id, smooth = false) {
   });
   const crumb = $('pageCrumb');
   if (crumb) crumb.textContent = 'Armbian · ' + PAGE_LABELS[page];
+  const lead = $('pageLead');
+  if (lead && PAGE_LEADS[page]) lead.textContent = PAGE_LEADS[page];
   if (page === 'storage') loadStorage();
+  if (page === 'users') loadUsers();
+  if (page === 'network') loadNetwork();
+  if (page === 'auth') loadAuthSettings();
   window.scrollTo({ top: 0, behavior: smooth ? 'smooth' : 'auto' });
 }
 
@@ -1448,7 +2643,8 @@ document.querySelectorAll('.mention-chip').forEach(button => {
   button.addEventListener('click', () => {
     const field = $(button.dataset.target);
     if (!field) return;
-    const mention = button.dataset.mention + ' ';
+    const template = button.dataset.mention;
+    const mention = template + ' ';
     const start = field.selectionStart ?? field.value.length;
     const end = field.selectionEnd ?? start;
     const before = field.value.slice(0, start);
@@ -1456,15 +2652,30 @@ document.querySelectorAll('.mention-chip').forEach(button => {
     field.value = before + spacer + mention + field.value.slice(end);
     const cursor = start + spacer.length + mention.length;
     field.focus();
-    field.selectionStart = field.selectionEnd = cursor;
+    const at = template.indexOf('@');
+    if (at > 0) {
+      field.setSelectionRange(start + spacer.length, start + spacer.length + at);
+    } else {
+      field.selectionStart = field.selectionEnd = cursor;
+    }
   });
 });
 
-$('themeToggle').addEventListener('click', () => {
-  const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+function applyTheme(next) {
   document.documentElement.dataset.theme = next;
   try { localStorage.setItem('sukisu-admin-theme', next); } catch (_) {}
   $('themeToggle').title = next === 'light' ? '切换到深色' : '切换到浅色';
+  document.querySelectorAll('[data-theme-choice]').forEach(button => {
+    button.classList.toggle('active', button.dataset.themeChoice === next);
+  });
+}
+
+$('themeToggle').addEventListener('click', () => {
+  const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  applyTheme(next);
+});
+document.querySelectorAll('[data-theme-choice]').forEach(button => {
+  button.addEventListener('click', () => applyTheme(button.dataset.themeChoice));
 });
 
 $('refreshBtn').addEventListener('click', () => refresh());
@@ -1477,6 +2688,18 @@ $('pendingSearch').addEventListener('input', event => {
   renderPendingList();
 });
 $('tokenInput').addEventListener('input', updateStrength);
+$('newPassword').addEventListener('input', updatePasswordStrength);
+document.querySelectorAll('[data-toggle-password]').forEach(button => {
+  const input = $(button.dataset.togglePassword);
+  if (!input) return;
+  button.addEventListener('click', () => {
+    input.type = input.type === 'password' ? 'text' : 'password';
+  });
+});
+['logoutTop', 'logoutSettings', 'overviewLogout'].forEach(id => {
+  const el = $(id);
+  if (el) el.addEventListener('click', logout);
+});
 $('toggleToken').addEventListener('click', () => {
   tokenVisible = !tokenVisible;
   $('tokenInput').type = tokenVisible ? 'text' : 'password';
@@ -1533,17 +2756,38 @@ $('testCatalog').addEventListener('click', async () => {
   }
 });
 $('copyCurl').addEventListener('click', () => copyText($('curlExample').textContent, '命令已复制'));
+$('saveUsername').addEventListener('click', async () => {
+  const username = $('adminUsername').value.trim();
+  if (!/^[A-Za-z0-9._-]{3,32}$/.test(username)) { toast('用户名需要 3-32 位字母、数字或 . _ -', 'bad'); return; }
+  if (!confirm('确认修改管理员用户名？下次登录需要使用新用户名。')) return;
+  try {
+    const data = await api('/username', { method: 'POST', body: JSON.stringify({ username }) });
+    setUser(data.username || username);
+    toast(data.message || '用户名已更新');
+  } catch (error) {
+    toast('修改用户名失败：' + error.message, 'bad');
+  }
+});
+
 $('savePassword').addEventListener('click', async () => {
+  const currentPassword = $('currentPassword').value;
   const password = $('newPassword').value;
   const confirmPassword = $('confirmPassword').value;
+  if (!currentPassword) { toast('请输入当前密码', 'bad'); return; }
   if (password.length < 8) { toast('密码至少 8 位', 'bad'); return; }
   if (password !== confirmPassword) { toast('两次输入的密码不一致', 'bad'); return; }
-  if (!confirm('更新后需要重新登录控制台，确认修改？')) return;
+  if (!confirm('修改成功后需要重新登录，确认修改？')) return;
   try {
-    const data = await api('/password', { method: 'POST', body: JSON.stringify({ password }) });
+    const data = await api('/password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, password }),
+    });
     toast(data.message || '密码已更新');
+    $('currentPassword').value = '';
     $('newPassword').value = '';
     $('confirmPassword').value = '';
+    updatePasswordStrength();
+    setTimeout(() => location.replace(LOGIN_URL), 1600);
   } catch (error) {
     toast('修改失败：' + error.message, 'bad');
   }
@@ -1552,20 +2796,35 @@ $('savePassword').addEventListener('click', async () => {
 $('uploadForm').addEventListener('submit', async event => {
   event.preventDefault();
   const button = $('uploadBtn');
+  const progress = $('uploadProgress');
+  const progressBar = $('uploadProgressBar');
+  const progressText = $('uploadProgressText');
+  const progressPercent = $('uploadProgressPercent');
   button.disabled = true;
   button.textContent = '上传中…';
+  progress.classList.remove('hidden');
+  progressBar.style.width = '0%';
+  progressText.textContent = '正在上传…';
+  progressPercent.textContent = '0%';
   try {
-    const response = await fetch('/admin/api/upload-theme', {
-      method: 'POST',
-      body: new FormData($('uploadForm')),
-      headers: { 'X-Requested-With': 'SukiSUThemeAdmin' },
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
-    toast('主题已上传，当前共 ' + (data.themes ?? 0) + ' 个主题');
+    const data = await uploadWithProgress(
+      API + '/upload-theme',
+      new FormData($('uploadForm')),
+      ratio => {
+        const percent = Math.round(Math.max(0, Math.min(1, ratio)) * 100);
+        progressBar.style.width = percent + '%';
+        progressPercent.textContent = percent + '%';
+        progressText.textContent = percent >= 100 ? '服务器校验中…' : '正在上传…';
+      },
+    );
+    progressBar.style.width = '100%';
+    progressPercent.textContent = '100%';
+    progressText.textContent = '已发布';
+    toast('主题已上传：' + (data.id || '') + '，当前共 ' + (data.themes ?? 0) + ' 个主题');
     $('uploadForm').reset();
     await refresh(true);
   } catch (error) {
+    progressText.textContent = '上传失败';
     toast('上传失败：' + error.message, 'bad');
   } finally {
     button.disabled = false;
@@ -1573,9 +2832,39 @@ $('uploadForm').addEventListener('submit', async event => {
   }
 });
 
-pageFromHash();
-refresh();
-setInterval(() => refresh(true), 15000);
+
+document.querySelectorAll('[data-tag-target]').forEach(group => {
+  const input = $(group.dataset.tagTarget);
+  if (!input) return;
+  const sync = () => {
+    const tags = input.value.split(/[,，\n]/).map(item => item.trim()).filter(Boolean);
+    group.querySelectorAll('[data-tag]').forEach(button => {
+      button.classList.toggle('active', tags.includes(button.dataset.tag));
+    });
+  };
+  group.querySelectorAll('[data-tag]').forEach(button => {
+    button.addEventListener('click', () => {
+      const tags = input.value.split(/[,，\n]/).map(item => item.trim()).filter(Boolean);
+      const tag = button.dataset.tag;
+      const index = tags.indexOf(tag);
+      if (index >= 0) tags.splice(index, 1);
+      else if (tags.length < 10) tags.push(tag);
+      input.value = tags.join(', ');
+      sync();
+      input.focus();
+    });
+  });
+  input.addEventListener('input', sync);
+  sync();
+});
+
+(async () => {
+  if (!(await loadSession())) return;
+  applyTheme(document.documentElement.dataset.theme || 'dark');
+  pageFromHash();
+  refresh();
+  setInterval(() => refresh(true), 15000);
+})();
 </script>
 </body>
 </html>

@@ -5,17 +5,32 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
 
-use crate::config::{
-    write_atomic, Paths, MIN_FORMAT_VERSION, CURRENT_FORMAT_VERSION, STORAGE_LIMIT_BYTES,
-};
+use crate::config::{write_atomic, Paths, CURRENT_FORMAT_VERSION, MIN_FORMAT_VERSION};
 use crate::models::{
     AuthorRecord, AuthorsFile, CatalogEntry, CatalogFile, JobState, Meta, PendingMeta, StorageUsage,
 };
 use crate::storage::AssetStore;
 use crate::util::{
-    author_fingerprint, author_key, file_mtime_seconds, normalize_asset_key, now_iso,
-    quote_query, valid_author_hash, valid_submission_id, valid_theme_id,
+    author_fingerprint, author_key, file_mtime_seconds, normalize_asset_key, now_iso, quote_query,
+    valid_author_hash, valid_submission_id, valid_theme_id,
 };
+
+pub const WITHDRAW_RETENTION_DAYS: i64 = 14;
+
+pub fn withdrawal_expires_at(withdrawn_at: &str) -> Option<String> {
+    chrono::DateTime::parse_from_rfc3339(withdrawn_at)
+        .ok()
+        .map(|time| {
+            (time + chrono::Duration::days(WITHDRAW_RETENTION_DAYS))
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+        })
+}
+
+pub fn withdrawal_expired(withdrawn_at: &str) -> bool {
+    chrono::DateTime::parse_from_rfc3339(withdrawn_at)
+        .map(|time| time + chrono::Duration::days(WITHDRAW_RETENTION_DAYS) <= chrono::Utc::now())
+        .unwrap_or(true)
+}
 
 pub fn read_meta_file(path: &Path) -> Option<Meta> {
     let text = fs::read_to_string(path).ok()?;
@@ -62,11 +77,13 @@ pub async fn meta_asset_size(store: &AssetStore, meta: &Meta) -> u64 {
 }
 
 async fn build_catalog_entry(store: &AssetStore, meta: &Meta) -> Option<CatalogEntry> {
+    if meta.withdrawn_at.is_some() {
+        return None;
+    }
     if !valid_theme_id(&meta.id) {
         return None;
     }
-    if normalize_asset_key(&meta.package).is_none()
-        || normalize_asset_key(&meta.preview).is_none()
+    if normalize_asset_key(&meta.package).is_none() || normalize_asset_key(&meta.preview).is_none()
     {
         return None;
     }
@@ -112,6 +129,66 @@ async fn build_catalog_entry(store: &AssetStore, meta: &Meta) -> Option<CatalogE
         }
     }
     Some(entry)
+}
+
+pub async fn author_avatar_key(
+    store: &AssetStore,
+    paths: &Paths,
+    author_hash: &str,
+    author_name: Option<&str>,
+) -> Option<String> {
+    for extension in crate::config::IMAGE_EXTENSIONS {
+        let key = format!("avatars/authors/{author_hash}{extension}");
+        if store.exists(&key).await {
+            return Some(key);
+        }
+    }
+    latest_published_author_avatar(store, paths, author_hash, author_name).await
+}
+
+async fn latest_published_author_avatar(
+    store: &AssetStore,
+    paths: &Paths,
+    author_hash: &str,
+    author_name: Option<&str>,
+) -> Option<String> {
+    let mut candidates: Vec<(u8, String, String)> = Vec::new();
+    let entries = fs::read_dir(&paths.meta).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(meta) = read_meta_file(&path) else {
+            continue;
+        };
+        let hash_matches = meta.author_hash.as_deref() == Some(author_hash);
+        let legacy_name_matches = meta
+            .author_hash
+            .as_deref()
+            .map(str::is_empty)
+            .unwrap_or(true)
+            && author_name
+                .is_some_and(|name| !name.is_empty() && meta.author.eq_ignore_ascii_case(name));
+        if !hash_matches && !legacy_name_matches {
+            continue;
+        }
+        let Some(avatar) = meta.avatar.as_deref().filter(|value| !value.is_empty()) else {
+            continue;
+        };
+        candidates.push((
+            if hash_matches { 0 } else { 1 },
+            meta.updated_at,
+            avatar.to_string(),
+        ));
+    }
+    candidates.sort_by(|left, right| left.0.cmp(&right.0).then(right.1.cmp(&left.1)));
+    for (_, _, key) in candidates {
+        if store.exists(&key).await {
+            return Some(key);
+        }
+    }
+    None
 }
 
 pub async fn rebuild_catalog(store: &AssetStore, paths: &Paths) -> Result<Vec<CatalogEntry>> {
@@ -168,6 +245,54 @@ pub async fn remove_theme_files(
         let _ = fs::remove_file(path);
     }
     Ok(())
+}
+
+pub fn withdrawn_asset_keys(paths: &Paths) -> std::collections::HashSet<String> {
+    let mut keys = std::collections::HashSet::new();
+    let Ok(entries) = fs::read_dir(&paths.meta) else {
+        return keys;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(meta) = read_meta_file(&path) else {
+            continue;
+        };
+        if meta.withdrawn_at.is_some() {
+            keys.extend(meta.asset_keys());
+        }
+    }
+    keys
+}
+
+pub async fn purge_expired_withdrawn(store: &AssetStore, paths: &Paths) -> Result<usize> {
+    let mut removed = 0usize;
+    let Ok(entries) = fs::read_dir(&paths.meta) else {
+        return Ok(0);
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(meta) = read_meta_file(&path) else {
+            continue;
+        };
+        let Some(withdrawn_at) = meta.withdrawn_at.as_deref() else {
+            continue;
+        };
+        if !withdrawal_expired(withdrawn_at) {
+            continue;
+        }
+        remove_theme_files(store, Some(&path), &meta).await?;
+        removed += 1;
+    }
+    if removed > 0 {
+        rebuild_catalog(store, paths).await?;
+    }
+    Ok(removed)
 }
 
 pub fn pending_dir(paths: &Paths, submission: &str) -> Option<PathBuf> {
@@ -247,7 +372,10 @@ pub fn pending_submissions(paths: &Paths) -> Vec<Value> {
                 );
             }
         }
-        let size = package.metadata().map(|metadata| metadata.len()).unwrap_or(0);
+        let size = package
+            .metadata()
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
         let deep = meta
             .validation
             .get("deep")
@@ -265,8 +393,11 @@ pub fn pending_submissions(paths: &Paths) -> Vec<Value> {
             "minManagerVersion": meta.min_manager_version,
             "size": size,
             "submittedAt": meta.submitted_at,
+            "authorHash": meta.author_hash,
             "authorFingerprint": meta.author_fingerprint,
+            "submitterUserId": meta.submitter_user_id,
             "formatVersion": meta.format_version,
+            "sha256": meta.sha256,
             "deepValidated": deep,
             "previewUrl": format!("/admin/api/preview?path={}", quote_query(&preview_rel)),
             "avatarUrl": avatar_url,
@@ -368,6 +499,7 @@ pub async fn storage_usage(
     store: &AssetStore,
     paths: &Paths,
     backend: &str,
+    limit: u64,
 ) -> StorageUsage {
     let mut asset_used = 0u64;
     if let Ok(entries) = fs::read_dir(&paths.meta) {
@@ -385,9 +517,9 @@ pub async fn storage_usage(
     let used = asset_used.saturating_add(pending_used);
     let disk_free = fs4::available_space(&paths.root).unwrap_or(0);
     StorageUsage {
-        limit: STORAGE_LIMIT_BYTES,
+        limit,
         used,
-        free: STORAGE_LIMIT_BYTES.saturating_sub(used),
+        free: limit.saturating_sub(used),
         disk_free,
         assets: asset_used,
         pending: pending_used,
@@ -462,20 +594,16 @@ pub async fn admin_themes(paths: &Paths) -> Vec<Value> {
                 String::new()
             } else {
                 format!(
-                    "/admin/api/preview?path={}",
-                    quote_query(&theme.preview_path)
+                    "/admin/api/preview?path={}&v={}",
+                    quote_query(&theme.preview_path),
+                    quote_query(&theme.updated_at)
                 )
             };
             let avatar_url = theme
                 .avatar_path
                 .as_ref()
                 .filter(|path| !path.is_empty())
-                .map(|path| {
-                    format!(
-                        "/admin/api/preview?path={}",
-                        quote_query(path)
-                    )
-                })
+                .map(|path| format!("/admin/api/preview?path={}", quote_query(path)))
                 .unwrap_or_default();
             json!({
                 "id": theme.id,
@@ -488,6 +616,8 @@ pub async fn admin_themes(paths: &Paths) -> Vec<Value> {
                 "tags": theme.tags,
                 "size": theme.size,
                 "license": theme.license,
+                "sha256": theme.sha256,
+                "verified": !theme.sha256.is_empty(),
                 "updatedAt": theme.updated_at,
                 "previewUrl": preview_url,
                 "avatarUrl": avatar_url,
@@ -523,5 +653,61 @@ pub fn author_record(hash: &str) -> AuthorRecord {
         approved_at: String::new(),
         last_used_at: String::new(),
         extra: Default::default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Paths;
+    use crate::storage::{AssetStore, LocalStore};
+
+    fn test_paths(root: &Path) -> Paths {
+        Paths {
+            root: root.to_path_buf(),
+            meta: root.join("meta"),
+            pending: root.join("pending"),
+            catalog: root.join("catalog.json"),
+            static_dir: root.join("static"),
+            authors_file: root.join("authors.json"),
+            token_env: root.join("token.env"),
+            admin_env: root.join("admin.env"),
+            admin_password_file: root.join("admin-password"),
+            admin_config: root.join("config.env"),
+            storage_env: root.join("storage.env"),
+            account_env: root.join("account.env"),
+            network_env: root.join("network.env"),
+            caddyfile: root.join("Caddyfile"),
+            db: root.join("account.db"),
+        }
+    }
+
+    #[tokio::test]
+    async fn finds_legacy_author_avatar_by_name() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        std::fs::create_dir_all(root.join("meta")).unwrap();
+        std::fs::create_dir_all(root.join("avatars")).unwrap();
+        std::fs::write(root.join("avatars/1-v1.jpg"), b"avatar").unwrap();
+        std::fs::write(
+            root.join("meta/1.json"),
+            r#"{
+                "id": "1",
+                "version": 1,
+                "name": "Legacy",
+                "author": "shirkneko",
+                "package": "themes/1-v1.sukisu",
+                "preview": "previews/1-v1.jpg",
+                "avatar": "avatars/1-v1.jpg",
+                "updatedAt": "2026-11-02T17:31:22Z"
+            }"#,
+        )
+        .unwrap();
+        let paths = test_paths(root);
+        let store = AssetStore::Local(LocalStore::new(root));
+        assert_eq!(
+            author_avatar_key(&store, &paths, "missing-hash", Some("shirkneko")).await,
+            Some("avatars/1-v1.jpg".to_string())
+        );
     }
 }

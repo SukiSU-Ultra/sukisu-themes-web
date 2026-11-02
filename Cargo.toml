@@ -1,5 +1,5 @@
 [package]
-name = "sukisu-theme-admin"
+name = "sukisu-theme-web"
 version = "1.0.0"
 edition = "2021"
 rust-version = "1.85"
@@ -29,6 +29,10 @@ bytes = "1"
 futures = "0.3"
 fs4 = "0.13"
 subtle = "2"
+bcrypt = "0.15"
+rusqlite = { version = "0.32", features = ["bundled"] }
+tokio-rusqlite = "0.6"
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-rustls-tls"] }
 thiserror = "2"
 anyhow = "1"
 tracing = "0.1"

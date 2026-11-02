@@ -20,8 +20,8 @@ pub fn validate_package(data: &[u8]) -> Result<PackageInfo> {
     }
     let nonce_bytes = &data[4..16];
     let ciphertext = &data[16..];
-    let cipher = Aes256Gcm::new_from_slice(&PACKAGE_KEY)
-        .map_err(|_| anyhow::anyhow!("主题包密钥无效"))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(&PACKAGE_KEY).map_err(|_| anyhow::anyhow!("主题包密钥无效"))?;
     let nonce = Nonce::from_slice(nonce_bytes);
     let plain = cipher
         .decrypt(nonce, ciphertext)
@@ -118,8 +118,8 @@ mod tests {
         let mut buffer = Cursor::new(Vec::new());
         {
             let mut writer = zip::ZipWriter::new(&mut buffer);
-            let options = SimpleFileOptions::default()
-                .compression_method(zip::CompressionMethod::Deflated);
+            let options =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
             writer.start_file("theme.json", options).unwrap();
             use std::io::Write;
             writer

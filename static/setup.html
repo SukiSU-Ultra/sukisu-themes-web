@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>初始化 · SukiSU 主题镜像控制台</title>
+<script>
+(function () {
+  try {
+    var saved = localStorage.getItem('sukisu-admin-theme');
+    var light = saved ? saved === 'light' : window.matchMedia('(prefers-color-scheme: light)').matches;
+    document.documentElement.dataset.theme = light ? 'light' : 'dark';
+  } catch (_) {
+    document.documentElement.dataset.theme = 'dark';
+  }
+})();
+</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Urbanist:wght@400;500;600;700;800&family=Fira+Code:wght@400;500;600&display=swap');
+
+:root {
+  --font-sans: 'Urbanist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'Noto Sans SC', sans-serif;
+  --font-mono: 'Fira Code', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --bg: #080d1a;
+  --panel: rgba(15, 23, 42, .62);
+  --panel-2: rgba(30, 41, 59, .72);
+  --line: rgba(148, 163, 184, .18);
+  --line-strong: rgba(96, 165, 250, .34);
+  --text: #edf3ff;
+  --muted: #a6b4d4;
+  --faint: #7585a8;
+  --accent: #67e8f9;
+  --accent-2: #60a5fa;
+  --accent-3: #a78bfa;
+  --ok: #4ade80;
+  --bad: #fb7185;
+  --shadow: 0 28px 70px rgba(2, 6, 23, .46);
+  --grid: rgba(148, 163, 184, .055);
+  --input-bg: rgba(2, 6, 18, .36);
+  --gradient: linear-gradient(120deg, #22d3ee 0%, #3b82f6 48%, #8b5cf6 100%);
+  --gradient-soft: linear-gradient(135deg, rgba(34, 211, 238, .14), rgba(59, 130, 246, .09) 48%, rgba(139, 92, 246, .12));
+}
+html[data-theme="light"] {
+  --bg: #f4f7ff;
+  --panel: rgba(255, 255, 255, .72);
+  --panel-2: rgba(255, 255, 255, .9);
+  --line: rgba(100, 116, 139, .18);
+  --line-strong: rgba(37, 99, 235, .26);
+  --text: #0f172a;
+  --muted: #43536d;
+  --faint: #64748b;
+  --accent: #0e7490;
+  --accent-2: #2563eb;
+  --accent-3: #7c3aed;
+  --shadow: 0 24px 60px rgba(15, 23, 42, .12);
+  --grid: rgba(100, 116, 139, .075);
+  --input-bg: rgba(255, 255, 255, .74);
+  --gradient-soft: linear-gradient(135deg, rgba(34, 211, 238, .14), rgba(59, 130, 246, .10) 48%, rgba(139, 92, 246, .12));
+}
+
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  background:
+    radial-gradient(900px 560px at 5% -10%, rgba(34, 211, 238, .16), transparent 62%),
+    radial-gradient(820px 540px at 100% 2%, rgba(139, 92, 246, .16), transparent 66%),
+    radial-gradient(900px 680px at 50% 112%, rgba(59, 130, 246, .13), transparent 66%),
+    var(--bg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(circle at 50% 0%, #000 0%, transparent 76%);
+  -webkit-mask-image: radial-gradient(circle at 50% 0%, #000 0%, transparent 76%);
+}
+body::after {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% -20%, rgba(96, 165, 250, .12), transparent 55%);
+}
+::selection { background: rgba(96, 165, 250, .35); }
+
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 72px 26px 34px;
+  position: relative;
+}
+.theme-toggle {
+  position: fixed;
+  top: 22px;
+  right: 24px;
+  z-index: 5;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  backdrop-filter: blur(18px);
+  transition: .2s ease;
+}
+.theme-toggle:hover { color: var(--text); border-color: var(--line-strong); transform: translateY(-1px); }
+.theme-toggle svg { width: 18px; height: 18px; }
+html[data-theme="dark"] .sun { display: none; }
+html[data-theme="light"] .moon { display: none; }
+
+.login-card {
+  width: min(1020px, 100%);
+  display: grid;
+  grid-template-columns: 1.08fr .92fr;
+  overflow: hidden;
+  border-radius: 34px;
+  border: 1px solid var(--line);
+  background: linear-gradient(160deg, var(--panel-2), var(--panel));
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(26px);
+  -webkit-backdrop-filter: blur(26px);
+}
+.story {
+  position: relative;
+  overflow: hidden;
+  padding: 46px 44px 38px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  background:
+    radial-gradient(700px 320px at -10% -10%, rgba(34, 211, 238, .24), transparent 65%),
+    radial-gradient(600px 360px at 110% 10%, rgba(139, 92, 246, .24), transparent 62%),
+    linear-gradient(150deg, rgba(10, 18, 36, .68), rgba(12, 18, 34, .34));
+}
+html[data-theme="light"] .story {
+  background:
+    radial-gradient(700px 320px at -10% -10%, rgba(34, 211, 238, .20), transparent 65%),
+    radial-gradient(600px 360px at 110% 10%, rgba(139, 92, 246, .18), transparent 62%),
+    linear-gradient(150deg, rgba(255, 255, 255, .64), rgba(255, 255, 255, .3));
+}
+.story::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(120deg, transparent 30%, rgba(255, 255, 255, .05) 48%, transparent 64%);
+}
+.brand { display: flex; align-items: center; gap: 14px; position: relative; z-index: 1; }
+.brand .logo {
+  width: 52px;
+  height: 52px;
+  border-radius: 17px;
+  display: grid;
+  place-items: center;
+  background: var(--gradient-soft);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 14px 34px rgba(37, 99, 235, .24), inset 0 1px 0 rgba(255, 255, 255, .2);
+}
+.brand .logo img { width: 36px; height: 36px; display: block; }
+.brand h1 { margin: 0; font-size: 17px; font-weight: 760; letter-spacing: -.01em; }
+.brand p { margin: 3px 0 0; color: var(--faint); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; }
+.story h2 {
+  margin: 6px 0 0;
+  font-size: clamp(30px, 4vw, 42px);
+  line-height: 1.08;
+  letter-spacing: -.045em;
+  font-weight: 800;
+  position: relative;
+  z-index: 1;
+}
+.story h2 em { font-style: normal; background: var(--gradient); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.story > p { margin: 0; max-width: 42ch; color: var(--muted); font-size: 14px; line-height: 1.75; position: relative; z-index: 1; }
+.features { display: grid; gap: 12px; margin-top: auto; position: relative; z-index: 1; }
+.feature {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 15px;
+  border: 1px solid var(--line);
+  background: rgba(2, 6, 18, .22);
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+html[data-theme="light"] .feature { background: rgba(255, 255, 255, .46); }
+.feature i {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  background: var(--gradient-soft);
+  border: 1px solid var(--line-strong);
+  color: var(--accent);
+}
+.feature i svg { width: 17px; height: 17px; }
+.feature b { display: block; color: var(--text); font-size: 12.5px; font-weight: 650; }
+.feature span { color: var(--faint); font-size: 11.5px; }
+.story-foot { position: relative; z-index: 1; display: flex; gap: 8px; align-items: center; color: var(--faint); font-size: 11px; letter-spacing: .04em; }
+.story-foot .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 4px rgba(74, 222, 128, .12); }
+
+.form-panel {
+  padding: 46px 44px 36px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+  background: linear-gradient(180deg, rgba(2, 6, 18, .18), rgba(2, 6, 18, .04));
+}
+html[data-theme="light"] .form-panel { background: linear-gradient(180deg, rgba(255, 255, 255, .22), rgba(255, 255, 255, .04)); }
+.form-panel h3 { margin: 0; font-size: 25px; letter-spacing: -.03em; font-weight: 780; }
+.form-panel .lead { margin: 7px 0 24px; color: var(--faint); font-size: 12.5px; line-height: 1.65; }
+label { display: block; margin: 0 0 7px; color: var(--muted); font-size: 12px; font-weight: 550; }
+.field { position: relative; margin-bottom: 14px; }
+input {
+  width: 100%;
+  height: 50px;
+  padding: 0 48px 0 15px;
+  color: var(--text);
+  background: var(--input-bg);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: .2s ease;
+}
+input:focus { border-color: var(--line-strong); box-shadow: 0 0 0 4px rgba(96, 165, 250, .10); background: var(--panel-2); }
+input::placeholder { color: var(--faint); }
+.field .eye {
+  position: absolute;
+  right: 7px;
+  top: 7px;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: .18s ease;
+}
+.field .eye:hover { color: var(--text); background: var(--gradient-soft); }
+.field .eye svg { width: 17px; height: 17px; }
+.login-error {
+  display: none;
+  margin: 0 0 14px;
+  padding: 11px 13px;
+  border-radius: 12px;
+  border: 1px solid rgba(251, 113, 133, .36);
+  background: rgba(251, 113, 133, .09);
+  color: var(--bad);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.login-error.show { display: block; }
+.login-btn {
+  width: 100%;
+  height: 50px;
+  margin-top: 6px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--gradient);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  cursor: pointer;
+  box-shadow: 0 16px 38px rgba(37, 99, 235, .3);
+  transition: .2s ease;
+}
+.login-btn:hover { transform: translateY(-1px); box-shadow: 0 20px 44px rgba(37, 99, 235, .38); }
+.login-btn:disabled { opacity: .72; cursor: wait; transform: none; }
+.spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, .34);
+  border-top-color: #fff;
+  animation: spin .8s linear infinite;
+  display: none;
+}
+.login-btn.loading .spinner { display: block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.login-meta {
+  margin: 18px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--faint);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.login-meta .pill {
+  padding: 4px 9px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+.form-foot {
+  margin-top: 26px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.form-foot a { color: var(--muted); text-decoration: none; }
+.form-foot a:hover { color: var(--text); }
+.quota-presets { display: flex; flex-wrap: wrap; gap: 7px; margin: 2px 0 9px; }
+.quota-presets button {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--input-bg);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.quota-presets button.active { color: var(--text); border-color: var(--line-strong); background: var(--gradient-soft); }
+.quota-field { position: relative; }
+.quota-field input { padding-right: 46px; }
+.quota-unit {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  pointer-events: none;
+}
+.setup-note { margin: 10px 0 0; color: var(--faint); font-size: 11px; line-height: 1.6; }
+.setup-note code { color: var(--muted); font-family: var(--font-mono); font-size: 10.5px; }
+
+@media (max-width: 860px) {
+  .login-card { grid-template-columns: 1fr; }
+  .story { padding: 32px 28px 26px; gap: 18px; }
+  .story h2 { font-size: 30px; }
+  .features { display: none; }
+  .story-foot { display: none; }
+  .form-panel { padding: 30px 28px 30px; }
+  .login-page { padding-top: 64px; }
+}
+@media (max-width: 520px) {
+  .login-page { padding: 58px 14px 20px; }
+  .login-card { border-radius: 26px; }
+  .story { padding: 26px 22px 20px; }
+  .form-panel { padding: 26px 22px 26px; }
+  .theme-toggle { top: 14px; right: 14px; }
+}
+</style>
+</head>
+<body>
+<div class="login-page">
+  <button class="theme-toggle" id="themeToggle" title="切换深色/浅色" aria-label="切换深色/浅色">
+    <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2Z"/></svg>
+    <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M19.1 4.9l-1.6 1.6M6.5 17.5l-1.6 1.6"/></svg>
+  </button>
+
+  <section class="login-card">
+    <div class="story">
+      <div class="brand">
+        <div class="logo"><img src="logo.svg" alt="SukiSU Ultra"></div>
+        <div><h1>SukiSU 主题镜像</h1><p>Theme mirror console</p></div>
+      </div>
+      <h2>初始化你的<br><em>主题镜像站</em></h2>
+      <p>首次使用需要创建管理员账户，并为主题资源设置一个存储配额。完成后会自动登录控制台。</p>
+      <div class="features">
+        <div class="feature">
+          <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c.8-4 3.1-6 7-6s6.2 2 7 6"/></svg></i>
+          <div><b>管理员账户</b><span>用户名与密码只保存在服务器</span></div>
+        </div>
+        <div class="feature">
+          <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/><path d="M4.5 11.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg></i>
+          <div><b>存储配额</b><span>默认 1.2 GB，之后可随时调整</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-panel">
+      <h3>初始化控制台</h3>
+      <p class="lead">创建第一个管理员账户，并设置主题资源配额。</p>
+      <div class="login-error" id="setupError" role="alert"></div>
+      <form id="setupForm" autocomplete="on">
+        <label for="username">管理员用户名</label>
+        <div class="field">
+          <input id="username" name="username" value="admin" autocomplete="username" spellcheck="false" placeholder="3-32 位字母、数字或 . _ -" required>
+        </div>
+        <label for="password">管理员密码</label>
+        <div class="field">
+          <input id="password" name="password" type="password" autocomplete="new-password" placeholder="至少 8 位" required>
+          <button type="button" class="eye" id="togglePassword" title="显示/隐藏密码" aria-label="显示或隐藏密码">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.7"/></svg>
+          </button>
+        </div>
+        <label for="confirmPassword">确认密码</label>
+        <div class="field">
+          <input id="confirmPassword" name="confirmPassword" type="password" autocomplete="new-password" placeholder="再次输入密码" required>
+        </div>
+        <label for="limitMb">存储配额</label>
+        <div class="quota-presets" id="quotaPresets">
+          <button type="button" data-quota="1024">1 GB</button>
+          <button type="button" data-quota="2048">2 GB</button>
+          <button type="button" data-quota="5120">5 GB</button>
+          <button type="button" data-quota="10240">10 GB</button>
+        </div>
+        <div class="field quota-field">
+          <input id="limitMb" name="limitMb" type="number" min="64" max="10485760" step="64" value="1200" required>
+          <span class="quota-unit">MB</span>
+        </div>
+        <p class="setup-note">配额限制主题包、预览图、截图、头像和待审核文件的总大小。之后可在「设置 → 存储」中调整。</p>
+        <button type="submit" class="login-btn" id="setupBtn"><span class="spinner"></span><span id="setupLabel">完成初始化</span></button>
+      </form>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  const basePath = location.pathname.replace(/\/setup(?:\.html)?\/?$/, '/');
+  const API = basePath + 'api';
+  const LOGIN_URL = '/account/login';
+  const form = document.getElementById('setupForm');
+  const errorBox = document.getElementById('setupError');
+  const setupBtn = document.getElementById('setupBtn');
+  const setupLabel = document.getElementById('setupLabel');
+  const passwordInput = document.getElementById('password');
+  const confirmInput = document.getElementById('confirmPassword');
+  const usernameInput = document.getElementById('username');
+  const limitInput = document.getElementById('limitMb');
+  const presets = Array.from(document.querySelectorAll('[data-quota]'));
+  let passwordVisible = false;
+  let submitting = false;
+
+  function showError(message) {
+    errorBox.textContent = message || '初始化失败，请稍后再试';
+    errorBox.classList.add('show');
+  }
+
+  function clearError() {
+    errorBox.textContent = '';
+    errorBox.classList.remove('show');
+  }
+
+  function syncPresets() {
+    const value = Number(limitInput.value);
+    presets.forEach(button => {
+      button.classList.toggle('active', Number(button.dataset.quota) === value);
+    });
+  }
+
+  function setLoading(loading) {
+    submitting = loading;
+    setupBtn.disabled = loading;
+    setupBtn.classList.toggle('loading', loading);
+    setupLabel.textContent = loading ? '正在创建…' : '完成初始化';
+    [usernameInput, passwordInput, confirmInput, limitInput].forEach(input => {
+      input.disabled = loading;
+    });
+    presets.forEach(button => { button.disabled = loading; });
+  }
+
+  async function checkSession() {
+    try {
+      const response = await fetch(API + '/session', {
+        cache: 'no-store',
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'SukiSUThemeAdmin' },
+      });
+      if (!response.ok) return {};
+      return await response.json();
+    } catch (_) {
+      return {};
+    }
+  }
+
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (submitting) return;
+    clearError();
+    const username = usernameInput.value.trim();
+    const password = passwordInput.value;
+    const confirmPassword = confirmInput.value;
+    const limitMb = Number(limitInput.value);
+    if (!/^[A-Za-z0-9._-]{3,32}$/.test(username)) {
+      showError('用户名需要 3-32 位字母、数字或 . _ -');
+      usernameInput.focus();
+      return;
+    }
+    if (password.length < 8) {
+      showError('密码至少需要 8 位');
+      passwordInput.focus();
+      return;
+    }
+    if (password !== confirmPassword) {
+      showError('两次输入的密码不一致');
+      confirmInput.focus();
+      return;
+    }
+    if (!Number.isInteger(limitMb) || limitMb < 64 || limitMb > 10485760) {
+      showError('存储配额需要在 64 MB 到 10 TB 之间');
+      limitInput.focus();
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await fetch(API + '/setup', {
+        method: 'POST',
+        cache: 'no-store',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'SukiSUThemeAdmin',
+        },
+        body: JSON.stringify({ username, password, limitMb }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.ok) {
+        location.replace(basePath);
+        return;
+      }
+      if (response.status === 409) {
+        location.replace(LOGIN_URL);
+        return;
+      }
+      showError(data.error || ('初始化失败（HTTP ' + response.status + '）'));
+      passwordInput.select();
+    } catch (error) {
+      showError('网络错误，请检查连接后重试');
+    } finally {
+      setLoading(false);
+    }
+  });
+
+  document.getElementById('togglePassword').addEventListener('click', () => {
+    passwordVisible = !passwordVisible;
+    passwordInput.type = passwordVisible ? 'text' : 'password';
+  });
+
+  presets.forEach(button => {
+    button.addEventListener('click', () => {
+      limitInput.value = button.dataset.quota;
+      syncPresets();
+    });
+  });
+  limitInput.addEventListener('input', syncPresets);
+  syncPresets();
+
+  document.getElementById('themeToggle').addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('sukisu-admin-theme', next); } catch (_) {}
+  });
+
+  checkSession().then(data => {
+    if (data && data.authenticated) {
+      location.replace(basePath);
+    } else if (data && data.setupRequired === false) {
+      location.replace(LOGIN_URL);
+    } else {
+      passwordInput.focus();
+    }
+  });
+})();
+</script>
+</body>
+</html>

@@ -56,7 +56,11 @@ pub struct CatalogEntry {
     pub path: String,
     #[serde(rename = "previewPath", default)]
     pub preview_path: String,
-    #[serde(rename = "avatarPath", skip_serializing_if = "Option::is_none", default)]
+    #[serde(
+        rename = "avatarPath",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
     pub avatar_path: Option<String>,
     #[serde(rename = "screenshotPaths", default)]
     pub screenshot_paths: Vec<String>,
@@ -98,6 +102,8 @@ pub struct Meta {
     pub updated_at: String,
     #[serde(default)]
     pub changelog: String,
+    #[serde(rename = "withdrawnAt", default)]
+    pub withdrawn_at: Option<String>,
     #[serde(rename = "assetSize", default)]
     pub asset_size: Option<u64>,
     #[serde(default)]
@@ -164,8 +170,12 @@ pub struct PendingMeta {
     pub author_hash: String,
     #[serde(rename = "authorFingerprint", default)]
     pub author_fingerprint: String,
+    #[serde(rename = "submitterUserId", default)]
+    pub submitter_user_id: String,
     #[serde(rename = "formatVersion", default)]
     pub format_version: u32,
+    #[serde(default)]
+    pub sha256: String,
     #[serde(default)]
     pub validation: Value,
     #[serde(flatten)]
@@ -269,6 +279,7 @@ pub struct UploadForm {
     pub name: String,
     pub author: String,
     pub author_id: Option<String>,
+    pub owner_hash: Option<String>,
     pub description: String,
     pub tags: String,
     pub license: String,

@@ -5,16 +5,12 @@ use anyhow::{bail, Context, Result};
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::Object;
 use bytes::Bytes;
-use tokio::io::{AsyncSeekExt, AsyncReadExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use walkdir::WalkDir;
 
-use crate::config::{
-    write_atomic, Backend, StorageSettings, ASSET_DIRS, ASSET_PREFIXES,
-};
+use crate::config::{write_atomic, Backend, StorageSettings, ASSET_DIRS, ASSET_PREFIXES};
 use crate::jobs::JobProgress;
-use crate::util::{
-    content_type_for, normalize_asset_key, parse_byte_range, sha256_hex, ByteRange,
-};
+use crate::util::{content_type_for, normalize_asset_key, parse_byte_range, sha256_hex, ByteRange};
 
 #[derive(thiserror::Error, Debug)]
 pub enum ServeError {
@@ -46,9 +42,7 @@ pub struct LocalStore {
 
 impl LocalStore {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self {
-            root: root.into(),
-        }
+        Self { root: root.into() }
     }
 
     pub fn resolve(&self, key: &str) -> Option<PathBuf> {
@@ -100,8 +94,8 @@ impl AssetStore {
                 Ok(())
             }
             AssetStore::S3(store) => {
-                let key = normalize_asset_key(key)
-                    .ok_or_else(|| anyhow::anyhow!("无效的资源路径"))?;
+                let key =
+                    normalize_asset_key(key).ok_or_else(|| anyhow::anyhow!("无效的资源路径"))?;
                 store
                     .client
                     .put_object()
@@ -130,8 +124,8 @@ impl AssetStore {
                 }
             }
             AssetStore::S3(store) => {
-                let key = normalize_asset_key(key)
-                    .ok_or_else(|| anyhow::anyhow!("无效的资源路径"))?;
+                let key =
+                    normalize_asset_key(key).ok_or_else(|| anyhow::anyhow!("无效的资源路径"))?;
                 store
                     .client
                     .delete_object()
@@ -190,8 +184,8 @@ impl AssetStore {
                     .with_context(|| format!("读取本地资源失败: {}", path.display()))
             }
             AssetStore::S3(store) => {
-                let key = normalize_asset_key(key)
-                    .ok_or_else(|| anyhow::anyhow!("无效的资源路径"))?;
+                let key =
+                    normalize_asset_key(key).ok_or_else(|| anyhow::anyhow!("无效的资源路径"))?;
                 let response = store
                     .client
                     .get_object()
@@ -326,11 +320,7 @@ impl AssetStore {
                     ByteRange::Partial { start, end } => Some(format!("bytes={start}-{end}")),
                     ByteRange::Invalid => return Err(ServeError::RangeNotSatisfiable(size)),
                 };
-                let mut request = store
-                    .client
-                    .get_object()
-                    .bucket(&store.bucket)
-                    .key(&s3_key);
+                let mut request = store.client.get_object().bucket(&store.bucket).key(&s3_key);
                 if let Some(value) = &range_value {
                     request = request.range(value);
                 }
@@ -369,7 +359,7 @@ pub fn build_store(settings: &StorageSettings) -> Result<AssetStore> {
                 &settings.s3_secret_key,
                 None,
                 None,
-                "sukisu-theme-admin",
+                "sukisu-theme-web",
             );
             let mut builder = aws_sdk_s3::Config::builder()
                 .behavior_version(aws_sdk_s3::config::BehaviorVersion::latest())
@@ -401,7 +391,7 @@ pub async fn test_s3_connection(settings: &StorageSettings) -> Result<()> {
     crate::config::validate_s3_settings(settings)?;
     let store = build_store(settings)?;
     let key = format!("avatars/__healthcheck-{}.txt", crate::util::random_hex(6));
-    let payload = b"sukisu-theme-admin storage healthcheck";
+    let payload = b"sukisu-theme-web storage healthcheck";
     store.put(&key, payload, "text/plain").await?;
     let result = store.read(&key).await;
     let _ = store.delete(&key).await;
@@ -428,9 +418,7 @@ pub async fn copy_assets(
     let mut copied = 0u64;
     for key in &keys {
         let data = source.read(key).await?;
-        target
-            .put(key, &data, &content_type_for(key))
-            .await?;
+        target.put(key, &data, &content_type_for(key)).await?;
         if target.size(key).await != data.len() as u64 {
             bail!("迁移校验失败: {key}");
         }
@@ -526,7 +514,10 @@ mod tests {
         body.take(5).read_to_end(&mut bytes).await.unwrap();
         assert_eq!(bytes, b"hello");
 
-        let object = store.serve("avatars/a.jpg", Some("bytes=1-3")).await.unwrap();
+        let object = store
+            .serve("avatars/a.jpg", Some("bytes=1-3"))
+            .await
+            .unwrap();
         assert_eq!(object.status, 206);
         assert_eq!(object.content_length, 3);
         assert_eq!(object.content_range.as_deref(), Some("bytes 1-3/5"));

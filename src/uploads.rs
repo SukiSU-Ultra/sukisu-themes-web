@@ -9,8 +9,8 @@ use serde_json::json;
 use crate::catalog;
 use crate::config::{
     Paths, StorageSettings, AVATAR_MAX_EDGE, DISK_RESERVE_BYTES, IMAGE_EXTENSIONS,
-    MAX_IMAGE_BYTES, MAX_PACKAGE_BYTES, MAX_SCREENSHOTS, PREVIEW_MAX_EDGE,
-    SCREENSHOT_MAX_EDGE, STORAGE_LIMIT_BYTES,
+    MAX_IMAGE_INPUT_BYTES, MAX_PACKAGE_BYTES, MAX_SCREENSHOTS, PREVIEW_MAX_EDGE,
+    SCREENSHOT_MAX_EDGE,
 };
 use crate::images;
 use crate::models::{FilePart, Meta, PackageInfo, PendingMeta, UploadForm};
@@ -64,9 +64,63 @@ impl PreparedUpload {
         if let Some(avatar) = &self.avatar {
             total += avatar.data.len() as u64;
         }
-        total += self.screenshots.iter().map(|file| file.data.len() as u64).sum::<u64>();
+        total += self
+            .screenshots
+            .iter()
+            .map(|file| file.data.len() as u64)
+            .sum::<u64>();
         total
     }
+}
+
+pub async fn reuse_author_avatar(
+    store: &AssetStore,
+    paths: &Paths,
+    author_hash: &str,
+    author_name: Option<&str>,
+    avatar: &mut Option<FilePart>,
+) {
+    if avatar.is_some() {
+        return;
+    }
+    let Some(key) = catalog::author_avatar_key(store, paths, author_hash, author_name).await else {
+        return;
+    };
+    let extension = Path::new(&key)
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| format!(".{}", value.to_ascii_lowercase()))
+        .unwrap_or_default();
+    if !crate::config::IMAGE_EXTENSIONS.contains(&extension.as_str()) {
+        return;
+    }
+    let Ok(data) = store.read(&key).await else {
+        return;
+    };
+    *avatar = Some(FilePart {
+        filename: format!("avatar{extension}"),
+        ext: extension,
+        data,
+    });
+}
+
+pub async fn persist_author_avatar(
+    store: &AssetStore,
+    author_hash: &str,
+    avatar: &FilePart,
+) -> Result<()> {
+    let key = format!("avatars/authors/{author_hash}{}", avatar.ext);
+    store
+        .put(&key, &avatar.data, &content_type_for(&key))
+        .await?;
+    for extension in crate::config::IMAGE_EXTENSIONS {
+        if extension != avatar.ext.as_str() {
+            let _ = store
+                .delete(&format!("avatars/authors/{author_hash}{extension}"))
+                .await;
+        }
+    }
+    Ok(())
 }
 
 async fn read_field_bytes(mut field: axum::extract::multipart::Field<'_>) -> Result<Vec<u8>> {
@@ -80,7 +134,8 @@ pub async fn parse_multipart(mut multipart: Multipart) -> Result<UploadForm, Str
     let mut format_version = None;
     let mut name = String::new();
     let mut author = String::new();
-    let mut author_id = None;
+    let mut author_id: Option<String> = None;
+    let mut owner_hash: Option<String> = None;
     let mut description = String::new();
     let mut tags = String::new();
     let mut license = String::new();
@@ -91,7 +146,11 @@ pub async fn parse_multipart(mut multipart: Multipart) -> Result<UploadForm, Str
     let mut avatar: Option<FilePart> = None;
     let mut screenshots = Vec::new();
 
-    while let Some(field) = multipart.next_field().await.map_err(|error| error.to_string())? {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|error| error.to_string())?
+    {
         let field_name = field.name().unwrap_or("").to_string();
         let filename = field.file_name().map(|name| name.to_string());
         match field_name.as_str() {
@@ -127,8 +186,10 @@ pub async fn parse_multipart(mut multipart: Multipart) -> Result<UploadForm, Str
                         if !IMAGE_EXTENSIONS.contains(&ext.as_str()) {
                             return Err(format!("{filename} 的文件类型不支持"));
                         }
-                        if data.len() > MAX_IMAGE_BYTES {
-                            return Err(format!("{filename} 超过大小限制"));
+                        if data.len() > MAX_IMAGE_INPUT_BYTES {
+                            return Err(format!(
+                                "{filename} 超过原始大小限制（最大 12 MB，服务器会自动压缩）"
+                            ));
                         }
                         let part = FilePart {
                             filename,
@@ -150,10 +211,7 @@ pub async fn parse_multipart(mut multipart: Multipart) -> Result<UploadForm, Str
                 }
             }
             _ => {
-                let value = field
-                    .text()
-                    .await
-                    .map_err(|error| error.to_string())?;
+                let value = field.text().await.map_err(|error| error.to_string())?;
                 match field_name.as_str() {
                     "id" => id = value,
                     "version" => version = value,
@@ -161,6 +219,7 @@ pub async fn parse_multipart(mut multipart: Multipart) -> Result<UploadForm, Str
                     "name" => name = value,
                     "author" => author = value,
                     "authorId" => author_id = Some(value),
+                    "ownerHash" => owner_hash = Some(value),
                     "description" => description = value,
                     "tags" => tags = value,
                     "license" => license = value,
@@ -181,6 +240,7 @@ pub async fn parse_multipart(mut multipart: Multipart) -> Result<UploadForm, Str
         name,
         author,
         author_id,
+        owner_hash,
         description,
         tags,
         license,
@@ -277,13 +337,12 @@ pub async fn prepare_upload(form: UploadForm) -> Result<PreparedUpload, String> 
 
     let preview_input_ext = form.preview.ext.clone();
     let preview_data = form.preview.data;
-    let (preview_bytes, preview_ext) =
-        tokio::task::spawn_blocking(move || {
-            images::optimize_image(preview_data, &preview_input_ext, PREVIEW_MAX_EDGE)
-        })
-        .await
-        .map_err(|error| error.to_string())?
-        .map_err(|error| error.to_string())?;
+    let (preview_bytes, preview_ext) = tokio::task::spawn_blocking(move || {
+        images::optimize_image(preview_data, &preview_input_ext, PREVIEW_MAX_EDGE)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())?;
     let preview = FilePart {
         filename: "preview".to_string(),
         ext: preview_ext,
@@ -345,7 +404,11 @@ pub async fn prepare_upload(form: UploadForm) -> Result<PreparedUpload, String> 
     })
 }
 
-pub fn load_pending_upload(paths: &Paths, directory: &Path, meta: &PendingMeta) -> Result<PreparedUpload, String> {
+pub fn load_pending_upload(
+    paths: &Paths,
+    directory: &Path,
+    meta: &PendingMeta,
+) -> Result<PreparedUpload, String> {
     let theme_id = meta.id.trim().to_string();
     if !valid_theme_id(&theme_id) {
         return Err("待审核主题 ID 无效".to_string());
@@ -443,6 +506,7 @@ pub async fn publish_theme(
     store: &AssetStore,
     settings: &StorageSettings,
     paths: &Paths,
+    limit_bytes: u64,
     prepared: PreparedUpload,
     author_hash: Option<String>,
     reclaim_bytes: u64,
@@ -488,13 +552,18 @@ pub async fn publish_theme(
     }
 
     let new_size = prepared.new_size();
-    let usage = catalog::storage_usage(store, paths, settings.backend.as_str()).await;
-    if usage.used.saturating_sub(old_size).saturating_sub(reclaim_bytes) + new_size
-        > STORAGE_LIMIT_BYTES
+    let usage = catalog::storage_usage(store, paths, settings.backend.as_str(), limit_bytes).await;
+    if usage
+        .used
+        .saturating_sub(old_size)
+        .saturating_sub(reclaim_bytes)
+        + new_size
+        > limit_bytes
     {
-        return Err(PublishError::Bad(
-            "1.2 GB 存储空间不足，请先删除旧主题".to_string(),
-        ));
+        return Err(PublishError::Bad(format!(
+            "{} 存储配额不足，请先删除旧主题或调高配额",
+            crate::config::format_storage_size(limit_bytes)
+        )));
     }
     let required_local = if settings.backend == crate::config::Backend::Local {
         new_size
@@ -508,10 +577,18 @@ pub async fn publish_theme(
     }
 
     store
-        .put(&keys.package, &prepared.package.data, &content_type_for(&keys.package))
+        .put(
+            &keys.package,
+            &prepared.package.data,
+            &content_type_for(&keys.package),
+        )
         .await?;
     store
-        .put(&keys.preview, &prepared.preview.data, &content_type_for(&keys.preview))
+        .put(
+            &keys.preview,
+            &prepared.preview.data,
+            &content_type_for(&keys.preview),
+        )
         .await?;
     let mut written = HashSet::new();
     written.insert(keys.package.clone());
@@ -544,13 +621,11 @@ pub async fn publish_theme(
         format_version: prepared.format_version,
         package: keys.package.clone(),
         preview: keys.preview.clone(),
-        avatar: keys
-            .avatar
-            .clone()
-            .or_else(|| keep_old_avatar.clone()),
+        avatar: keys.avatar.clone().or_else(|| keep_old_avatar.clone()),
         screenshots: keys.screenshots.clone(),
         updated_at: now_iso(),
         changelog: prepared.changelog.clone(),
+        withdrawn_at: None,
         asset_size: Some(new_size),
         sha256: Some(sha256_hex(&prepared.package.data)),
         author_hash: author_hash.clone(),
@@ -590,11 +665,7 @@ impl AssetKeys {
             .iter()
             .enumerate()
             .map(|(index, screenshot)| {
-                format!(
-                    "screenshots/{stem}-{:02}{}",
-                    index + 1,
-                    screenshot.ext
-                )
+                format!("screenshots/{stem}-{:02}{}", index + 1, screenshot.ext)
             })
             .collect();
         Self {
@@ -613,6 +684,7 @@ pub fn write_pending(
     author_fingerprint: &str,
     remote: &str,
     submission: &str,
+    submitter_user_id: Option<&str>,
 ) -> Result<PathBuf, String> {
     let directory = paths.pending.join(submission);
     fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
@@ -656,7 +728,9 @@ pub fn write_pending(
             "remote": remote,
             "authorHash": author_hash,
             "authorFingerprint": author_fingerprint,
+            "submitterUserId": submitter_user_id.unwrap_or(""),
             "formatVersion": prepared.format_version,
+            "sha256": sha256_hex(&prepared.package.data),
             "validation": prepared.package_info.to_json(),
         });
         let mut data = serde_json::to_vec_pretty(&meta).map_err(|error| error.to_string())?;

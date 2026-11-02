@@ -115,9 +115,9 @@ pub fn relative_path_is_safe(value: &str) -> bool {
     if value.is_empty() || value.starts_with('/') || value.contains("..") || value.contains('\\') {
         return false;
     }
-    Path::new(value).components().all(|component| {
-        matches!(component, Component::Normal(_) | Component::CurDir)
-    })
+    Path::new(value)
+        .components()
+        .all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
 }
 
 pub fn safe_join(root: &Path, relative: &str) -> Option<PathBuf> {
