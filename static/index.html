@@ -632,6 +632,577 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
   .table th:nth-child(4), .table td:nth-child(4) { display: none; }
 }
 
+/* ── SukiSU Website theme ───────────────────────────────────────────── */
+:root {
+  color-scheme: dark;
+  --bg: #303446;
+  --bg-alt: #292c3c;
+  --bg-elv: #414559;
+  --panel: #292c3c;
+  --panel-2: #313547;
+  --sidebar-tint: #292c3c;
+  --line: #414559;
+  --line-strong: rgba(129, 200, 190, .45);
+  --text: #c6d0f5;
+  --muted: #b5bfe2;
+  --faint: #838ba7;
+  --accent: #81c8be;
+  --accent-2: #8caaee;
+  --accent-3: #babbf1;
+  --ok: #a6d189;
+  --bad: #e78284;
+  --warn: #e5c890;
+  --radius: 16px;
+  --shadow: 0 18px 40px rgba(0, 0, 0, .18);
+  --grid: rgba(198, 208, 245, .035);
+  --input-bg: #232634;
+  --code-bg: #232634;
+  --code-text: #c6d0f5;
+  --tag-text: #81c8be;
+  --tag-bg: rgba(129, 200, 190, .12);
+  --tag-border: rgba(129, 200, 190, .28);
+  --gradient: linear-gradient(120deg, #81c8be, #8caaee 55%, #babbf1);
+  --gradient-soft: rgba(129, 200, 190, .13);
+  --brand: #81c8be;
+  --brand-2: #70c0b6;
+  --brand-soft: rgba(129, 200, 190, .14);
+  --on-brand: #232634;
+  --card-hover: #313547;
+}
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg: #eff1f5;
+  --bg-alt: #e6e9ef;
+  --bg-elv: #dce0e8;
+  --panel: #e6e9ef;
+  --panel-2: #ffffff;
+  --sidebar-tint: #eff1f5;
+  --line: #ccd0da;
+  --line-strong: rgba(23, 146, 153, .32);
+  --text: #4c4f69;
+  --muted: #5c5f77;
+  --faint: #6c6f85;
+  --accent: #179299;
+  --accent-2: #1e66f5;
+  --accent-3: #7287fd;
+  --ok: #40a02b;
+  --bad: #d20f39;
+  --warn: #df8e1d;
+  --shadow: 0 18px 40px rgba(76, 79, 105, .08);
+  --grid: rgba(76, 79, 105, .045);
+  --input-bg: #eff1f5;
+  --code-bg: #e6e9ef;
+  --code-text: #4c4f69;
+  --tag-text: #179299;
+  --tag-bg: rgba(23, 146, 153, .08);
+  --tag-border: rgba(23, 146, 153, .22);
+  --gradient: linear-gradient(120deg, #179299, #1e66f5 55%, #7287fd);
+  --gradient-soft: rgba(23, 146, 153, .09);
+  --brand: #179299;
+  --brand-2: #147d82;
+  --brand-soft: rgba(23, 146, 153, .1);
+  --on-brand: #ffffff;
+  --card-hover: #ffffff;
+}
+body {
+  background:
+    radial-gradient(ellipse 70% 42% at 50% -12%, color-mix(in srgb, var(--brand) 16%, transparent), transparent 70%),
+    var(--bg);
+  color: var(--text);
+  letter-spacing: .002em;
+}
+body::before {
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 56px 56px;
+  opacity: .35;
+  mask-image: radial-gradient(80% 55% at 50% 0%, #000 20%, transparent 75%);
+  -webkit-mask-image: radial-gradient(80% 55% at 50% 0%, #000 20%, transparent 75%);
+}
+body::after { display: none; }
+.app { max-width: 1480px; margin: 0 auto; }
+.sidebar {
+  background: var(--bg-alt);
+  border-right: 1px solid var(--line);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.brand { padding: 2px 4px; }
+.brand .logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: var(--brand-soft);
+  border: 1px solid var(--line);
+  box-shadow: none;
+}
+.brand .logo img { width: 30px; height: 30px; }
+.brand h1 { font-size: 15px; font-weight: 800; }
+.brand p { color: var(--faint); letter-spacing: .1em; }
+nav { gap: 3px; }
+nav a {
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+nav a:hover {
+  color: var(--text);
+  background: var(--bg-elv);
+  border-color: transparent;
+  transform: none;
+}
+nav a.active {
+  color: var(--brand);
+  background: var(--brand-soft);
+  border-color: color-mix(in srgb, var(--brand) 30%, transparent);
+  box-shadow: none;
+}
+nav svg { width: 16px; height: 16px; }
+.nav-label { margin: 14px 10px 4px; color: var(--faint); font-size: 10px; letter-spacing: .12em; }
+.nav-badge {
+  background: var(--brand);
+  border: 0;
+  color: var(--on-brand);
+  font-weight: 700;
+}
+.side-foot { border-top: 1px solid var(--line); }
+.side-line { color: var(--faint); }
+.side-line b { color: var(--muted); }
+.side-line a:hover { color: var(--brand); }
+main { padding: 0 clamp(20px, 3vw, 44px) 72px; }
+.topbar {
+  position: static;
+  margin: 0 0 28px;
+  padding: 18px 0 16px;
+  background: transparent;
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.crumb { color: var(--brand); font-size: 10.5px; letter-spacing: .12em; }
+.topbar h2 {
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-size: clamp(26px, 2.6vw, 38px);
+  font-weight: 800;
+  letter-spacing: -.03em;
+}
+.topbar .lead { color: var(--muted); font-size: 13.5px; }
+.top-actions { align-items: center; gap: 8px; }
+.pill {
+  background: color-mix(in srgb, var(--bg) 64%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+}
+.pill.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 38%, transparent); }
+.pill.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 38%, transparent); }
+.user-chip { background: var(--bg-alt); border: 1px solid var(--line); border-radius: 999px; }
+.avatar-sm { background: var(--brand); color: var(--on-brand); }
+.icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: transparent;
+  border: 0;
+  color: var(--faint);
+  display: grid;
+  place-items: center;
+}
+.icon-btn:hover { background: var(--brand-soft); border: 0; color: var(--brand); transform: none; }
+.icon-btn svg { width: 17px; height: 17px; }
+button {
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg-elv);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: none;
+}
+button:hover { background: var(--card-hover); border-color: var(--line-strong); transform: none; }
+button.primary {
+  background: var(--brand);
+  border-color: transparent;
+  color: var(--on-brand);
+  box-shadow: 0 8px 24px -12px color-mix(in srgb, var(--brand) 80%, transparent);
+}
+button.primary:hover { background: var(--brand-2); box-shadow: none; }
+input, textarea, select {
+  background: var(--input-bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+}
+select {
+  width: 100%;
+  height: 46px;
+  padding: 0 36px 0 13px;
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+select option {
+  background: var(--bg-alt);
+  color: var(--text);
+}
+input:focus, textarea:focus, select:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent);
+  background: var(--bg);
+}
+label { color: var(--muted); }
+input::placeholder, textarea::placeholder { color: var(--faint); }
+input[type=file] {
+  height: auto;
+  padding: 9px 11px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--faint);
+  font-size: 12px;
+  cursor: pointer;
+}
+input[type=file]:hover { border-color: var(--brand); background: var(--brand-soft); }
+input[type=file]::file-selector-button {
+  margin-right: 10px;
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-elv);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+input[type=file]::file-selector-button:hover { border-color: var(--brand); color: var(--brand); }
+input[type="checkbox"], input[type="radio"] {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  padding: 0;
+  margin: 0;
+  border-radius: 4px;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+.check {
+  width: fit-content;
+  max-width: 100%;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.check input[type="checkbox"] { margin-top: 1px; }
+.stats { gap: 12px; }
+.stat {
+  padding: 18px 20px;
+  border-radius: 16px;
+  background: var(--bg-alt);
+  border: 1px solid var(--line);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transition: border-color .18s ease;
+}
+.stat:hover { transform: none; border-color: var(--line-strong); }
+.stat::before { display: none; }
+.stat .label { color: var(--muted); font-weight: 500; }
+.stat .value { font-size: 31px; font-weight: 800; letter-spacing: -.035em; }
+.stat .sub { color: var(--faint); }
+.section-head h3 { font-size: 20px; font-weight: 800; letter-spacing: -.02em; }
+.section-head p { color: var(--muted); }
+.grid { gap: 14px; }
+.page > .stats + .grid,
+.page > .stats + .card,
+.page > .grid + .card,
+.page > .grid + .grid,
+.page > .card + .card,
+.page > .card + .grid,
+.page > .toolbar + .card,
+.page > .list + .card,
+.page > .stats + .toolbar { margin-top: 16px; }
+.card {
+  background: var(--bg-alt);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.card::before { display: none; }
+.card h4 { font-size: 15px; font-weight: 700; }
+.card .hint { color: var(--muted); }
+.card svg.ic { color: var(--brand); }
+.field-hint { color: var(--faint); }
+.mention-chip {
+  border-radius: 999px;
+  border-color: var(--tag-border);
+  background: var(--tag-bg);
+  color: var(--brand);
+}
+.mention-chip:hover { border-color: var(--brand); background: var(--brand-soft); }
+.mention-chip.active { background: var(--brand-soft); border-color: var(--brand); color: var(--text); }
+.toolbar { margin-bottom: 16px; }
+.search input { background: var(--input-bg); }
+.search svg { color: var(--faint); }
+.toolbar .row { gap: 8px; }
+.toolbar .row button[data-user-status] {
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--line);
+  font-size: 12px;
+  height: 36px;
+  padding: 0 14px;
+}
+.toolbar .row button[data-user-status]:hover { background: var(--bg-elv); }
+.toolbar .row button[data-user-status].active {
+  background: var(--brand);
+  border-color: transparent;
+  color: var(--on-brand);
+}
+.tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+.toolbar .row button[data-user-status].active .tab-count {
+  background: color-mix(in srgb, var(--on-brand) 18%, transparent);
+  color: var(--on-brand);
+}
+.theme-card {
+  background: var(--bg-alt);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.theme-card:hover { transform: translateY(-2px); border-color: var(--brand); box-shadow: none; }
+.theme-card .theme-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 10;
+  padding: 0;
+  gap: 0;
+  border: 0;
+  border-radius: 0;
+}
+.theme-card .theme-preview img { width: 100%; height: 100%; object-fit: cover; }
+.theme-preview { background: var(--bg-elv); }
+.theme-preview .fallback { background: var(--bg-elv); }
+.theme-preview .fallback,
+.pending-preview .fallback { color: var(--faint); }
+html[data-theme="light"] .theme-preview .fallback,
+html[data-theme="light"] .pending-preview .fallback { background: var(--bg-elv); }
+.theme-title { font-weight: 700; }
+.theme-meta { color: var(--faint); }
+.theme-desc { color: var(--muted); }
+.theme-desc a, .theme-desc .mention { color: var(--brand); border-bottom-color: var(--tag-border); }
+.theme-desc code { background: var(--code-bg); color: var(--code-text); }
+.pending-card {
+  background: var(--bg-alt);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.pending-preview { background: var(--bg-elv); }
+.pending-body { padding: 16px 18px; }
+.pending-actions { border-top-color: var(--line); }
+.approve { background: var(--ok); border-color: transparent; color: #232634; }
+.approve:hover { background: var(--ok); border-color: transparent; filter: brightness(.95); }
+.reject, .theme-actions button {
+  color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 10%, transparent);
+  border-color: color-mix(in srgb, var(--bad) 30%, transparent);
+}
+.author-card, .account-row, .notice {
+  background: var(--bg);
+  border-color: var(--line);
+}
+.empty {
+  background: transparent;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  color: var(--faint);
+}
+.empty b { color: var(--muted); }
+.storage-grid > div { background: var(--bg); border-color: var(--line); border-radius: 12px; }
+.path-presets { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 8px; }
+.path-presets button {
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 999px;
+  border-color: var(--line);
+  background: var(--bg);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+.path-presets button:hover { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); }
+.storage-bar { background: var(--line); }
+.storage-bar i { background: var(--brand); }
+.strength .bar { background: var(--line); }
+.strength .bar i { background: var(--brand); }
+.upload-progress { background: var(--bg); border-color: var(--line); }
+.progress-track { background: var(--line); }
+.progress-track i { background: var(--brand); }
+pre { background: var(--code-bg); border-color: var(--line); border-radius: 12px; color: var(--code-text); }
+.inline-code { background: var(--bg-elv); color: var(--code-text); }
+.table th { color: var(--faint); border-bottom-color: var(--line); }
+.table td { border-bottom-color: var(--line); }
+.url { color: var(--code-text); }
+.theme-detail-dialog, .theme-dialog {
+  background: var(--bg-alt);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, .28);
+}
+.theme-detail-head, .dialog-head { border-bottom-color: var(--line); }
+.theme-detail-body, .dialog-body { color: var(--muted); }
+.sha-box { background: var(--bg); border-color: var(--line); }
+.toast {
+  background: var(--bg-elv);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.notify-wrap { position: relative; }
+.notify-btn { position: relative; }
+.notify-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--bad);
+  border: 2px solid var(--bg);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 13px;
+  text-align: center;
+}
+.notify-panel {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  z-index: 40;
+  width: min(360px, calc(100vw - 32px));
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--bg-alt);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .24);
+}
+.notify-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+.notify-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 12.5px;
+  transition: background .15s ease;
+}
+.notify-item:hover { background: var(--bg-elv); color: var(--text); }
+.notify-item i {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+.notify-item i svg { width: 15px; height: 15px; }
+.notify-item b { display: block; color: var(--text); font-size: 12.5px; font-weight: 600; }
+.notify-item span { color: var(--faint); font-size: 11px; }
+.notify-item[data-new="1"] b::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%; background: var(--bad); vertical-align: middle; }
+.notify-item[hidden], .notify-badge[hidden], .notify-empty[hidden], .notify-panel[hidden] { display: none !important; }
+.notify-count {
+  margin-left: auto;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--brand);
+  color: var(--on-brand);
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 22px;
+  text-align: center;
+}
+.notify-empty { padding: 16px 12px 18px; text-align: center; color: var(--faint); font-size: 12px; }
+.site-footer { color: var(--faint); font-size: 11.5px; }
+.site-footer a { color: var(--brand); text-decoration: none; }
+.site-footer a:hover { text-decoration: underline; }
+.notify-dot {
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--bad);
+  display: inline-block;
+}
+@media (max-width: 980px) {
+  .sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
+  nav { flex-wrap: wrap; overflow: visible; }
+  nav a { white-space: nowrap; }
+  .nav-label { display: none; }
+  body::before { opacity: .2; }
+  .topbar { margin-bottom: 20px; }
+}
+@media (max-width: 680px) {
+  .topbar h2 { font-size: 28px; }
+  .topbar { padding: 14px 0 12px; }
+  .notify-panel { right: -8px; }
+  .status-pill #topStatus { display: none; }
+  .status-pill { padding: 8px 9px; }
+  .user-chip .user-name { display: none; }
+}
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text);
+  -webkit-box-shadow: 0 0 0 1000px var(--input-bg) inset;
+  caret-color: var(--text);
+  transition: background-color 9999s ease-out 0s;
+}
+
 </style>
 </head>
 <body>
@@ -649,6 +1220,7 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
       <div class="nav-label">账号</div>
       <a href="#users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="8" r="3"/><path d="M3 20c.7-4 2.7-6 6-6s5.3 2 6 6"/><path d="M16 5.5a3 3 0 0 1 0 5.5M18 14c2.2.5 3.5 2.5 4 6"/></svg>用户 <span class="nav-badge" id="usersNavBadge">0</span></a>
       <a href="#authors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="5" width="17" height="14" rx="3"/><circle cx="8.5" cy="10" r="2"/><path d="M5.8 16c.4-2 1.3-3 2.7-3s2.3 1 2.7 3"/><path d="M14 9h4M14 12h4"/></svg>作者许可</a>
+      <a href="/account/" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c.8-4 3.1-6 7-6s6.2 2 7 6"/></svg>用户中心 <span style="margin-left:auto;color:var(--faint)">↗</span></a>
       <div class="nav-label">主题</div>
       <a href="#pending"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 5h14v14H5z"/><path d="M8 9h8M8 13h5"/></svg>待审核 <span class="nav-badge" id="pendingNavBadge">0</span></a>
       <a href="#themes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="m4 16 4.5-4.5 3 3 3-3L20 16"/><circle cx="15.5" cy="8.5" r="1.6"/></svg>主题预览</a>
@@ -663,7 +1235,7 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
     </nav>
     <div class="side-foot">
       <div class="side-line"><span><span class="dot" id="sideDot"></span><span id="sideStatus">连接中</span></span><b id="sideThemes">–</b></div>
-      <div class="side-line"><span>Caddy</span><b id="sideCaddy">–</b></div>
+      <div class="side-line"><span>管理服务</span><b id="sideAdmin">–</b></div>
       <div class="side-line"><span>存储</span><b id="sideStorage">–</b></div>
       <div class="side-line"><span>待审核</span><b id="sidePending">–</b></div>
       <div class="side-line"><a href="/account/" target="_blank" style="color:var(--muted);text-decoration:none">用户中心</a><b>↗</b></div>
@@ -674,11 +1246,36 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
     <div class="topbar">
       <div>
         <div class="crumb" id="pageCrumb">Armbian · Overview</div>
-        <h2>主题镜像控制台</h2>
+        <h2 id="pageTitle">主题镜像控制台</h2>
         <p class="lead" id="pageLead">管理访问令牌、审核主题投稿，以及查看客户端需要使用的 API 地址。</p>
       </div>
       <div class="top-actions">
-        <div class="pill"><span class="dot" id="topDot"></span><span id="topStatus">连接中…</span></div>
+        <div class="notify-wrap">
+          <button class="icon-btn notify-btn" id="notifyBtn" title="待处理通知" aria-label="待处理通知" aria-expanded="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+            <span class="notify-badge" id="notifyBadge" hidden>0</span>
+          </button>
+          <div class="notify-panel" id="notifyPanel" hidden>
+            <div class="notify-head"><span>待处理</span><span class="pill" id="notifyTotal">0</span></div>
+            <a class="notify-item" href="#pending" data-notify-key="pending">
+              <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 5h14v14H5z"/><path d="M8 9h8M8 13h5"/></svg></i>
+              <div><b>待审核主题</b><span>新的投稿等待审核</span></div>
+              <span class="notify-count" id="notifyPending">0</span>
+            </a>
+            <a class="notify-item" href="#users" data-notify-key="users">
+              <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="8" r="3"/><path d="M3 20c.7-4 2.7-6 6-6s5.3 2 6 6"/><path d="M16 5.5a3 3 0 0 1 0 5.5M18 14c2.2.5 3.5 2.5 4 6"/></svg></i>
+              <div><b>待验证用户</b><span>注册后还没有完成邮箱验证</span></div>
+              <span class="notify-count" id="notifyUsers">0</span>
+            </a>
+            <a class="notify-item" href="#users" data-notify-key="requests" data-notify-tab="author">
+              <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="5" width="17" height="14" rx="3"/><circle cx="8.5" cy="10" r="2"/><path d="M5.8 16c.4-2 1.3-3 2.7-3s2.3 1 2.7 3"/><path d="M14 9h4M14 12h4"/></svg></i>
+              <div><b>作者申请</b><span>绑定、新增或重置作者身份</span></div>
+              <span class="notify-count" id="notifyRequests">0</span>
+            </a>
+            <div class="notify-empty" id="notifyEmpty">暂无新的待处理消息</div>
+          </div>
+        </div>
+        <div class="pill status-pill"><span class="dot" id="topDot"></span><span id="topStatus">连接中…</span></div>
         <div class="user-chip"><span class="avatar-sm" id="topAvatar">A</span><span class="user-name" id="topUser">admin</span></div>
         <button class="icon-btn" id="logoutTop" title="退出登录" aria-label="退出登录">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h9"/></svg>
@@ -751,10 +1348,10 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
           <input id="userSearch" type="search" placeholder="搜索用户名、显示名、邮箱…">
         </div>
         <div class="row" id="userTabs">
-          <button data-user-status="pending" class="active">待验证邮箱</button>
-          <button data-user-status="author">作者申请</button>
-          <button data-user-status="all">全部用户</button>
-          <button data-user-status="disabled">已禁用</button>
+          <button data-user-status="pending" class="active">待验证邮箱 <span class="tab-count" id="usersTabPending">0</span></button>
+          <button data-user-status="author">作者申请 <span class="tab-count" id="usersTabAuthors">0</span></button>
+          <button data-user-status="all">全部用户 <span class="tab-count" id="usersTabTotal">0</span></button>
+          <button data-user-status="disabled">已禁用 <span class="tab-count" id="usersTabDisabled">0</span></button>
         </div>
       </div>
       <div id="userList"></div>
@@ -805,7 +1402,15 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
       <div class="card">
         <form id="uploadForm">
           <div class="form-grid">
-            <div class="full"><label for="upUpdate">更新已有主题</label><select id="upUpdate"><option value="">新建主题</option></select><div class="field-hint">新建时主题 ID 由作者编号和顺序自动生成；更新时沿用原 ID。</div></div>
+            <div class="full">
+              <label for="upUpdate">更新已有主题</label>
+              <div class="search" style="margin-bottom:8px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+                <input id="upUpdateSearch" type="search" placeholder="搜索已有主题（名称 / ID / 作者）…">
+              </div>
+              <select id="upUpdate"><option value="">新建主题</option></select>
+              <div class="field-hint">新建时主题 ID 由作者编号和顺序自动生成；更新时沿用原 ID。</div>
+            </div>
             <div><label for="upAutoId">主题 ID（自动）</label><input id="upAutoId" readonly placeholder="选择作者后自动生成"></div>
             <div><label for="upVersion">版本号</label><input id="upVersion" name="version" type="number" min="1" value="1" required></div>
             <input id="upId" name="id" type="hidden">
@@ -883,7 +1488,7 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
         <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 19V5M4 19h16"/><path d="M8 15v-4M12 15V7M16 15v-6M20 15V4"/></svg>存储配额</h4>
         <p class="hint">限制已发布资源和待审核文件的总大小；达到配额后新的上传会被拒绝。</p>
         <div class="form-grid">
-          <div><label for="storageLimitInput">配额（MB）</label><input id="storageLimitInput" type="number" min="64" max="10485760" step="64" placeholder="1200" spellcheck="false"></div>
+          <div><label for="storageLimitInput">配额（MB）</label><input id="storageLimitInput" type="number" min="64" max="10485760" step="64" placeholder="1024" spellcheck="false"></div>
           <div><label for="storageLimitUsed">当前已用</label><input id="storageLimitUsed" disabled></div>
         </div>
         <div class="row">
@@ -896,7 +1501,16 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
         <h4>数据目录</h4>
         <p class="hint">meta、catalog.json 和待审核文件保存在这里；本地资源模式的主题文件也在这里。迁移会复制现有数据，目标目录必须为空。</p>
         <div class="form-grid">
-          <div class="full"><label for="storageRootInput">目录路径</label><input id="storageRootInput" placeholder="/srv/sukisu-themes" spellcheck="false"></div>
+          <div class="full">
+            <label for="storageRootInput">目录路径</label>
+            <div class="path-presets" id="storageRootPresets">
+              <button type="button" data-storage-root="/srv/sukisu-themes">/srv/sukisu-themes</button>
+              <button type="button" data-storage-root="/var/lib/sukisu-themes">/var/lib/sukisu-themes</button>
+              <button type="button" data-storage-root="/opt/sukisu-themes">/opt/sukisu-themes</button>
+              <button type="button" data-storage-root="/home/sukisu/themes">/home/sukisu/themes</button>
+            </div>
+            <input id="storageRootInput" placeholder="/srv/sukisu-themes" spellcheck="false">
+          </div>
         </div>
         <div class="row">
           <button class="primary" id="storageRootApply">保存并迁移</button>
@@ -1147,6 +1761,9 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
         </div>
       </div>
     </section>
+    <footer class="site-footer">
+      <span>SukiSU 主题镜像 · Theme mirror console</span>
+    </footer>
   </main>
 </div>
 <div class="toast" id="toast"></div>
@@ -1159,10 +1776,10 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
 </dialog>
 
 <script>
-const BASE_PATH = location.pathname.replace(/\/?$/, '/');
+const BASE_PATH = location.pathname.startsWith('/admin') ? '/admin/' : '/';
 const API = BASE_PATH + 'api';
 const LOGIN_URL = '/account/login';
-const SETUP_URL = BASE_PATH + 'setup';
+const SETUP_URL = '/admin/setup';
 const $ = id => document.getElementById(id);
 let tokenVisible = false;
 let statusData = null;
@@ -1173,6 +1790,20 @@ function toast(message, kind = 'ok') {
   el.className = 'toast show ' + kind;
   clearTimeout(window.__toast);
   window.__toast = setTimeout(() => { el.className = 'toast'; }, 4200);
+}
+
+const AUTH_REDIRECT_KEY = 'sukisu-admin-auth-redirect';
+
+function redirectToLogin() {
+  let last = 0;
+  try { last = Number(sessionStorage.getItem(AUTH_REDIRECT_KEY) || 0); } catch (_) {}
+  if (last && Date.now() - last < 6000) {
+    const status = $('topStatus');
+    if (status) status.textContent = '登录状态异常，请手动打开登录页';
+    return;
+  }
+  try { sessionStorage.setItem(AUTH_REDIRECT_KEY, String(Date.now())); } catch (_) {}
+  location.replace(LOGIN_URL);
 }
 
 async function api(path, options = {}) {
@@ -1187,7 +1818,7 @@ async function api(path, options = {}) {
     },
   });
   if (response.status === 401) {
-    location.replace(LOGIN_URL);
+    redirectToLogin();
     throw new Error('登录已过期，请重新登录');
   }
   if (!response.ok) {
@@ -1213,7 +1844,7 @@ function uploadWithProgress(url, form, onProgress) {
       let data = {};
       try { data = JSON.parse(xhr.responseText || '{}'); } catch (_) {}
       if (xhr.status === 401) {
-        location.replace(LOGIN_URL);
+        redirectToLogin();
         reject(new Error('登录已过期，请重新登录'));
         return;
       }
@@ -1233,7 +1864,8 @@ function stateText(state) {
   if (state === 'active') return '运行中';
   if (state === 'inactive') return '已停止';
   if (state === 'failed') return '失败';
-  return state || '未知';
+  if (state === 'unknown' || !state) return '未知';
+  return state;
 }
 
 function setState(valueId, state) {
@@ -1311,7 +1943,11 @@ function setUser(name) {
   });
   ['topAvatar', 'accountAvatar'].forEach(id => {
     const el = $(id);
-    if (el) el.textContent = initial;
+    if (!el) return;
+    el.textContent = initial;
+    el.style.backgroundImage = '';
+    el.style.backgroundSize = '';
+    el.style.backgroundPosition = '';
   });
   ['settingsUserPill', 'settingsUserPill2'].forEach(id => {
     const el = $(id);
@@ -1319,6 +1955,23 @@ function setUser(name) {
   });
   const usernameInput = $('adminUsername');
   if (usernameInput) usernameInput.value = sessionUser;
+}
+
+async function loadSelfAvatar(name) {
+  try {
+    const data = await api('/users?status=all&q=' + encodeURIComponent(name || sessionUser));
+    const user = (data.users || []).find(item => item.username === (name || sessionUser));
+    if (!user || !user.avatar) return;
+    const url = API + '/preview?path=' + encodeURIComponent(user.avatar);
+    ['topAvatar', 'accountAvatar'].forEach(id => {
+      const el = $(id);
+      if (!el) return;
+      el.textContent = '';
+      el.style.backgroundImage = 'url("' + url + '")';
+      el.style.backgroundSize = 'cover';
+      el.style.backgroundPosition = 'center';
+    });
+  } catch (_) {}
 }
 
 async function loadSession() {
@@ -1329,7 +1982,7 @@ async function loadSession() {
       headers: { 'X-Requested-With': 'SukiSUThemeAdmin' },
     });
     if (!response.ok) {
-      location.replace(LOGIN_URL);
+      redirectToLogin();
       return false;
     }
     const data = await response.json().catch(() => ({}));
@@ -1338,13 +1991,15 @@ async function loadSession() {
       return false;
     }
     if (!data.authenticated) {
-      location.replace(LOGIN_URL);
+      redirectToLogin();
       return false;
     }
+    try { sessionStorage.removeItem(AUTH_REDIRECT_KEY); } catch (_) {}
     setUser(data.username || 'admin');
+    void loadSelfAvatar(data.username || 'admin');
     return true;
   } catch (_) {
-    location.replace(LOGIN_URL);
+    redirectToLogin();
     return false;
   }
 }
@@ -1383,6 +2038,7 @@ function renderEndpoints(endpoints) {
 
 function render(status) {
   statusData = status;
+  notifyCounts.themes = Number(status.pendingCount || 0);
   const catalog = status.catalog || {};
   $('themeCount').textContent = catalog.themes ?? '0';
   $('sideThemes').textContent = (catalog.themes ?? 0) + ' 主题';
@@ -1391,7 +2047,7 @@ function render(status) {
   $('tokenSub').textContent = status.tokenSet ? '通过请求头校验' : '镜像当前无保护';
   setState('caddyState', status.caddy);
   setState('adminState', status.adminService);
-  $('sideCaddy').textContent = stateText(status.caddy);
+  $('sideAdmin').textContent = stateText(status.adminService);
   const storage = status.storage || {};
   const used = Number(storage.used || 0);
   const limit = Number(storage.limit || 0);
@@ -1425,7 +2081,7 @@ function render(status) {
     $('storageLimitInput').value = Math.round(limit / (1024 * 1024));
   }
   $('storageLimitUsed').value = formatStorage(used);
-  $('sideStatus').textContent = status.caddy === 'active' ? '镜像运行中' : 'Caddy ' + stateText(status.caddy);
+  $('sideStatus').textContent = status.caddy === 'active' ? '镜像运行中' : (status.caddy === 'inactive' ? '镜像已停止' : '镜像状态未知');
   setDot($('sideDot'), status.caddy);
   setDot($('topDot'), status.caddy);
   $('topStatus').textContent = status.caddy === 'active' ? '镜像运行中' : 'Caddy ' + stateText(status.caddy);
@@ -1842,6 +2498,17 @@ async function loadPending() {
 let userStatus = 'pending';
 let userQuery = '';
 let selectedUserId = null;
+let currentPage = 'overview';
+
+function setUserStatus(status) {
+  userStatus = status || 'pending';
+  document.querySelectorAll('[data-user-status]').forEach(item => {
+    item.classList.toggle('active', item.dataset.userStatus === userStatus);
+  });
+  selectedUserId = null;
+  $('userDetail').classList.add('hidden');
+  loadUsers();
+}
 
 function userStatusText(status) {
   return ({ email_pending: '待验证邮箱', pending: '待审核', active: '已启用', rejected: '已拒绝', disabled: '已禁用' })[status] || status || '未知';
@@ -1867,11 +2534,142 @@ function updateUserStats(counts) {
   $('usersStatAuthors').textContent = authorRequests;
   $('usersStatDisabled').textContent = disabled;
   $('usersPill').textContent = `${total} 位用户`;
+  const setCount = (id, value) => {
+    const el = $(id);
+    if (!el) return;
+    if (value == null) el.textContent = '0';
+    else el.textContent = Number(value) > 99 ? '99+' : String(value);
+  };
+  setCount('usersTabPending', pending);
+  setCount('usersTabAuthors', authorRequests);
+  setCount('usersTabTotal', total);
+  if (counts && counts.disabled != null) setCount('usersTabDisabled', counts.disabled);
   const badge = $('usersNavBadge');
   const pendingTotal = Number(pending || 0) + Number(authorRequests || 0);
   badge.textContent = pendingTotal > 99 ? '99+' : String(pendingTotal);
   badge.style.display = pendingTotal > 0 ? '' : 'none';
+  if (counts && (counts.pending != null || counts.authorRequests != null)) {
+    notifyCounts.users = Number(counts.pending || 0);
+    notifyCounts.requests = Number(counts.authorRequests || 0);
+    if (counts.disabled != null) notifyCounts.disabled = Number(counts.disabled || 0);
+    renderNotifications();
+  }
 }
+
+const NOTIFY_KEY = 'sukisu-admin-seen-v1';
+const notifyCounts = { themes: 0, users: 0, requests: 0, disabled: 0 };
+let notifySeen = { themes: 0, users: 0, requests: 0 };
+let notifyPrevious = null;
+try {
+  const saved = JSON.parse(localStorage.getItem(NOTIFY_KEY) || '{}');
+  if (saved && typeof saved === 'object') {
+    notifySeen = {
+      themes: Number(saved.themes || 0),
+      users: Number(saved.users || 0),
+      requests: Number(saved.requests || 0),
+    };
+  }
+} catch (_) {}
+
+function unseenNotifications() {
+  return {
+    themes: Math.max(0, notifyCounts.themes - notifySeen.themes),
+    users: Math.max(0, notifyCounts.users - notifySeen.users),
+    requests: Math.max(0, notifyCounts.requests - notifySeen.requests),
+  };
+}
+
+function renderNotifications() {
+  let seenChanged = false;
+  ['themes', 'users', 'requests'].forEach(key => {
+    if (notifyCounts[key] < notifySeen[key]) {
+      notifySeen[key] = notifyCounts[key];
+      seenChanged = true;
+    }
+  });
+  if (seenChanged) {
+    try { localStorage.setItem(NOTIFY_KEY, JSON.stringify(notifySeen)); } catch (_) {}
+  }
+  const unseen = unseenNotifications();
+  const unseenTotal = unseen.themes + unseen.users + unseen.requests;
+  const total = notifyCounts.themes + notifyCounts.users + notifyCounts.requests;
+  const badge = $('notifyBadge');
+  if (badge) {
+    badge.textContent = unseenTotal > 99 ? '99+' : String(unseenTotal);
+    badge.hidden = unseenTotal === 0;
+  }
+  const totalEl = $('notifyTotal');
+  if (totalEl) totalEl.textContent = String(total);
+  const setText = (id, value) => {
+    const el = $(id);
+    if (el) el.textContent = String(value);
+  };
+  setText('notifyPending', notifyCounts.themes);
+  setText('notifyUsers', notifyCounts.users);
+  setText('notifyRequests', notifyCounts.requests);
+  const empty = $('notifyEmpty');
+  if (empty) empty.hidden = total > 0;
+  const panel = $('notifyPanel');
+  if (panel) {
+    panel.querySelectorAll('[data-notify-key]').forEach(item => {
+      const key = item.dataset.notifyKey;
+      item.dataset.new = unseen[key] > 0 ? '1' : '0';
+      item.hidden = notifyCounts[key] === 0;
+    });
+  }
+  const baseTitle = 'SukiSU 主题镜像控制台';
+  document.title = (unseenTotal > 0 ? `(${unseenTotal}) ` : '') + baseTitle;
+  if (notifyPrevious) {
+    const changes = [];
+    if (notifyCounts.themes > notifyPrevious.themes) changes.push(`有 ${notifyCounts.themes - notifyPrevious.themes} 个新的待审核主题`);
+    if (notifyCounts.requests > notifyPrevious.requests) changes.push(`有 ${notifyCounts.requests - notifyPrevious.requests} 份新的作者申请`);
+    if (notifyCounts.users > notifyPrevious.users) changes.push(`有 ${notifyCounts.users - notifyPrevious.users} 个新的待验证用户`);
+    if (changes.length) toast(changes.join('；'));
+  }
+  notifyPrevious = { ...notifyCounts };
+}
+
+function markNotificationsSeen() {
+  notifySeen = {
+    themes: notifyCounts.themes,
+    users: notifyCounts.users,
+    requests: notifyCounts.requests,
+  };
+  try { localStorage.setItem(NOTIFY_KEY, JSON.stringify(notifySeen)); } catch (_) {}
+  renderNotifications();
+}
+
+function setNotifyPanel(open) {
+  const panel = $('notifyPanel');
+  const button = $('notifyBtn');
+  if (!panel || !button) return;
+  panel.hidden = !open;
+  button.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open) renderNotifications();
+}
+
+$('notifyBtn').addEventListener('click', event => {
+  event.stopPropagation();
+  const panel = $('notifyPanel');
+  const open = panel.hidden;
+  setNotifyPanel(open);
+  if (open) markNotificationsSeen();
+});
+$('notifyPanel').addEventListener('click', event => {
+  const item = event.target.closest('.notify-item');
+  if (!item) return;
+  if (item.dataset.notifyTab) {
+    setUserStatus(item.dataset.notifyTab);
+  }
+  markNotificationsSeen();
+  setNotifyPanel(false);
+});
+document.addEventListener('click', event => {
+  const panel = $('notifyPanel');
+  if (!panel || panel.hidden) return;
+  if (event.target.closest('.notify-wrap')) return;
+  setNotifyPanel(false);
+});
 
 function renderUsers(users) {
   const list = $('userList');
@@ -2125,13 +2923,7 @@ $('userSearch').addEventListener('input', () => {
   loadUsers.timer = setTimeout(loadUsers, 250);
 });
 document.querySelectorAll('[data-user-status]').forEach(button => {
-  button.addEventListener('click', () => {
-    document.querySelectorAll('[data-user-status]').forEach(item => item.classList.toggle('active', item === button));
-    userStatus = button.dataset.userStatus;
-    selectedUserId = null;
-    $('userDetail').classList.add('hidden');
-    loadUsers();
-  });
+  button.addEventListener('click', () => setUserStatus(button.dataset.userStatus));
 });
 $('closeUserDetail').addEventListener('click', () => {
   $('userDetail').classList.add('hidden');
@@ -2317,12 +3109,19 @@ function populateUploadAuthors() {
   if (authorItems.some(author => author.hash === current)) select.value = current;
 }
 
+let uploadThemeItems = [];
+
 function populateUploadThemes(themes) {
   const select = $('upUpdate');
   if (!select) return;
+  if (themes) uploadThemeItems = themes;
   const current = select.value;
+  const query = $('upUpdateSearch') ? $('upUpdateSearch').value : '';
+  const filtered = uploadThemeItems.filter(theme => matchesQuery(theme, query));
+  const selected = uploadThemeItems.find(theme => theme.id === current);
+  if (selected && !filtered.some(theme => theme.id === selected.id)) filtered.unshift(selected);
   select.innerHTML = '<option value="">新建主题</option>';
-  themes.forEach(theme => {
+  filtered.forEach(theme => {
     const option = document.createElement('option');
     option.value = theme.id;
     option.textContent = `${theme.id} · ${theme.name || ''} · v${theme.version}`;
@@ -2330,7 +3129,7 @@ function populateUploadThemes(themes) {
     option.dataset.author = theme.author || '';
     select.appendChild(option);
   });
-  if (themes.some(theme => theme.id === current)) select.value = current;
+  if (current && Array.from(select.options).some(option => option.value === current)) select.value = current;
 }
 
 async function refreshAutoThemeId() {
@@ -2532,6 +3331,13 @@ $('storageApply').addEventListener('click', async () => {
   }
 });
 
+document.querySelectorAll('[data-storage-root]').forEach(button => {
+  button.addEventListener('click', () => {
+    $('storageRootInput').value = button.dataset.storageRoot;
+    $('storageRootInput').focus();
+  });
+});
+
 $('storageRootApply').addEventListener('click', async () => {
   const root = $('storageRootInput').value.trim();
   if (!root) {
@@ -2558,6 +3364,7 @@ async function refresh(silent = false) {
   try {
     render(await api('/status'));
     await Promise.all([loadThemes(), loadPending(), loadAuthors()]);
+    if (currentPage === 'users') await loadUsers();
   } catch (error) {
     $('topStatus').textContent = '连接失败';
     $('sideStatus').textContent = '连接失败';
@@ -2584,6 +3391,21 @@ const PAGE_LABELS = {
   access: 'Access info',
 };
 
+const PAGE_TITLES = {
+  overview: '主题镜像控制台',
+  users: '用户与作者',
+  pending: '待审核投稿',
+  authors: '作者许可',
+  themes: '主题预览',
+  upload: '上传主题',
+  storage: '存储与配额',
+  api: 'API 接口',
+  network: '网络配置',
+  auth: '认证设置',
+  settings: '控制台设置',
+  access: '接入信息',
+};
+
 const PAGE_LEADS = {
   overview: '管理访问令牌、审核主题投稿，以及查看客户端需要使用的 API 地址。',
   users: '管理用户账号、作者绑定申请、资料和权限。',
@@ -2601,6 +3423,7 @@ const PAGE_LEADS = {
 
 function showPage(id, smooth = false) {
   const page = PAGE_LABELS[id] ? id : 'overview';
+  currentPage = page;
   document.querySelectorAll('section.page').forEach(section => {
     section.classList.toggle('active', section.id === page);
   });
@@ -2611,7 +3434,9 @@ function showPage(id, smooth = false) {
     else link.removeAttribute('aria-current');
   });
   const crumb = $('pageCrumb');
-  if (crumb) crumb.textContent = 'Armbian · ' + PAGE_LABELS[page];
+  if (crumb) crumb.textContent = 'SukiSU Ultra · ' + PAGE_LABELS[page];
+  const title = $('pageTitle');
+  if (title) title.textContent = PAGE_TITLES[page] || '主题镜像控制台';
   const lead = $('pageLead');
   if (lead && PAGE_LEADS[page]) lead.textContent = PAGE_LEADS[page];
   if (page === 'storage') loadStorage();
@@ -2679,6 +3504,7 @@ document.querySelectorAll('[data-theme-choice]').forEach(button => {
 });
 
 $('refreshBtn').addEventListener('click', () => refresh());
+$('upUpdateSearch').addEventListener('input', () => populateUploadThemes());
 $('themeSearch').addEventListener('input', event => {
   themeQuery = event.target.value;
   renderThemeGrid();
@@ -2734,7 +3560,7 @@ $('syncBtn').addEventListener('click', async () => {
   try {
     const data = await api('/sync', { method: 'POST', body: '{}' });
     toast(data.message || '目录已重建');
-    setTimeout(() => refresh(true), 1200);
+    setTimeout(() => refresh(true), 1024);
   } catch (error) {
     toast('重建失败：' + error.message, 'bad');
   }
@@ -2763,6 +3589,7 @@ $('saveUsername').addEventListener('click', async () => {
   try {
     const data = await api('/username', { method: 'POST', body: JSON.stringify({ username }) });
     setUser(data.username || username);
+    void loadSelfAvatar(data.username || username);
     toast(data.message || '用户名已更新');
   } catch (error) {
     toast('修改用户名失败：' + error.message, 'bad');

@@ -1759,6 +1759,10 @@ async fn account_preview(
             .iter()
             .map(|author| author.hash.clone())
             .collect();
+        let own_author_avatar = path
+            .strip_prefix("avatars/authors/")
+            .and_then(|rest| rest.split('.').next())
+            .is_some_and(|hash| hashes.iter().any(|value| value == hash));
         let username = session.username.trim().to_string();
         let meta_dir = state.paths.meta.clone();
         let path_for_scan = path.clone();
@@ -1800,7 +1804,7 @@ async fn account_preview(
         })
         .await
         .map_err(ApiError::internal)?;
-        found || session.role == "admin"
+        found || own_author_avatar || session.role == "admin"
     };
     if !allowed {
         return Err(ApiError::forbidden("无权查看该资源"));

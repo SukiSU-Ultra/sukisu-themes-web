@@ -380,6 +380,186 @@ input::placeholder { color: var(--faint); }
   .form-panel { padding: 26px 22px 26px; }
   .theme-toggle { top: 14px; right: 14px; }
 }
+
+/* ── SukiSU Website theme ───────────────────────────────────────────── */
+:root {
+  color-scheme: dark;
+  --bg: #303446;
+  --bg-alt: #292c3c;
+  --bg-elv: #414559;
+  --panel: #292c3c;
+  --panel-2: #313547;
+  --line: #414559;
+  --line-strong: rgba(129, 200, 190, .45);
+  --text: #c6d0f5;
+  --muted: #b5bfe2;
+  --faint: #838ba7;
+  --accent: #81c8be;
+  --accent-2: #8caaee;
+  --accent-3: #babbf1;
+  --ok: #a6d189;
+  --bad: #e78284;
+  --shadow: 0 24px 60px rgba(0, 0, 0, .22);
+  --input-bg: #232634;
+  --gradient: linear-gradient(120deg, #81c8be, #8caaee 55%, #babbf1);
+  --gradient-soft: rgba(129, 200, 190, .13);
+  --brand: #81c8be;
+  --brand-2: #70c0b6;
+  --brand-soft: rgba(129, 200, 190, .14);
+  --on-brand: #232634;
+}
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg: #eff1f5;
+  --bg-alt: #e6e9ef;
+  --bg-elv: #dce0e8;
+  --panel: #e6e9ef;
+  --panel-2: #ffffff;
+  --line: #ccd0da;
+  --line-strong: rgba(23, 146, 153, .32);
+  --text: #4c4f69;
+  --muted: #5c5f77;
+  --faint: #6c6f85;
+  --accent: #179299;
+  --accent-2: #1e66f5;
+  --accent-3: #7287fd;
+  --ok: #40a02b;
+  --bad: #d20f39;
+  --shadow: 0 24px 60px rgba(76, 79, 105, .1);
+  --input-bg: #eff1f5;
+  --gradient: linear-gradient(120deg, #179299, #1e66f5 55%, #7287fd);
+  --gradient-soft: rgba(23, 146, 153, .09);
+  --brand: #179299;
+  --brand-2: #147d82;
+  --brand-soft: rgba(23, 146, 153, .1);
+  --on-brand: #ffffff;
+}
+body {
+  background:
+    radial-gradient(ellipse 70% 45% at 50% -10%, color-mix(in srgb, var(--brand) 16%, transparent), transparent 70%),
+    var(--bg);
+  color: var(--text);
+}
+body::before {
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 56px 56px;
+  opacity: .3;
+  mask-image: radial-gradient(80% 55% at 50% 0%, #000 20%, transparent 75%);
+  -webkit-mask-image: radial-gradient(80% 55% at 50% 0%, #000 20%, transparent 75%);
+}
+body::after { display: none; }
+.login-card {
+  background: var(--bg-alt);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.story {
+  background:
+    radial-gradient(600px 320px at 0% 0%, var(--brand-soft), transparent 65%),
+    var(--bg-alt);
+}
+.story::after { display: none; }
+.story h2 em { background: var(--gradient); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.story > p { color: var(--muted); }
+.feature { background: var(--bg); border-color: var(--line); color: var(--muted); }
+.feature i { background: var(--brand-soft); border-color: var(--line); color: var(--brand); }
+.form-panel { background: transparent; }
+.form-panel h3 { font-weight: 800; letter-spacing: -.03em; }
+.form-panel .lead { color: var(--muted); }
+.theme-toggle { width: 40px; height: 40px; background: var(--bg-alt); border-color: var(--line); color: var(--muted); border-radius: 999px; }
+input {
+  background: var(--input-bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+}
+input:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent);
+  background: var(--bg);
+}
+label { color: var(--muted); }
+.field .eye {
+  right: 10px;
+  top: 10px;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--faint);
+}
+.field .eye:hover { background: var(--brand-soft); color: var(--brand); }
+.login-btn {
+  background: var(--brand);
+  color: var(--on-brand);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px -12px color-mix(in srgb, var(--brand) 80%, transparent);
+}
+.login-btn:hover { background: var(--brand-2); box-shadow: none; transform: none; }
+.quota-presets button {
+  border-radius: 999px;
+  border-color: var(--line);
+  background: var(--bg);
+  color: var(--muted);
+}
+.quota-presets button.active, .quota-presets button:hover {
+  color: var(--brand);
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.path-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 2px 0 10px;
+}
+.path-options button {
+  height: auto;
+  min-height: 54px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  text-align: left;
+}
+.path-options button b {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  word-break: break-all;
+}
+.path-options button span { color: var(--faint); font-size: 10px; }
+.path-options button.active {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.path-options button.active b { color: var(--brand); }
+.setup-note { color: var(--faint); }
+.login-error { border-color: color-mix(in srgb, var(--bad) 36%, transparent); background: color-mix(in srgb, var(--bad) 9%, transparent); color: var(--bad); }
+.login-error.ok { border-color: color-mix(in srgb, var(--ok) 36%, transparent); background: color-mix(in srgb, var(--ok) 9%, transparent); color: var(--ok); }
+@media (max-width: 520px) { .path-options { grid-template-columns: 1fr; } }
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text);
+  -webkit-box-shadow: 0 0 0 1000px var(--input-bg) inset;
+  caret-color: var(--text);
+  transition: background-color 9999s ease-out 0s;
+}
+
 </style>
 </head>
 <body>
@@ -404,14 +584,14 @@ input::placeholder { color: var(--faint); }
         </div>
         <div class="feature">
           <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/><path d="M4.5 11.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg></i>
-          <div><b>存储配额</b><span>默认 1.2 GB，之后可随时调整</span></div>
+          <div><b>存储与配额</b><span>选择数据目录并设置初始容量</span></div>
         </div>
       </div>
     </div>
 
     <div class="form-panel">
       <h3>初始化控制台</h3>
-      <p class="lead">创建第一个管理员账户，并设置主题资源配额。</p>
+      <p class="lead">创建第一个管理员账户，选择存储位置并设置主题资源配额。</p>
       <div class="login-error" id="setupError" role="alert"></div>
       <form id="setupForm" autocomplete="on">
         <label for="username">管理员用户名</label>
@@ -437,10 +617,21 @@ input::placeholder { color: var(--faint); }
           <button type="button" data-quota="10240">10 GB</button>
         </div>
         <div class="field quota-field">
-          <input id="limitMb" name="limitMb" type="number" min="64" max="10485760" step="64" value="1200" required>
+          <input id="limitMb" name="limitMb" type="number" min="64" max="10485760" step="64" value="1024" required>
           <span class="quota-unit">MB</span>
         </div>
         <p class="setup-note">配额限制主题包、预览图、截图、头像和待审核文件的总大小。之后可在「设置 → 存储」中调整。</p>
+        <label for="storageRoot">存储位置</label>
+        <div class="path-options" id="pathOptions">
+          <button type="button" data-root="/srv/sukisu-themes" class="active"><b>/srv/sukisu-themes</b><span>推荐 · 数据盘</span></button>
+          <button type="button" data-root="/var/lib/sukisu-themes"><b>/var/lib/sukisu-themes</b><span>系统数据目录</span></button>
+          <button type="button" data-root="/opt/sukisu-themes"><b>/opt/sukisu-themes</b><span>应用目录</span></button>
+          <button type="button" data-root="/home/sukisu/themes"><b>/home/sukisu/themes</b><span>用户目录</span></button>
+        </div>
+        <div class="field">
+          <input id="storageRoot" name="storageRoot" value="/srv/sukisu-themes" placeholder="/srv/sukisu-themes" spellcheck="false" required>
+        </div>
+        <p class="setup-note">可以选择常用位置，或直接输入自定义绝对路径。目录需要可写；迁移完成并重启服务后生效。</p>
         <button type="submit" class="login-btn" id="setupBtn"><span class="spinner"></span><span id="setupLabel">完成初始化</span></button>
       </form>
     </div>
@@ -449,8 +640,8 @@ input::placeholder { color: var(--faint); }
 
 <script>
 (function () {
-  const basePath = location.pathname.replace(/\/setup(?:\.html)?\/?$/, '/');
-  const API = basePath + 'api';
+  const basePath = '/admin/';
+  const API = (location.pathname.startsWith('/admin') ? '/admin' : '') + '/api';
   const LOGIN_URL = '/account/login';
   const form = document.getElementById('setupForm');
   const errorBox = document.getElementById('setupError');
@@ -460,18 +651,35 @@ input::placeholder { color: var(--faint); }
   const confirmInput = document.getElementById('confirmPassword');
   const usernameInput = document.getElementById('username');
   const limitInput = document.getElementById('limitMb');
+  const storageRootInput = document.getElementById('storageRoot');
+  const pathOptions = Array.from(document.querySelectorAll('[data-root]'));
   const presets = Array.from(document.querySelectorAll('[data-quota]'));
   let passwordVisible = false;
   let submitting = false;
+  let adminCreated = false;
+  let setupComplete = false;
 
   function showError(message) {
     errorBox.textContent = message || '初始化失败，请稍后再试';
     errorBox.classList.add('show');
+    errorBox.classList.remove('ok');
+  }
+
+  function showSuccess(message) {
+    errorBox.textContent = message;
+    errorBox.classList.add('show', 'ok');
   }
 
   function clearError() {
     errorBox.textContent = '';
-    errorBox.classList.remove('show');
+    errorBox.classList.remove('show', 'ok');
+  }
+
+  function syncPathOptions() {
+    const value = storageRootInput.value.trim();
+    pathOptions.forEach(button => {
+      button.classList.toggle('active', button.dataset.root === value);
+    });
   }
 
   function syncPresets() {
@@ -481,15 +689,53 @@ input::placeholder { color: var(--faint); }
     });
   }
 
-  function setLoading(loading) {
+  function setLoading(loading, label) {
     submitting = loading;
     setupBtn.disabled = loading;
     setupBtn.classList.toggle('loading', loading);
-    setupLabel.textContent = loading ? '正在创建…' : '完成初始化';
-    [usernameInput, passwordInput, confirmInput, limitInput].forEach(input => {
+    setupLabel.textContent = loading ? (label || '正在创建…') : '完成初始化';
+    [usernameInput, passwordInput, confirmInput, limitInput, storageRootInput].forEach(input => {
       input.disabled = loading;
     });
     presets.forEach(button => { button.disabled = loading; });
+    pathOptions.forEach(button => { button.disabled = loading; });
+  }
+
+  async function applyStorageRoot(root) {
+    const response = await fetch(API + '/storage/root', {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'SukiSUThemeAdmin',
+      },
+      body: JSON.stringify({ root, migrate: true }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) {
+      throw new Error(data.error || ('存储目录配置失败（HTTP ' + response.status + '）'));
+    }
+    if (data.running === false && data.error) throw new Error(data.error);
+    if (!data.running) return data.message || '存储目录已就绪';
+    for (let attempt = 0; attempt < 40; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      let job = {};
+      try {
+        const jobResponse = await fetch(API + '/storage/job', {
+          cache: 'no-store',
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'SukiSUThemeAdmin' },
+        });
+        if (jobResponse.status === 401) return '服务正在重启，存储目录已保存';
+        job = await jobResponse.json().catch(() => ({}));
+      } catch (_) {
+        return '服务正在重启，存储目录已保存';
+      }
+      if (job.error) throw new Error(job.error);
+      if (!job.running) return job.message || '存储目录已更新';
+    }
+    return '存储目录正在迁移，稍后刷新控制台即可看到最新状态';
   }
 
   async function checkSession() {
@@ -509,11 +755,16 @@ input::placeholder { color: var(--faint); }
   form.addEventListener('submit', async event => {
     event.preventDefault();
     if (submitting) return;
+    if (setupComplete) {
+      location.replace(basePath);
+      return;
+    }
     clearError();
     const username = usernameInput.value.trim();
     const password = passwordInput.value;
     const confirmPassword = confirmInput.value;
     const limitMb = Number(limitInput.value);
+    const storageRoot = storageRootInput.value.trim();
     if (!/^[A-Za-z0-9._-]{3,32}$/.test(username)) {
       showError('用户名需要 3-32 位字母、数字或 . _ -');
       usernameInput.focus();
@@ -534,6 +785,11 @@ input::placeholder { color: var(--faint); }
       limitInput.focus();
       return;
     }
+    if (!storageRoot || (!storageRoot.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(storageRoot)) || /\s/.test(storageRoot)) {
+      showError('请输入有效的绝对存储路径，例如 /srv/sukisu-themes');
+      storageRootInput.focus();
+      return;
+    }
     setLoading(true);
     try {
       const response = await fetch(API + '/setup', {
@@ -548,7 +804,24 @@ input::placeholder { color: var(--faint); }
       });
       const data = await response.json().catch(() => ({}));
       if (response.ok && data.ok) {
-        location.replace(basePath);
+        adminCreated = true;
+        clearError();
+        setLoading(true, '配置存储目录…');
+        let storageMessage = '';
+        try {
+          storageMessage = await applyStorageRoot(storageRoot);
+        } catch (error) {
+          setupComplete = true;
+          showError('管理员账号已创建，但存储目录未应用：' + error.message + '。请进入控制台后在「存储」页面修改。');
+          setLoading(false);
+          setupLabel.textContent = '进入控制台';
+          return;
+        }
+        setupComplete = true;
+        showSuccess('初始化完成。' + storageMessage);
+        setLoading(false);
+        setupLabel.textContent = '进入控制台';
+        setTimeout(() => location.replace(basePath), 3200);
         return;
       }
       if (response.status === 409) {
@@ -558,9 +831,16 @@ input::placeholder { color: var(--faint); }
       showError(data.error || ('初始化失败（HTTP ' + response.status + '）'));
       passwordInput.select();
     } catch (error) {
-      showError('网络错误，请检查连接后重试');
+      if (adminCreated) {
+        setupComplete = true;
+        showError('管理员账号已创建，但存储目录未应用：' + error.message + '。请进入控制台后在「存储」页面修改。');
+        setLoading(false);
+        setupLabel.textContent = '进入控制台';
+      } else {
+        showError('网络错误，请检查连接后重试');
+      }
     } finally {
-      setLoading(false);
+      if (!setupComplete) setLoading(false);
     }
   });
 
@@ -577,6 +857,16 @@ input::placeholder { color: var(--faint); }
   });
   limitInput.addEventListener('input', syncPresets);
   syncPresets();
+
+  pathOptions.forEach(button => {
+    button.addEventListener('click', () => {
+      storageRootInput.value = button.dataset.root;
+      syncPathOptions();
+      storageRootInput.focus();
+    });
+  });
+  storageRootInput.addEventListener('input', syncPathOptions);
+  syncPathOptions();
 
   document.getElementById('themeToggle').addEventListener('click', () => {
     const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';

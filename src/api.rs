@@ -217,7 +217,8 @@ pub fn router(state: AppState) -> Router {
     let account_api = crate::account_api::router(state.clone());
 
     Router::new()
-        .nest("/api", api)
+        .nest("/api", api.clone())
+        .nest("/admin/api", api)
         .nest("/account/api", account_api)
         .route("/submit", post(submit))
         .route("/themes/{*path}", get(asset))
@@ -247,7 +248,10 @@ async fn csrf_guard(request: Request, next: Next) -> Response {
 
 async fn auth_guard(State(state): State<AppState>, mut request: Request, next: Next) -> Response {
     let path = request.uri().path().to_string();
-    let relative = path.strip_prefix("/api").unwrap_or(&path);
+    let relative = path
+        .strip_prefix("/admin/api")
+        .or_else(|| path.strip_prefix("/api"))
+        .unwrap_or(&path);
     if matches!(relative, "/login" | "/session" | "/logout" | "/setup") {
         return next.run(request).await;
     }
@@ -404,7 +408,7 @@ async fn setup(
     let limit_mb = value
         .get("limitMb")
         .and_then(|value| value.as_u64())
-        .unwrap_or(1200);
+        .unwrap_or(1024);
     let limit_bytes = limit_mb
         .checked_mul(1024 * 1024)
         .ok_or_else(|| ApiError::bad("存储配额超出范围"))?;
@@ -831,11 +835,20 @@ async fn static_file(State(state): State<AppState>, uri: Uri) -> ApiResult<Respo
             .body(Body::empty())
             .map_err(ApiError::internal);
     }
-    let relative = if path == "/" || path == "/index.html" {
+    let relative = if path == "/"
+        || path == "/index.html"
+        || path == "/admin"
+        || path == "/admin/"
+        || path == "/admin/index.html"
+    {
         "index.html".to_string()
     } else if path == "/login" || path == "/login.html" {
         "account-auth.html".to_string()
-    } else if path == "/setup" || path == "/setup.html" {
+    } else if path == "/setup"
+        || path == "/setup.html"
+        || path == "/admin/setup"
+        || path == "/admin/setup.html"
+    {
         "setup.html".to_string()
     } else if path == "/account" || path == "/account/" || path == "/account/index.html" {
         "account.html".to_string()
@@ -845,7 +858,7 @@ async fn static_file(State(state): State<AppState>, uri: Uri) -> ApiResult<Respo
         || path == "/account/forgot"
     {
         "account-auth.html".to_string()
-    } else if path == "/account/logo.svg" {
+    } else if path == "/account/logo.svg" || path == "/admin/logo.svg" {
         "logo.svg".to_string()
     } else {
         path.trim_start_matches('/').to_string()
