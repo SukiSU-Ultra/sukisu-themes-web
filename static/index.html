@@ -1,0 +1,1581 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SukiSU 主题镜像控制台</title>
+<script>
+(function () {
+  try {
+    var saved = localStorage.getItem('sukisu-admin-theme');
+    var light = saved ? saved === 'light' : window.matchMedia('(prefers-color-scheme: light)').matches;
+    document.documentElement.dataset.theme = light ? 'light' : 'dark';
+  } catch (_) {
+    document.documentElement.dataset.theme = 'dark';
+  }
+})();
+</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Urbanist:wght@400;500;600;700;800&family=Fira+Code:wght@400;500;600&display=swap');
+
+:root {
+  --font-sans: 'Urbanist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'Noto Sans SC', sans-serif;
+  --font-mono: 'Fira Code', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --bg: #080d1a;
+  --panel: rgba(15, 23, 42, .62);
+  --panel-2: rgba(30, 41, 59, .72);
+  --sidebar-tint: rgba(8, 13, 26, .34);
+  --line: rgba(148, 163, 184, .18);
+  --line-strong: rgba(96, 165, 250, .34);
+  --text: #edf3ff;
+  --muted: #a6b4d4;
+  --faint: #7585a8;
+  --accent: #67e8f9;
+  --accent-2: #60a5fa;
+  --accent-3: #a78bfa;
+  --ok: #4ade80;
+  --bad: #fb7185;
+  --warn: #fbbf24;
+  --radius: 24px;
+  --shadow: 0 28px 70px rgba(2, 6, 23, .46);
+  --grid: rgba(148, 163, 184, .055);
+  --input-bg: rgba(2, 6, 18, .36);
+  --code-bg: rgba(2, 6, 18, .54);
+  --code-text: #d3e2ff;
+  --tag-text: #a9e8ff;
+  --tag-bg: rgba(103, 232, 249, .08);
+  --tag-border: rgba(103, 232, 249, .18);
+  --gradient: linear-gradient(120deg, #22d3ee 0%, #3b82f6 48%, #8b5cf6 100%);
+  --gradient-soft: linear-gradient(135deg, rgba(34, 211, 238, .14), rgba(59, 130, 246, .09) 48%, rgba(139, 92, 246, .12));
+}
+
+html[data-theme="light"] {
+  --bg: #f4f7ff;
+  --panel: rgba(255, 255, 255, .72);
+  --panel-2: rgba(255, 255, 255, .9);
+  --sidebar-tint: rgba(255, 255, 255, .42);
+  --line: rgba(100, 116, 139, .18);
+  --line-strong: rgba(37, 99, 235, .26);
+  --text: #0f172a;
+  --muted: #43536d;
+  --faint: #64748b;
+  --shadow: 0 24px 60px rgba(15, 23, 42, .12);
+  --grid: rgba(100, 116, 139, .075);
+  --input-bg: rgba(255, 255, 255, .74);
+  --code-bg: rgba(15, 23, 42, .055);
+  --code-text: #334155;
+  --tag-text: #0369a1;
+  --tag-bg: rgba(14, 165, 233, .08);
+  --tag-border: rgba(14, 165, 233, .18);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  background:
+    radial-gradient(900px 560px at 5% -10%, rgba(34, 211, 238, .16), transparent 62%),
+    radial-gradient(820px 540px at 100% 2%, rgba(139, 92, 246, .16), transparent 66%),
+    radial-gradient(900px 680px at 50% 112%, rgba(59, 130, 246, .13), transparent 66%),
+    var(--bg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(circle at 50% 0%, #000 0%, transparent 76%);
+  -webkit-mask-image: radial-gradient(circle at 50% 0%, #000 0%, transparent 76%);
+}
+body::after {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% -20%, rgba(96, 165, 250, .12), transparent 55%);
+}
+::selection { background: rgba(96, 165, 250, .35); }
+
+.app { display: flex; min-height: 100vh; }
+.sidebar {
+  width: 268px;
+  flex: 0 0 268px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  padding: 26px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  border-right: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--panel), var(--sidebar-tint));
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+.brand { display: flex; align-items: center; gap: 13px; padding: 4px 6px; }
+.brand .logo img { width: 34px; height: 34px; display: block; }
+.brand .logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  background: var(--gradient-soft);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 14px 34px rgba(37, 99, 235, .22), inset 0 1px 0 rgba(255, 255, 255, .18);
+}
+.brand h1 { margin: 0; font-size: 16px; font-weight: 750; letter-spacing: -.01em; }
+.brand p { margin: 3px 0 0; color: var(--faint); font-size: 11.5px; letter-spacing: .02em; }
+nav { display: flex; flex-direction: column; gap: 5px; scrollbar-width: none; }
+nav::-webkit-scrollbar { display: none; }
+nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13.5px;
+  font-weight: 500;
+  transition: .2s ease;
+}
+nav a:hover { color: var(--text); background: var(--panel); border-color: var(--line); transform: translateX(2px); }
+nav a.active {
+  color: var(--text);
+  background: var(--gradient-soft);
+  border-color: var(--line-strong);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08);
+}
+nav svg { width: 17px; height: 17px; flex: 0 0 auto; }
+.side-foot { margin-top: auto; border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 9px; }
+.side-line { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--faint); }
+.side-line b { color: var(--muted); font-weight: 600; }
+.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); margin-right: 6px; vertical-align: 1px; }
+.dot.ok { background: var(--ok); box-shadow: 0 0 0 3px rgba(74, 222, 128, .13); }
+.dot.bad { background: var(--bad); box-shadow: 0 0 0 3px rgba(251, 113, 133, .13); }
+.dot.warn { background: var(--warn); box-shadow: 0 0 0 3px rgba(251, 191, 36, .13); }
+
+main { flex: 1; min-width: 0; padding: 34px clamp(22px, 4.5vw, 64px) 72px; }
+.topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 22px;
+  flex-wrap: wrap;
+  margin-bottom: 28px;
+  padding-bottom: 6px;
+}
+.crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.crumb::before { content: ""; width: 18px; height: 1px; background: var(--gradient); }
+.topbar h2 {
+  width: fit-content;
+  margin: 0;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-size: clamp(30px, 4vw, 46px);
+  line-height: 1.08;
+  font-weight: 800;
+  letter-spacing: -.035em;
+}
+.topbar .lead { margin: 11px 0 0; color: var(--muted); font-size: 14px; max-width: 640px; line-height: 1.7; }
+.top-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding-top: 8px; }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.icon-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: .2s ease;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.icon-btn:hover { background: var(--panel-2); border-color: var(--line-strong); transform: translateY(-1px); box-shadow: 0 10px 24px rgba(37, 99, 235, .14); }
+.icon-btn svg { width: 18px; height: 18px; }
+.icon-btn.spin svg { animation: spin .9s linear infinite; }
+html[data-theme="dark"] .theme-moon { display: none; }
+html[data-theme="light"] .theme-sun { display: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+section { scroll-margin-top: 96px; margin-top: 38px; }
+.page { display: none; }
+.page.active { display: block; animation: pageIn .26s ease both; }
+@keyframes pageIn { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+.section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; margin-bottom: 15px; flex-wrap: wrap; }
+.section-head h3 { margin: 0; font-size: 21px; line-height: 1.2; font-weight: 750; letter-spacing: -.02em; }
+.section-head p { margin: 5px 0 0; color: var(--faint); font-size: 12.5px; line-height: 1.6; }
+
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 13px; }
+.stat {
+  position: relative;
+  overflow: hidden;
+  padding: 19px 20px;
+  border-radius: 20px;
+  background: linear-gradient(160deg, var(--panel-2), var(--panel));
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  transition: .22s ease;
+}
+.stat:hover { transform: translateY(-3px); border-color: var(--line-strong); }
+.stat::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(320px 100px at 0 0, rgba(103, 232, 249, .12), transparent 68%);
+  pointer-events: none;
+}
+.stat .label { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 8px; }
+.stat .value { margin-top: 10px; font-size: 32px; font-weight: 800; letter-spacing: -.045em; line-height: 1; }
+.stat .sub { margin-top: 8px; color: var(--faint); font-size: 11.5px; }
+
+.grid { display: grid; grid-template-columns: 1.25fr .75fr; gap: 14px; margin-top: 14px; }
+.card {
+  position: relative;
+  overflow: hidden;
+  padding: 22px;
+  border-radius: var(--radius);
+  background: linear-gradient(160deg, var(--panel-2), var(--panel));
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(520px 120px at 0 0, rgba(96, 165, 250, .10), transparent 66%);
+  pointer-events: none;
+}
+.card h4 { margin: 0 0 5px; font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; letter-spacing: -.01em; }
+.card .hint { margin: 0 0 16px; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
+.card svg.ic { width: 18px; height: 18px; color: var(--accent); }
+label { display: block; margin: 0 0 7px; color: var(--muted); font-size: 12px; font-weight: 500; }
+input, textarea {
+  width: 100%;
+  color: var(--text);
+  background: var(--input-bg);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  font: inherit;
+  outline: none;
+  transition: .2s ease;
+}
+input { height: 46px; padding: 0 44px 0 13px; font-size: 13.5px; }
+textarea { min-height: 88px; resize: vertical; padding: 12px 13px; font-size: 13px; line-height: 1.6; }
+input:focus, textarea:focus { border-color: var(--line-strong); box-shadow: 0 0 0 4px rgba(96, 165, 250, .10); background: var(--panel-2); }
+input::placeholder, textarea::placeholder { color: var(--faint); }
+.field { position: relative; }
+.field .mini {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--panel-2);
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.field .mini:hover { color: var(--text); background: var(--gradient-soft); }
+.row { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 12px; }
+button {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.8px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  transition: .18s ease;
+}
+button:hover { background: var(--panel-2); border-color: var(--line-strong); transform: translateY(-1px); }
+button:active { transform: none; }
+button:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+button.primary {
+  background: var(--gradient);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 12px 30px rgba(37, 99, 235, .24);
+}
+button.primary:hover { box-shadow: 0 16px 36px rgba(37, 99, 235, .32); }
+.strength { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: var(--faint); font-size: 11.5px; }
+.strength .bar { flex: 1; height: 5px; border-radius: 99px; overflow: hidden; background: var(--line); }
+.strength .bar i { display: block; width: 0; height: 100%; border-radius: 99px; background: var(--gradient); transition: .25s; }
+.meta { display: grid; gap: 9px; margin-top: 4px; }
+.kv { display: flex; justify-content: space-between; gap: 14px; color: var(--muted); font-size: 12.5px; }
+.kv b { color: var(--text); font-weight: 600; text-align: right; word-break: break-all; }
+
+.table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.table th { padding: 0 10px 10px; text-align: left; color: var(--faint); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; border-bottom: 1px solid var(--line); }
+.table td { padding: 11px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.table tr:last-child td { border-bottom: 0; }
+.method { display: inline-flex; min-width: 50px; justify-content: center; padding: 4px 8px; border-radius: 8px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; }
+.method.get { color: var(--accent); background: rgba(103, 232, 249, .09); border: 1px solid rgba(103, 232, 249, .18); }
+.method.post { color: var(--accent-3); background: rgba(167, 139, 250, .1); border: 1px solid rgba(167, 139, 250, .2); }
+.url { color: var(--code-text); font-family: var(--font-mono); font-size: 11.5px; word-break: break-all; }
+.auth { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.copy { width: 28px; height: 28px; padding: 0; justify-content: center; border: 0; background: transparent; color: var(--faint); }
+.copy svg { width: 14px; height: 14px; }
+.copy:hover { color: var(--text); background: var(--panel-2); }
+pre { margin: 0; padding: 17px; overflow: auto; border-radius: 15px; border: 1px solid var(--line); background: var(--code-bg); color: var(--code-text); font-family: var(--font-mono); font-size: 11.5px; line-height: 1.75; }
+.inline-code { padding: 2px 6px; border-radius: 6px; background: var(--panel-2); color: var(--code-text); font-family: var(--font-mono); font-size: 11.5px; }
+
+.toast {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 30;
+  max-width: min(420px, calc(100vw - 44px));
+  padding: 13px 15px;
+  border-radius: 15px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  font-size: 13px;
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+  transition: .2s;
+}
+.toast.show { opacity: 1; transform: none; }
+.toast.ok { border-color: rgba(74, 222, 128, .38); }
+.toast.bad { border-color: rgba(251, 113, 133, .42); }
+footer { margin-top: 38px; padding-top: 18px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: 12px; color: var(--faint); font-size: 11.5px; flex-wrap: wrap; }
+
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 15px; }
+.theme-card {
+  overflow: hidden;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: linear-gradient(160deg, var(--panel-2), var(--panel));
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: .22s ease;
+}
+.theme-card:hover { transform: translateY(-4px); border-color: var(--line-strong); }
+.theme-preview { position: relative; aspect-ratio: 16/10; overflow: hidden; background: linear-gradient(135deg, #121b30, #1b1330); }
+html[data-theme="light"] .theme-preview { background: linear-gradient(135deg, #e2e8f0, #dbeafe); }
+.theme-preview img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .35s; }
+.theme-card:hover .theme-preview img { transform: scale(1.035); }
+.theme-preview .fallback { position: absolute; inset: 0; display: grid; place-items: center; color: var(--faint); font-size: 12px; background: radial-gradient(circle at 30% 20%, rgba(103, 232, 249, .12), transparent 45%), linear-gradient(135deg, #111a2d, #1a1230); }
+html[data-theme="light"] .theme-preview .fallback,
+html[data-theme="light"] .pending-preview .fallback { background: linear-gradient(135deg, #e2e8f0, #dbeafe); }
+.theme-body { padding: 15px; }
+.theme-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text); font-size: 14.5px; font-weight: 650; letter-spacing: -.01em; }
+.theme-meta { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 5px; color: var(--faint); font-size: 11px; }
+.theme-meta .author { display: inline-flex; align-items: center; gap: 4px; }
+.author-avatar { width: 16px; height: 16px; border-radius: 50%; object-fit: cover; flex: none; background: var(--panel); }
+.theme-desc { display: -webkit-box; overflow: hidden; min-height: 36px; margin-top: 8px; color: var(--muted); font-size: 11.8px; line-height: 1.55; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.theme-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+.theme-tags span { padding: 2px 7px; border-radius: 99px; color: var(--tag-text); background: var(--tag-bg); border: 1px solid var(--tag-border); font-size: 10px; }
+.empty { padding: 36px 22px; border: 1px dashed var(--line); border-radius: 20px; background: var(--panel); color: var(--faint); font-size: 12.5px; text-align: center; }
+.empty b { display: block; margin-bottom: 5px; color: var(--muted); font-size: 13.5px; }
+.storage-bar { height: 8px; margin-top: 10px; overflow: hidden; border-radius: 99px; background: var(--line); }
+.storage-bar i { display: block; height: 100%; width: 0; border-radius: 99px; background: var(--gradient); transition: width .3s; }
+
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-grid .full { grid-column: 1 / -1; }
+.form-grid label { margin-top: 2px; }
+.storage-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 12px 0 8px; }
+.storage-grid > div { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.storage-grid .hint { display: block; margin: 0 0 4px; font-size: 11px; color: var(--muted); }
+.storage-grid b { font-size: 12.5px; word-break: break-all; }
+.check { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+input[type=file] { height: auto; padding: 9px 11px; color: var(--muted); font-size: 12px; }
+input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 11.5px; cursor: pointer; }
+.theme-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.theme-actions button { height: 30px; color: var(--bad); background: rgba(251, 113, 133, .08); border-color: rgba(251, 113, 133, .26); font-size: 11.5px; }
+.toolbar { display: flex; align-items: center; gap: 10px; margin: 2px 0 15px; flex-wrap: wrap; }
+.search { position: relative; flex: 1; min-width: 220px; }
+.search svg { position: absolute; left: 12px; top: 50%; width: 16px; height: 16px; color: var(--faint); transform: translateY(-50%); pointer-events: none; }
+.search input { margin: 0; padding-left: 36px; }
+.nav-badge { display: none; min-width: 18px; height: 18px; margin-left: auto; padding: 0 5px; border-radius: 99px; background: rgba(251, 191, 36, .16); border: 1px solid rgba(251, 191, 36, .28); color: var(--warn); font-size: 10px; line-height: 16px; text-align: center; }
+
+.pending-card {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  overflow: hidden;
+  margin-bottom: 12px;
+  border: 1px solid rgba(251, 191, 36, .2);
+  border-radius: 20px;
+  background: linear-gradient(160deg, var(--panel-2), var(--panel));
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.pending-preview { position: relative; min-height: 150px; overflow: hidden; background: linear-gradient(135deg, #121b30, #1b1330); }
+.pending-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pending-preview .fallback { position: absolute; inset: 0; display: grid; place-items: center; color: var(--faint); font-size: 12px; }
+.pending-body { min-width: 0; padding: 16px 18px; }
+.pending-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.pending-actions .validation { margin-right: auto; padding: 4px 8px; border-radius: 99px; font-size: 10.5px; }
+.pending-actions .validation.ok { color: var(--ok); background: rgba(74, 222, 128, .08); border: 1px solid rgba(74, 222, 128, .18); }
+.pending-actions .validation.warn { color: var(--warn); background: rgba(251, 191, 36, .08); border: 1px solid rgba(251, 191, 36, .2); }
+.pending-actions button { height: 32px; padding: 0 12px; font-size: 12px; }
+.pending-actions .approve { color: var(--ok); background: rgba(74, 222, 128, .08); border-color: rgba(74, 222, 128, .26); }
+.pending-actions .reject { color: var(--bad); background: rgba(251, 113, 133, .08); border-color: rgba(251, 113, 133, .26); }
+
+.author-card { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 9px; padding: 13px 16px; border: 1px solid var(--line); border-radius: 15px; background: var(--panel); }
+.author-fp { flex: 1; min-width: 180px; color: var(--code-text); font-family: var(--font-mono); font-size: 12px; word-break: break-all; }
+.author-meta { display: flex; flex-wrap: wrap; gap: 10px; color: var(--faint); font-size: 11px; }
+.author-actions button { height: 30px; color: var(--bad); background: rgba(251, 113, 133, .08); border-color: rgba(251, 113, 133, .26); font-size: 11.5px; }
+
+.field-hint{margin-top:6px;color:var(--faint);font-size:11.5px;line-height:1.6}
+.mention-hints{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.mention-chip{height:28px;padding:0 9px;border-radius:99px;font-family:var(--font-mono);font-size:11px;font-weight:500;color:var(--accent-2);background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.2)}
+.mention-chip:hover{background:rgba(96,165,250,.15);border-color:rgba(96,165,250,.4)}
+.theme-desc a,.theme-desc .mention{color:var(--accent-2);text-decoration:none;border-bottom:1px dashed rgba(96,165,250,.45)}
+.theme-desc a:hover{border-bottom-style:solid}
+.theme-desc code{padding:1px 4px;border-radius:5px;background:var(--code-bg);color:var(--code-text);font-family:var(--font-mono);font-size:.92em}
+.theme-desc strong{color:var(--text);font-weight:700}
+@media (max-width: 980px) {
+  .app { display: block; }
+  .sidebar { position: static; width: auto; height: auto; padding: 18px 20px; border-right: 0; border-bottom: 1px solid var(--line); }
+  nav { flex-direction: row; overflow: auto; padding-bottom: 2px; }
+  nav a { white-space: nowrap; }
+  .side-foot { display: none; }
+  main { padding: 26px 20px 56px; }
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .grid { grid-template-columns: 1fr; }
+  .form-grid { grid-template-columns: 1fr; }
+  .storage-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 680px) {
+  .pending-card { grid-template-columns: 1fr; }
+  .pending-preview { min-height: 180px; }
+  .topbar h2 { font-size: 32px; }
+}
+@media (max-width: 560px) {
+  .stats { grid-template-columns: 1fr; }
+  .table th:nth-child(4), .table td:nth-child(4) { display: none; }
+}
+
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">
+        <img src="logo.svg" alt="SukiSU Ultra" width="34" height="34">
+      </div>
+      <div><h1>主题镜像</h1><p>SukiSU Ultra Console</p></div>
+    </div>
+    <nav>
+      <a href="#overview" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg>概览</a>
+      <a href="#pending"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 5h14v14H5z"/><path d="M8 9h8M8 13h5"/></svg>待审核 <span class="nav-badge" id="pendingNavBadge">0</span></a>
+      <a href="#authors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="5" width="17" height="14" rx="3"/><circle cx="8.5" cy="10" r="2"/><path d="M5.8 16c.4-2 1.3-3 2.7-3s2.3 1 2.7 3"/><path d="M14 9h4M14 12h4"/></svg>作者许可</a>
+      <a href="#themes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="m4 16 4.5-4.5 3 3 3-3L20 16"/><circle cx="15.5" cy="8.5" r="1.6"/></svg>主题预览</a>
+      <a href="#upload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>上传主题</a>
+      <a href="#storage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/><path d="M4.5 11.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg>存储</a>
+      <a href="#api"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 9 4 12l4 3M16 9l4 3-4 3M13 5l-2 14"/></svg>API 接口</a>
+      <a href="#security"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="10" width="14" height="10" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>安全与令牌</a>
+      <a href="#access"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><circle cx="12" cy="8" r=".8" fill="currentColor" stroke="none"/></svg>接入信息</a>
+    </nav>
+    <div class="side-foot">
+      <div class="side-line"><span><span class="dot" id="sideDot"></span><span id="sideStatus">连接中</span></span><b id="sideThemes">–</b></div>
+      <div class="side-line"><span>Caddy</span><b id="sideCaddy">–</b></div>
+      <div class="side-line"><span>存储</span><b id="sideStorage">–</b></div>
+      <div class="side-line"><span>待审核</span><b id="sidePending">–</b></div>
+      <div class="side-line"><span>版本</span><b>1.0</b></div>
+    </div>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <div>
+        <div class="crumb" id="pageCrumb">Armbian · Overview</div>
+        <h2>主题镜像控制台</h2>
+        <p class="lead">管理访问令牌、审核主题投稿，以及查看客户端需要使用的 API 地址。</p>
+      </div>
+      <div class="top-actions">
+        <div class="pill"><span class="dot" id="topDot"></span><span id="topStatus">连接中…</span></div>
+        <button class="icon-btn" id="themeToggle" title="切换深色/浅色">
+          <svg class="theme-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2Z"/></svg>
+          <svg class="theme-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M19.1 4.9l-1.6 1.6M6.5 17.5l-1.6 1.6"/></svg>
+        </button>
+        <button class="icon-btn" id="refreshBtn" title="刷新状态">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <section id="overview" class="page active">
+      <div class="stats">
+        <div class="stat"><div class="label">主题数量</div><div class="value" id="themeCount">–</div><div class="sub">当前 catalog.json</div></div>
+        <div class="stat"><div class="label">访问令牌</div><div class="value" id="tokenState">–</div><div class="sub" id="tokenSub">未设置</div></div>
+        <div class="stat"><div class="label">Caddy</div><div class="value" id="caddyState">–</div><div class="sub">TLS / 反向代理</div></div>
+        <div class="stat"><div class="label">存储模式</div><div class="value" id="storageMode">本地</div><div class="sub" id="storageSub">1.2 GB 配额</div></div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15 7a4 4 0 1 1-3.8 5.2L4 19.4V21h2.6l1.4-1.4V18h1.6l1.2-1.2v-1.4h1.4l.8-.8A4 4 0 0 1 15 7Z"/><circle cx="16.5" cy="7.5" r="1"/></svg>访问令牌</h4>
+          <p class="hint">当前令牌不会显示在页面上。输入或生成一个新令牌后保存；保存后 Caddy 会自动重启，所有客户端需要同步更新令牌。</p>
+          <label for="tokenInput">新令牌</label>
+          <div class="field">
+            <input id="tokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="输入或生成新令牌">
+            <button class="mini" id="toggleToken" title="显示/隐藏">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.7"/></svg>
+            </button>
+          </div>
+          <div class="strength"><span>令牌强度</span><span class="bar"><i id="strengthBar"></i></span><span id="strengthLabel">–</span></div>
+          <div class="row">
+            <button class="primary" id="saveToken"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12.5 9.5 17 19 7.5"/></svg>保存令牌</button>
+            <button id="generateToken"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="m12 3 1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3Z"/><path d="m19 15 .8 1.8 1.7.7-1.7.7L19 20l-.8-1.8-1.7-.7 1.7-.7L19 15Z"/></svg>生成</button>
+            <button id="copyToken"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="9" y="9" width="10" height="10" rx="2"/><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg>复制</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg>快捷操作</h4>
+          <p class="hint">上传或删除主题后重建本地 catalog；重载只刷新 Caddy 配置。</p>
+          <div class="row">
+            <button class="primary" id="syncBtn"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>重建目录</button>
+            <button id="reloadBtn">重载 Caddy</button>
+          </div>
+          <div class="meta" style="margin-top:16px">
+            <div class="kv"><span>目录更新时间</span><b id="catalogTime">–</b></div>
+            <div class="kv"><span>目录生成时间</span><b id="generatedAt">–</b></div>
+            <div class="kv"><span>管理员服务</span><b id="adminState">–</b></div>
+            <div class="kv"><span>存储用量</span><b id="storageText">–</b></div>
+            <div class="storage-bar"><i id="storageBar"></i></div>
+          </div>
+          <div class="row">
+            <button id="testCatalog">测试目录接口</button>
+            <a class="pill" id="openMirror" target="_blank" rel="noreferrer" style="text-decoration:none"><span class="dot ok"></span>打开镜像</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="pending" class="page">
+      <div class="section-head"><div><h3>待审核</h3><p>管理器投稿会先进入这里，校验通过并由你批准后才会公开。</p></div><span class="pill" id="pendingPill">0 个待审核</span></div>
+      <div class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+          <input id="pendingSearch" type="search" placeholder="搜索待审核主题、作者、标签…">
+        </div>
+      </div>
+      <div id="pendingList"></div>
+      <div class="empty" id="pendingEmpty"><b>没有待审核主题</b>管理器提交的主题会出现在这里。</div>
+    </section>
+
+    <section id="authors" class="page">
+      <div class="section-head"><div><h3>自动审批作者</h3><p>首次投稿审核通过后，作者 ID 会获得许可；以后使用同一 ID 投稿将自动发布。</p></div><span class="pill" id="authorsPill">0 位</span></div>
+      <div id="authorsList"></div>
+      <div class="empty" id="authorsEmpty"><b>还没有自动审批作者</b>批准第一篇投稿后，作者 ID 会出现在这里。</div>
+    </section>
+
+    <section id="themes" class="page">
+      <div class="section-head"><div><h3>主题预览</h3><p>当前 catalog.json 中的主题卡片，上传后会自动出现在这里。</p></div><span class="pill" id="themePill">0 个主题</span></div>
+      <div class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+          <input id="themeSearch" type="search" placeholder="搜索已发布主题、作者、标签…">
+        </div>
+      </div>
+      <div class="theme-grid" id="themeGrid"></div>
+      <div class="empty" id="themeEmpty"><b>目录里还没有主题</b>在上方上传主题包后，这里会显示预览图。</div>
+    </section>
+
+    <section id="upload" class="page">
+      <div class="section-head"><div><h3>上传主题</h3><p>管理员上传会直接发布；管理器投稿会先进入待审核。纯本地存储，上限 1.2 GB。</p></div></div>
+      <div class="card">
+        <form id="uploadForm">
+          <div class="form-grid">
+            <div><label for="upId">主题 ID</label><input id="upId" name="id" placeholder="pink-bow" required></div>
+            <div><label for="upVersion">版本号</label><input id="upVersion" name="version" type="number" min="1" value="1" required></div>
+            <div><label for="upName">名称</label><input id="upName" name="name" placeholder="粉色蝴蝶结" required></div>
+            <div><label for="upAuthor">作者</label><input id="upAuthor" name="author" placeholder="Neko"></div>
+            <div><label for="upTags">标签</label><input id="upTags" name="tags" placeholder="light, pink, cute"></div>
+            <div><label for="upLicense">许可证</label><input id="upLicense" name="license" placeholder="CC-BY-4.0"></div>
+            <div><label for="upMin">最低管理器版本</label><input id="upMin" name="minManagerVersion" type="number" min="0" value="0"></div>
+            <div><label for="upPackage">主题包 (.sukisu)</label><input id="upPackage" name="package" type="file" accept=".sukisu,application/octet-stream" required></div>
+            <div><label for="upPreview">预览图</label><input id="upPreview" name="preview" type="file" accept="image/webp,image/png,image/jpeg" required></div>
+            <div><label for="upAvatar">作者头像（可选）</label><input id="upAvatar" name="avatar" type="file" accept="image/webp,image/png,image/jpeg"></div>
+            <div><label for="upScreenshots">截图（可多选）</label><input id="upScreenshots" name="screenshots" type="file" accept="image/webp,image/png,image/jpeg" multiple></div>
+            <div class="full">
+              <label for="upDescription">描述</label>
+              <textarea id="upDescription" name="description" placeholder="主题说明，支持 Markdown"></textarea>
+              <div class="field-hint">支持 Markdown：**粗体**、*斜体*、`代码`、[链接](https://example.com)。输入 @github、@bilibili、@coolapk、@telegram 等可提及其他网站。</div>
+              <div class="mention-hints" data-target="upDescription">
+                <button type="button" class="mention-chip" data-target="upDescription" data-mention="@github">@github</button>
+                <button type="button" class="mention-chip" data-target="upDescription" data-mention="@gitee">@gitee</button>
+                <button type="button" class="mention-chip" data-target="upDescription" data-mention="@bilibili">@bilibili</button>
+                <button type="button" class="mention-chip" data-target="upDescription" data-mention="@coolapk">@coolapk</button>
+                <button type="button" class="mention-chip" data-target="upDescription" data-mention="@telegram">@telegram</button>
+                <button type="button" class="mention-chip" data-target="upDescription" data-mention="@weibo">@weibo</button>
+                <button type="button" class="mention-chip" data-target="upDescription" data-mention="@xiaohongshu">@xiaohongshu</button>
+                <button type="button" class="mention-chip" data-target="upDescription" data-mention="@xda">@xda</button>
+              </div>
+            </div>
+            <div class="full">
+              <label for="upChangelog">更新说明</label>
+              <textarea id="upChangelog" name="changelog" placeholder="本次更新内容，支持 Markdown"></textarea>
+              <div class="field-hint">同样支持 Markdown 与 @ 网站提及。</div>
+            </div>
+          </div>
+          <div class="row">
+            <button class="primary" type="submit" id="uploadBtn">上传并发布</button>
+            <span class="pill" id="uploadHint">单个主题包 ≤ 16 MB，图片 ≤ 2 MB（自动压缩为 WebP）</span>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section id="storage" class="page">
+      <div class="section-head"><div><h3>存储</h3><p>配置站点数据目录，或把主题资源放到 S3 兼容对象存储；修改后管理服务会自动重启。</p></div><span class="pill" id="storageBackendPill">本地</span></div>
+      <div class="card">
+        <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/><path d="M4.5 11.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg>当前状态</h4>
+        <div class="storage-grid">
+          <div><span class="hint">数据目录</span><b id="storageStateDir">–</b></div>
+          <div><span class="hint">资源后端</span><b id="storageBackendText">–</b></div>
+          <div><span class="hint">已用</span><b id="storageUsedText">–</b></div>
+          <div><span class="hint">磁盘剩余</span><b id="storageDiskText">–</b></div>
+        </div>
+        <div class="storage-bar"><i id="storagePageBar"></i></div>
+        <p class="hint" id="storageUsageHint" style="margin-top:10px">正在读取存储状态…</p>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h4>数据目录</h4>
+        <p class="hint">meta、catalog.json 和待审核文件保存在这里；本地资源模式的主题文件也在这里。迁移会复制现有数据，目标目录必须为空。</p>
+        <div class="form-grid">
+          <div class="full"><label for="storageRootInput">目录路径</label><input id="storageRootInput" placeholder="/srv/sukisu-themes" spellcheck="false"></div>
+        </div>
+        <div class="row">
+          <button class="primary" id="storageRootApply">保存并迁移</button>
+          <span class="pill" id="storageRootHint">会重启管理服务与 Caddy</span>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h4>资源后端</h4>
+        <p class="hint">本地磁盘模式直接读写数据目录；对象存储模式把主题包、预览图、截图和头像放到桶里，meta 与 catalog 仍保存在本地。</p>
+        <div class="form-grid">
+          <div><label for="storageBackendSelect">后端</label><select id="storageBackendSelect"><option value="local">本地磁盘</option><option value="s3">S3 兼容对象存储</option></select></div>
+          <div><label for="s3Region">Region</label><input id="s3Region" placeholder="us-east-1" spellcheck="false"></div>
+          <div class="full"><label for="s3Endpoint">Endpoint</label><input id="s3Endpoint" placeholder="https://s3.example.com（AWS 可留空）" spellcheck="false"></div>
+          <div><label for="s3Bucket">Bucket</label><input id="s3Bucket" placeholder="sukisu-themes" spellcheck="false"></div>
+          <div><label for="s3Prefix">Prefix</label><input id="s3Prefix" placeholder="sukisu-themes/" spellcheck="false"></div>
+          <div><label for="s3Access">Access Key</label><input id="s3Access" autocomplete="off" placeholder="留空保持现有" spellcheck="false"></div>
+          <div><label for="s3Secret">Secret Key</label><input id="s3Secret" type="password" autocomplete="new-password" placeholder="留空保持现有"></div>
+          <div><label for="s3PathStyle">Path Style</label><select id="s3PathStyle"><option value="true">是</option><option value="false">否</option></select></div>
+        </div>
+        <div class="row">
+          <button id="storageTest">测试连接</button>
+          <button class="primary" id="storageApply">保存并切换</button>
+          <label class="check"><input id="storageRemoveSource" type="checkbox"> 迁移后删除源文件</label>
+        </div>
+        <div class="field-hint">兼容 AWS S3、Cloudflare R2、MinIO、Backblaze B2。凭证留空表示沿用已保存的值；切换后端会自动迁移资源并校验大小。</div>
+      </div>
+      <div class="card" id="storageJobCard" style="margin-top:14px;display:none">
+        <h4>迁移进度</h4>
+        <div class="storage-bar"><i id="storageJobBar"></i></div>
+        <p class="hint" id="storageJobText" style="margin-top:10px">等待中</p>
+      </div>
+    </section>
+
+    <section id="api" class="page">
+      <div class="section-head"><div><h3>API 接口</h3><p>客户端和后台实际使用的端点，可直接复制。</p></div></div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th style="width:64px">方法</th><th>端点地址</th><th style="width:150px">认证</th><th style="width:44px"></th></tr></thead>
+          <tbody id="endpointRows"></tbody>
+        </table>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 9 4 12l4 3M16 9l4 3-4 3M13 5l-2 14"/></svg>请求示例</h4>
+        <p class="hint">拉取主题目录（令牌放在请求头里）：</p>
+        <pre id="curlExample">curl -H "X-Sukisu-Theme-Token: $THEME_TOKEN" \
+  &lt;catalog-url&gt;</pre>
+        <div class="row"><button id="copyCurl">复制命令</button></div>
+      </div>
+    </section>
+
+    <section id="security" class="page">
+      <div class="section-head"><div><h3>安全与令牌</h3><p>管理员密码和令牌说明。</p></div></div>
+      <div class="grid">
+        <div class="card">
+          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="10" width="14" height="10" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>管理员密码</h4>
+          <p class="hint">修改控制台 Basic Auth 密码。保存后 Caddy 会重启，需要重新打开页面登录。</p>
+          <label for="newPassword">新密码</label>
+          <input id="newPassword" type="password" autocomplete="new-password" placeholder="至少 8 位">
+          <label for="confirmPassword" style="margin-top:10px">确认新密码</label>
+          <input id="confirmPassword" type="password" autocomplete="new-password" placeholder="再次输入">
+          <div class="row"><button class="primary" id="savePassword">更新管理员密码</button></div>
+          <p class="hint" style="margin:12px 0 0">初始密码在 <span class="inline-code">/etc/sukisu-theme-admin/admin-password</span>，修改成功后会删除该文件。</p>
+        </div>
+        <div class="card">
+          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3 4.5 6v5.5c0 4.5 3 7.5 7.5 8.5 4.5-1 7.5-4 7.5-8.5V6L12 3Z"/><path d="m9 12 2 2 4-4"/></svg>安全说明</h4>
+          <div class="meta">
+            <div class="kv"><span>后台入口</span><b>Basic Auth + HTTPS</b></div>
+            <div class="kv"><span>后台监听</span><b class="url">127.0.0.1:8090</b></div>
+            <div class="kv"><span>镜像认证</span><b>X-Sukisu-Theme-Token</b></div>
+            <div class="kv"><span>令牌保存</span><b>/etc/sukisu-themes/store.env</b></div>
+            <div class="kv"><span>密码哈希</span><b>/etc/sukisu-theme-admin/admin.env</b></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="access" class="page">
+      <div class="section-head"><div><h3>接入信息</h3><p>把下面的地址和请求头填进 SukiSU 管理器。</p></div></div>
+      <div class="card">
+        <div class="meta">
+          <div class="kv"><span>镜像基础地址</span><b class="url" id="publicUrl">–</b></div>
+          <div class="kv"><span>目录 API</span><b class="url" id="catalogUrl">–</b></div>
+          <div class="kv"><span>健康检查</span><b class="url" id="healthUrl">–</b></div>
+          <div class="kv"><span>管理后台</span><b class="url" id="adminUrl">–</b></div>
+          <div class="kv"><span>管理 API 基础</span><b class="url" id="adminApiBase">–</b></div>
+          <div class="kv"><span>请求头</span><b class="url">X-Sukisu-Theme-Token</b></div>
+          <div class="kv"><span>后台服务</span><b class="url">sukisu-theme-admin.service</b></div>
+        </div>
+      </div>
+    </section>
+
+    <footer><span>SukiSU Ultra · Armbian theme mirror console</span><span id="footerUrl">–</span></footer>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/admin/api';
+const $ = id => document.getElementById(id);
+let tokenVisible = false;
+let statusData = null;
+
+function toast(message, kind = 'ok') {
+  const el = $('toast');
+  el.textContent = message;
+  el.className = 'toast show ' + kind;
+  clearTimeout(window.__toast);
+  window.__toast = setTimeout(() => { el.className = 'toast'; }, 4200);
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(API + path, {
+    cache: 'no-store',
+    credentials: 'same-origin',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'SukiSUThemeAdmin',
+      ...(options.headers || {}),
+    },
+  });
+  if (!response.ok) {
+    let message = 'HTTP ' + response.status;
+    try { const data = await response.json(); if (data.error) message = data.error; } catch (_) {}
+    throw new Error(message);
+  }
+  return response.json();
+}
+
+function stateText(state) {
+  if (state === 'active') return '运行中';
+  if (state === 'inactive') return '已停止';
+  if (state === 'failed') return '失败';
+  return state || '未知';
+}
+
+function setState(valueId, state) {
+  const el = $(valueId);
+  el.textContent = stateText(state);
+  el.style.color = state === 'active' ? 'var(--ok)' : (state === 'inactive' ? 'var(--bad)' : 'var(--warn)');
+}
+
+function setDot(el, state) {
+  el.className = 'dot ' + (state === 'active' ? 'ok' : (state === 'inactive' ? 'bad' : 'warn'));
+}
+
+function formatTime(value) {
+  if (!value) return '–';
+  const date = typeof value === 'number' ? new Date(value * 1000) : new Date(value);
+  return isNaN(date.getTime())
+    ? String(value)
+    : date.toLocaleString('zh-CN', { hour12: false });
+}
+
+function formatGenerated(value) {
+  if (!value) return '–';
+  const date = new Date(value);
+  return isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false });
+}
+
+function tokenStrength(value) {
+  let score = 0;
+  if (value.length >= 16) score++;
+  if (value.length >= 32) score++;
+  if (/[a-z]/.test(value) && /[A-Z]/.test(value)) score++;
+  if (/[0-9]/.test(value)) score++;
+  if (/[._~-]/.test(value)) score++;
+  const pct = Math.min(100, score * 20);
+  return { pct, label: pct >= 80 ? '强' : pct >= 40 ? '中' : '弱' };
+}
+
+function updateStrength() {
+  const { pct, label } = tokenStrength($('tokenInput').value.trim());
+  $('strengthBar').style.width = pct + '%';
+  $('strengthLabel').textContent = label;
+}
+
+function copyText(text, message = '已复制') {
+  navigator.clipboard.writeText(text)
+    .then(() => toast(message))
+    .catch(() => toast('复制失败，请手动选择', 'bad'));
+}
+
+function renderEndpoints(endpoints) {
+  const rows = $('endpointRows');
+  rows.innerHTML = '';
+  (endpoints || []).forEach(item => {
+    const tr = document.createElement('tr');
+    const method = (item.method || 'GET').toLowerCase();
+    tr.innerHTML = `
+      <td><span class="method ${method}">${item.method}</span></td>
+      <td><span class="url">${item.url}</span></td>
+      <td><span class="auth">${item.auth}</span></td>
+      <td><button class="copy" title="复制"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="9" y="9" width="10" height="10" rx="2"/><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg></button></td>`;
+    tr.querySelector('.copy').addEventListener('click', () => copyText(item.url, '端点已复制'));
+    rows.appendChild(tr);
+  });
+}
+
+function render(status) {
+  statusData = status;
+  const catalog = status.catalog || {};
+  $('themeCount').textContent = catalog.themes ?? '0';
+  $('sideThemes').textContent = (catalog.themes ?? 0) + ' 主题';
+  $('tokenState').textContent = status.tokenSet ? '已设置' : '未设置';
+  $('tokenState').style.color = status.tokenSet ? 'var(--ok)' : 'var(--bad)';
+  $('tokenSub').textContent = status.tokenSet ? '通过请求头校验' : '镜像当前无保护';
+  setState('caddyState', status.caddy);
+  setState('adminState', status.adminService);
+  $('sideCaddy').textContent = stateText(status.caddy);
+  const storage = status.storage || {};
+  const used = Number(storage.used || 0);
+  const limit = Number(storage.limit || 0);
+  $('storageMode').textContent = status.storageBackend === 's3' ? 'S3 对象存储' : '本地';
+  $('storageText').textContent = formatStorage(used) + ' / ' + formatStorage(limit);
+  $('storageBar').style.width = limit ? Math.min(100, used / limit * 100) + '%' : '0%';
+  $('sideStorage').textContent = formatStorage(used) + ' / ' + formatStorage(limit);
+  $('sidePending').textContent = (status.pendingCount ?? 0) + ' 个';
+  $('storageSub').textContent = formatStorage(used) + ' 已用 / 1.2 GB';
+  $('sideStatus').textContent = status.caddy === 'active' ? '镜像运行中' : 'Caddy ' + stateText(status.caddy);
+  setDot($('sideDot'), status.caddy);
+  setDot($('topDot'), status.caddy);
+  $('topStatus').textContent = status.caddy === 'active' ? '镜像运行中' : 'Caddy ' + stateText(status.caddy);
+  $('catalogTime').textContent = formatTime(catalog.updatedAt);
+  $('generatedAt').textContent = formatGenerated(catalog.generatedAt);
+  $('publicUrl').textContent = status.publicUrl || '–';
+  $('catalogUrl').textContent = status.catalogUrl || '–';
+  $('healthUrl').textContent = status.healthUrl || '–';
+  $('adminUrl').textContent = status.adminUrl || '–';
+  $('adminApiBase').textContent = status.adminApiBase || '–';
+  $('footerUrl').textContent = status.publicUrl || '';
+  $('openMirror').href = status.publicUrl || '#';
+  renderEndpoints(status.endpoints);
+  const catalogUrl = status.catalogUrl || '<catalog-url>';
+  $('curlExample').textContent = `curl -H "X-Sukisu-Theme-Token: $THEME_TOKEN" \\\n  ${catalogUrl}`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+const SITE_MENTIONS = {
+  github: 'https://github.com',
+  gitee: 'https://gitee.com',
+  bilibili: 'https://www.bilibili.com',
+  coolapk: 'https://www.coolapk.com',
+  telegram: 'https://t.me',
+  weibo: 'https://weibo.com',
+  xiaohongshu: 'https://www.xiaohongshu.com',
+  xda: 'https://xdaforums.com',
+  youtube: 'https://www.youtube.com',
+  afdian: 'https://afdian.com',
+};
+
+function renderInlineMarkdown(value) {
+  let html = escapeHtml(value);
+  html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  html = html.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+  html = html.replace(/(^|[^\w@])@([A-Za-z0-9_-]+)/g, (match, prefix, name) => {
+    const url = SITE_MENTIONS[name.toLowerCase()];
+    return url
+      ? `${prefix}<a class="mention" href="${url}" target="_blank" rel="noreferrer">@${name}</a>`
+      : match;
+  });
+  return html.replace(/\n/g, '<br>');
+}
+
+function formatSize(bytes) {
+  const value = Number(bytes) || 0;
+  if (value <= 0) return '–';
+  return value >= 1024 * 1024
+    ? (value / 1024 / 1024).toFixed(1) + ' MB'
+    : Math.round(value / 1024) + ' KB';
+}
+
+function formatStorage(bytes) {
+  const value = Number(bytes) || 0;
+  if (value >= 1024 * 1024 * 1024) return (value / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+  if (value >= 1024 * 1024) return (value / 1024 / 1024).toFixed(1) + ' MB';
+  if (value >= 1024) return Math.round(value / 1024) + ' KB';
+  return value + ' B';
+}
+
+let themeItems = [];
+let pendingItems = [];
+let themeQuery = '';
+let pendingQuery = '';
+
+function matchesQuery(item, query) {
+  const needle = String(query || '').trim().toLowerCase();
+  if (!needle) return true;
+  const haystack = [
+    item.id, item.name, item.author, item.description,
+    (item.tags || []).join(' '), item.submissionId, item.authorFingerprint,
+  ].join(' ').toLowerCase();
+  return needle.split(/\s+/).every(part => haystack.includes(part));
+}
+
+function renderThemes(themes) {
+  themeItems = themes || [];
+  renderThemeGrid();
+}
+
+function renderThemeGrid() {
+  const grid = $('themeGrid');
+  const filtered = themeItems.filter(theme => matchesQuery(theme, themeQuery));
+  grid.innerHTML = '';
+  $('themePill').textContent = themeQuery
+    ? `${filtered.length} / ${themeItems.length} 个主题`
+    : `${themeItems.length} 个主题`;
+  $('themeEmpty').style.display = filtered.length ? 'none' : 'block';
+  if (!filtered.length) {
+    $('themeEmpty').innerHTML = themeQuery
+      ? '<b>没有匹配的主题</b>换个关键词试试。'
+      : '<b>目录里还没有主题</b>在上方上传主题包后，这里会显示预览图。';
+    return;
+  }
+  filtered.forEach(theme => {
+    const card = document.createElement('div');
+    card.className = 'theme-card';
+    const preview = theme.previewUrl
+      ? `<img src="${escapeHtml(theme.previewUrl)}" alt="${escapeHtml(theme.name)}" loading="lazy">`
+      : '<div class="fallback">暂无预览图</div>';
+    const tags = (theme.tags || []).slice(0, 5)
+      .map(tag => `<span>${escapeHtml(tag)}</span>`).join('');
+    const avatar = theme.avatarUrl
+      ? `<img class="author-avatar" src="${escapeHtml(theme.avatarUrl)}" alt="" loading="lazy">`
+      : '';
+    card.innerHTML = `
+      <div class="theme-preview">${preview}</div>
+      <div class="theme-body">
+        <div class="theme-title" title="${escapeHtml(theme.name)}">${escapeHtml(theme.name || theme.id)}</div>
+        <div class="theme-meta">
+          <span>v${escapeHtml(theme.version)}</span>
+          <span>格式 v${escapeHtml(theme.formatVersion ?? 1)}</span>
+          ${theme.author ? `<span class="author">${avatar}作者：${escapeHtml(theme.author)}</span>` : ''}
+          <span>${formatSize(theme.size)}</span>
+          <span>已发布</span>
+        </div>
+        <div class="theme-desc">${renderInlineMarkdown(theme.description || '暂无描述')}</div>
+        <div class="theme-tags">${tags}</div>
+        <div class="theme-actions"><button class="theme-delete" data-id="${escapeHtml(theme.id)}">删除</button></div>
+      </div>`;
+    const image = card.querySelector('.theme-preview img');
+    if (image) {
+      image.addEventListener('error', () => {
+        image.replaceWith(Object.assign(document.createElement('div'), {
+          className: 'fallback',
+          textContent: '预览图加载失败',
+        }));
+      });
+    }
+    card.querySelector('.theme-delete').addEventListener('click', () => deleteTheme(theme.id));
+    grid.appendChild(card);
+  });
+}
+
+function renderPending(submissions) {
+  pendingItems = submissions || [];
+  renderPendingList();
+}
+
+function renderPendingList() {
+  const list = $('pendingList');
+  const filtered = pendingItems.filter(item => matchesQuery(item, pendingQuery));
+  list.innerHTML = '';
+  $('pendingPill').textContent = `${filtered.length} 个待审核`;
+  $('pendingNavBadge').textContent = String(pendingItems.length);
+  $('pendingNavBadge').style.display = pendingItems.length ? 'inline-block' : 'none';
+  $('pendingEmpty').style.display = filtered.length ? 'none' : 'block';
+  if (!filtered.length) {
+    $('pendingEmpty').innerHTML = pendingQuery
+      ? '<b>没有匹配的待审核主题</b>换个关键词试试。'
+      : '<b>没有待审核主题</b>管理器提交的主题会出现在这里。';
+    return;
+  }
+  filtered.forEach(item => {
+    const preview = item.previewUrl
+      ? `<img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.name)}" loading="lazy">`
+      : '<div class="fallback">暂无预览图</div>';
+    const tags = (item.tags || []).slice(0, 5)
+      .map(tag => `<span>${escapeHtml(tag)}</span>`).join('');
+    const avatar = item.avatarUrl
+      ? `<img class="author-avatar" src="${escapeHtml(item.avatarUrl)}" alt="" loading="lazy">`
+      : '';
+    const card = document.createElement('div');
+    card.className = 'pending-card';
+    card.innerHTML = `
+      <div class="pending-preview">${preview}</div>
+      <div class="pending-body">
+        <div class="theme-title" title="${escapeHtml(item.name)}">${escapeHtml(item.name || item.id)}</div>
+        <div class="theme-meta">
+          <span>${escapeHtml(item.id)}</span>
+          <span>v${escapeHtml(item.version)}</span>
+          <span>格式 v${escapeHtml(item.formatVersion ?? 1)}</span>
+          ${item.author ? `<span class="author">${avatar}作者：${escapeHtml(item.author)}</span>` : ''}
+          ${item.authorFingerprint ? `<span>作者 ID：${escapeHtml(item.authorFingerprint)}</span>` : ''}
+          <span>${formatSize(item.size)}</span>
+          <span>${formatTime(item.submittedAt)}</span>
+        </div>
+        <div class="theme-desc">${renderInlineMarkdown(item.description || '暂无描述')}</div>
+        <div class="theme-tags">${tags}</div>
+        <div class="pending-actions">
+          <span class="validation ${item.deepValidated ? 'ok' : 'warn'}">${item.deepValidated ? '深度校验通过' : '基础校验'}</span>
+          <button class="approve">批准发布</button>
+          <button class="reject">拒绝</button>
+        </div>
+      </div>`;
+    const image = card.querySelector('.pending-preview img');
+    if (image) {
+      image.addEventListener('error', () => {
+        image.replaceWith(Object.assign(document.createElement('div'), {
+          className: 'fallback',
+          textContent: '预览图加载失败',
+        }));
+      });
+    }
+    card.querySelector('.approve').addEventListener('click', () => approvePending(item.submissionId));
+    card.querySelector('.reject').addEventListener('click', () => rejectPending(item.submissionId));
+    list.appendChild(card);
+  });
+}
+
+let authorItems = [];
+
+function renderAuthors(authors) {
+  authorItems = authors || [];
+  const list = $('authorsList');
+  list.innerHTML = '';
+  $('authorsPill').textContent = authorItems.length + ' 位';
+  $('authorsEmpty').style.display = authorItems.length ? 'none' : 'block';
+  authorItems.forEach(author => {
+    const card = document.createElement('div');
+    card.className = 'author-card';
+    card.innerHTML = `
+      <span class="author-fp">${escapeHtml(author.fingerprint || author.hash)}</span>
+      <span class="author-meta">
+        <span>批准：${formatTime(author.approvedAt)}</span>
+        <span>最近：${formatTime(author.lastUsedAt)}</span>
+      </span>
+      <span class="author-actions"><button class="revoke">撤销许可</button></span>`;
+    card.querySelector('.revoke').addEventListener('click', () => revokeAuthor(author.hash, author.fingerprint));
+    list.appendChild(card);
+  });
+}
+
+async function loadAuthors() {
+  try {
+    const data = await api('/authors');
+    renderAuthors(data.authors || []);
+  } catch (error) {
+    $('authorsPill').textContent = '加载失败';
+    $('authorsEmpty').style.display = 'block';
+    $('authorsEmpty').innerHTML = '<b>作者许可加载失败</b>' + escapeHtml(error.message);
+  }
+}
+
+async function revokeAuthor(hash, fingerprint) {
+  if (!confirm('撤销作者 ' + fingerprint + ' 的自动审批许可？')) return;
+  try {
+    await api('/author/revoke', {
+      method: 'POST',
+      body: JSON.stringify({ hash }),
+    });
+    toast('已撤销作者许可');
+    await refresh(true);
+  } catch (error) {
+    toast('撤销失败：' + error.message, 'bad');
+  }
+}
+
+async function approvePending(submissionId) {
+  if (!confirm('批准并发布这个主题？')) return;
+  try {
+    const data = await api('/approve', {
+      method: 'POST',
+      body: JSON.stringify({ submissionId }),
+    });
+    toast('已批准，当前共 ' + (data.themes ?? 0) + ' 个主题');
+    await refresh(true);
+  } catch (error) {
+    toast('批准失败：' + error.message, 'bad');
+  }
+}
+
+async function rejectPending(submissionId) {
+  if (!confirm('拒绝并删除这个投稿？')) return;
+  try {
+    await api('/reject', {
+      method: 'POST',
+      body: JSON.stringify({ submissionId }),
+    });
+    toast('已拒绝该投稿');
+    await refresh(true);
+  } catch (error) {
+    toast('拒绝失败：' + error.message, 'bad');
+  }
+}
+
+async function deleteTheme(id) {
+  if (!confirm('确定删除主题 ' + id + '？')) return;
+  try {
+    const data = await api('/delete-theme', { method: 'POST', body: JSON.stringify({ id }) });
+    toast('已删除，剩余 ' + (data.themes ?? 0) + ' 个主题');
+    await refresh(true);
+  } catch (error) {
+    toast('删除失败：' + error.message, 'bad');
+  }
+}
+
+async function loadThemes() {
+  try {
+    const data = await api('/themes');
+    renderThemes(data.themes || []);
+  } catch (error) {
+    $('themePill').textContent = '加载失败';
+    $('themeEmpty').style.display = 'block';
+    $('themeEmpty').innerHTML = '<b>主题列表加载失败</b>' + escapeHtml(error.message);
+  }
+}
+
+async function loadPending() {
+  try {
+    const data = await api('/pending');
+    renderPending(data.submissions || []);
+  } catch (error) {
+    $('pendingPill').textContent = '加载失败';
+    $('pendingEmpty').style.display = 'block';
+    $('pendingEmpty').innerHTML = '<b>待审核列表加载失败</b>' + escapeHtml(error.message);
+    $('pendingNavBadge').style.display = 'none';
+  }
+}
+
+let storageJobTimer = null;
+
+function storageS3Payload() {
+  return {
+    endpoint: $('s3Endpoint').value.trim(),
+    region: $('s3Region').value.trim(),
+    bucket: $('s3Bucket').value.trim(),
+    prefix: $('s3Prefix').value.trim(),
+    accessKey: $('s3Access').value.trim(),
+    secretKey: $('s3Secret').value.trim(),
+    pathStyle: $('s3PathStyle').value === 'true',
+  };
+}
+
+function updateStorageBackendFields() {
+  const isS3 = $('storageBackendSelect').value === 's3';
+  ['s3Endpoint', 's3Region', 's3Bucket', 's3Prefix', 's3Access', 's3Secret', 's3PathStyle']
+    .forEach(id => { $(id).disabled = !isS3; });
+}
+
+function renderStorageJob(job) {
+  $('storageJobCard').style.display = 'block';
+  const total = Number(job.total || 0);
+  const progress = Number(job.progress || 0);
+  const percent = total > 0 ? Math.min(100, progress / total * 100) : (job.running ? 0 : 100);
+  $('storageJobBar').style.width = percent + '%';
+  let text = job.message || '等待中';
+  if (total > 0) text += ` · ${formatStorage(progress)} / ${formatStorage(total)}`;
+  if (job.error) text = '失败：' + job.error;
+  else if (job.done) text += ' · 完成，页面即将刷新';
+  $('storageJobText').textContent = text;
+}
+
+function pollStorageJob() {
+  clearTimeout(storageJobTimer);
+  storageJobTimer = setTimeout(async () => {
+    try {
+      const job = await api('/storage/job');
+      renderStorageJob(job);
+      if (job.running) {
+        pollStorageJob();
+      } else if (job.done) {
+        setTimeout(() => location.reload(), 2500);
+      }
+    } catch (_) {
+      storageJobTimer = setTimeout(pollStorageJob, 2000);
+    }
+  }, 1000);
+}
+
+async function loadStorage() {
+  try {
+    const data = await api('/storage');
+    const usage = data.usage || {};
+    $('storageStateDir').textContent = data.stateDir || '–';
+    $('storageBackendText').textContent = data.backend === 's3' ? 'S3 对象存储' : '本地磁盘';
+    $('storageBackendPill').textContent = data.backend === 's3' ? 'S3 对象存储' : '本地';
+    $('storageUsedText').textContent = formatStorage(usage.used) + ' / ' + formatStorage(usage.limit);
+    $('storageDiskText').textContent = formatStorage(usage.diskFree) + ' 可用';
+    $('storagePageBar').style.width = usage.limit
+      ? Math.min(100, usage.used / usage.limit * 100) + '%'
+      : '0%';
+    $('storageUsageHint').textContent =
+      `资源 ${formatStorage(usage.assets)} · 待审核 ${formatStorage(usage.pending)} · 配额 ${formatStorage(usage.limit)}`;
+    $('storageRootInput').value = data.stateDir || '';
+    const s3 = data.s3 || {};
+    $('s3Endpoint').value = s3.endpoint || '';
+    $('s3Region').value = s3.region || 'us-east-1';
+    $('s3Bucket').value = s3.bucket || '';
+    $('s3Prefix').value = s3.prefix || '';
+    $('s3Access').value = '';
+    $('s3Secret').value = '';
+    $('storageBackendSelect').value = data.backend || 'local';
+    updateStorageBackendFields();
+    if (data.job && data.job.running) {
+      renderStorageJob(data.job);
+      pollStorageJob();
+    } else if (data.job && (data.job.done || data.job.error)) {
+      renderStorageJob(data.job);
+    }
+  } catch (error) {
+    $('storageUsageHint').textContent = '存储状态读取失败：' + error.message;
+  }
+}
+
+$('storageBackendSelect').addEventListener('change', updateStorageBackendFields);
+
+$('storageTest').addEventListener('click', async () => {
+  const backend = $('storageBackendSelect').value;
+  try {
+    const data = await api('/storage/test', {
+      method: 'POST',
+      body: JSON.stringify({ backend, s3: storageS3Payload() }),
+    });
+    toast(data.message || '连接成功');
+  } catch (error) {
+    toast('测试失败：' + error.message, 'bad');
+  }
+});
+
+$('storageApply').addEventListener('click', async () => {
+  if (!confirm('保存存储后端并重启管理服务？正在进行的上传会中断。')) return;
+  try {
+    const data = await api('/storage/backend', {
+      method: 'POST',
+      body: JSON.stringify({
+        backend: $('storageBackendSelect').value,
+        s3: storageS3Payload(),
+        migrate: true,
+        removeSource: $('storageRemoveSource').checked,
+      }),
+    });
+    renderStorageJob({ ...data, running: true });
+    pollStorageJob();
+    toast('迁移任务已开始');
+  } catch (error) {
+    toast('切换失败：' + error.message, 'bad');
+  }
+});
+
+$('storageRootApply').addEventListener('click', async () => {
+  const root = $('storageRootInput').value.trim();
+  if (!root) {
+    toast('请填写存储目录', 'bad');
+    return;
+  }
+  if (!confirm('保存存储目录并复制现有数据？管理服务与 Caddy 会重启。')) return;
+  try {
+    const data = await api('/storage/root', {
+      method: 'POST',
+      body: JSON.stringify({ root, migrate: true }),
+    });
+    renderStorageJob({ ...data, running: true });
+    pollStorageJob();
+    toast('目录迁移任务已开始');
+  } catch (error) {
+    toast('保存失败：' + error.message, 'bad');
+  }
+});
+
+async function refresh(silent = false) {
+  const btn = $('refreshBtn');
+  if (!silent) btn.classList.add('spin');
+  try {
+    render(await api('/status'));
+    await Promise.all([loadThemes(), loadPending(), loadAuthors()]);
+  } catch (error) {
+    $('topStatus').textContent = '连接失败';
+    $('sideStatus').textContent = '连接失败';
+    setDot($('topDot'), 'inactive');
+    setDot($('sideDot'), 'inactive');
+    if (!silent) toast('无法读取状态：' + error.message, 'bad');
+  } finally {
+    btn.classList.remove('spin');
+  }
+}
+
+const PAGE_LABELS = {
+  overview: 'Overview',
+  pending: 'Review queue',
+  authors: 'Author licenses',
+  themes: 'Theme preview',
+  upload: 'Upload theme',
+  storage: 'Storage',
+  api: 'API endpoints',
+  security: 'Security',
+  access: 'Access info',
+};
+
+function showPage(id, smooth = false) {
+  const page = PAGE_LABELS[id] ? id : 'overview';
+  document.querySelectorAll('section.page').forEach(section => {
+    section.classList.toggle('active', section.id === page);
+  });
+  document.querySelectorAll('nav a').forEach(link => {
+    const active = link.getAttribute('href') === '#' + page;
+    link.classList.toggle('active', active);
+    if (active) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  });
+  const crumb = $('pageCrumb');
+  if (crumb) crumb.textContent = 'Armbian · ' + PAGE_LABELS[page];
+  if (page === 'storage') loadStorage();
+  window.scrollTo({ top: 0, behavior: smooth ? 'smooth' : 'auto' });
+}
+
+function pageFromHash() {
+  showPage((location.hash || '#overview').slice(1), false);
+}
+
+document.querySelectorAll('nav a').forEach(link => {
+  link.addEventListener('click', event => {
+    const href = link.getAttribute('href') || '';
+    if (!href.startsWith('#')) return;
+    event.preventDefault();
+    const page = href.slice(1);
+    if (location.hash !== href) history.pushState(null, '', href);
+    showPage(page, true);
+  });
+});
+
+window.addEventListener('popstate', pageFromHash);
+window.addEventListener('hashchange', pageFromHash);
+
+document.querySelectorAll('.mention-chip').forEach(button => {
+  button.addEventListener('click', () => {
+    const field = $(button.dataset.target);
+    if (!field) return;
+    const mention = button.dataset.mention + ' ';
+    const start = field.selectionStart ?? field.value.length;
+    const end = field.selectionEnd ?? start;
+    const before = field.value.slice(0, start);
+    const spacer = before && !/\s$/.test(before) ? ' ' : '';
+    field.value = before + spacer + mention + field.value.slice(end);
+    const cursor = start + spacer.length + mention.length;
+    field.focus();
+    field.selectionStart = field.selectionEnd = cursor;
+  });
+});
+
+$('themeToggle').addEventListener('click', () => {
+  const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem('sukisu-admin-theme', next); } catch (_) {}
+  $('themeToggle').title = next === 'light' ? '切换到深色' : '切换到浅色';
+});
+
+$('refreshBtn').addEventListener('click', () => refresh());
+$('themeSearch').addEventListener('input', event => {
+  themeQuery = event.target.value;
+  renderThemeGrid();
+});
+$('pendingSearch').addEventListener('input', event => {
+  pendingQuery = event.target.value;
+  renderPendingList();
+});
+$('tokenInput').addEventListener('input', updateStrength);
+$('toggleToken').addEventListener('click', () => {
+  tokenVisible = !tokenVisible;
+  $('tokenInput').type = tokenVisible ? 'text' : 'password';
+});
+$('copyToken').addEventListener('click', () => copyText($('tokenInput').value, '令牌已复制'));
+$('generateToken').addEventListener('click', async () => {
+  try {
+    const data = await api('/token/generate', { method: 'POST', body: '{}' });
+    $('tokenInput').value = data.token;
+    updateStrength();
+    toast('已生成新令牌，点击保存使其生效');
+  } catch (error) {
+    toast('生成失败：' + error.message, 'bad');
+  }
+});
+$('saveToken').addEventListener('click', async () => {
+  const token = $('tokenInput').value.trim();
+  if (!/^[A-Za-z0-9._~-]{16,128}$/.test(token)) {
+    toast('令牌格式不正确', 'bad');
+    return;
+  }
+  if (!confirm('修改令牌后，现有客户端需要更新令牌才能继续访问。确认保存？')) return;
+  try {
+    const data = await api('/token', { method: 'POST', body: JSON.stringify({ token }) });
+    toast(data.message || '令牌已保存');
+    setTimeout(() => refresh(true), 1800);
+  } catch (error) {
+    toast('保存失败：' + error.message, 'bad');
+  }
+});
+$('syncBtn').addEventListener('click', async () => {
+  try {
+    const data = await api('/sync', { method: 'POST', body: '{}' });
+    toast(data.message || '目录已重建');
+    setTimeout(() => refresh(true), 1200);
+  } catch (error) {
+    toast('重建失败：' + error.message, 'bad');
+  }
+});
+$('reloadBtn').addEventListener('click', async () => {
+  try {
+    const data = await api('/reload', { method: 'POST', body: '{}' });
+    toast(data.message || 'Caddy 已重载');
+  } catch (error) {
+    toast('重载失败：' + error.message, 'bad');
+  }
+});
+$('testCatalog').addEventListener('click', async () => {
+  try {
+    const data = await api('/test-catalog', { method: 'POST', body: '{}' });
+    toast('目录接口正常，主题数：' + (data.themes ?? 0), 'ok');
+  } catch (error) {
+    toast('目录接口测试失败：' + error.message, 'bad');
+  }
+});
+$('copyCurl').addEventListener('click', () => copyText($('curlExample').textContent, '命令已复制'));
+$('savePassword').addEventListener('click', async () => {
+  const password = $('newPassword').value;
+  const confirmPassword = $('confirmPassword').value;
+  if (password.length < 8) { toast('密码至少 8 位', 'bad'); return; }
+  if (password !== confirmPassword) { toast('两次输入的密码不一致', 'bad'); return; }
+  if (!confirm('更新后需要重新登录控制台，确认修改？')) return;
+  try {
+    const data = await api('/password', { method: 'POST', body: JSON.stringify({ password }) });
+    toast(data.message || '密码已更新');
+    $('newPassword').value = '';
+    $('confirmPassword').value = '';
+  } catch (error) {
+    toast('修改失败：' + error.message, 'bad');
+  }
+});
+
+$('uploadForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = $('uploadBtn');
+  button.disabled = true;
+  button.textContent = '上传中…';
+  try {
+    const response = await fetch('/admin/api/upload-theme', {
+      method: 'POST',
+      body: new FormData($('uploadForm')),
+      headers: { 'X-Requested-With': 'SukiSUThemeAdmin' },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+    toast('主题已上传，当前共 ' + (data.themes ?? 0) + ' 个主题');
+    $('uploadForm').reset();
+    await refresh(true);
+  } catch (error) {
+    toast('上传失败：' + error.message, 'bad');
+  } finally {
+    button.disabled = false;
+    button.textContent = '上传并发布';
+  }
+});
+
+pageFromHash();
+refresh();
+setInterval(() => refresh(true), 15000);
+</script>
+</body>
+</html>
