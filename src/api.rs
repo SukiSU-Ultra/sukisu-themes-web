@@ -201,6 +201,7 @@ pub fn router(state: AppState) -> Router {
         .route("/approve", post(approve))
         .route("/reject", post(reject))
         .route("/author/revoke", post(author_revoke))
+        .route("/author/delete", post(author_delete))
         .route("/sync", post(sync_catalog))
         .route("/test-catalog", post(test_catalog))
         .route("/reload", post(reload_caddy))
@@ -1545,6 +1546,46 @@ async fn author_revoke(State(state): State<AppState>, body: Bytes) -> ApiResult<
     .await
     .ok();
     Ok(Json(json!({"ok": true, "message": "author revoked"})).into_response())
+}
+
+async fn author_delete(
+    State(state): State<AppState>,
+    Extension(actor): Extension<crate::accounts::SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Response> {
+    let value = json_body(body).await?;
+    let hash = value
+        .get("hash")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if !valid_author_hash(&hash) {
+        return Err(ApiError::bad("invalid author hash"));
+    }
+    let Some(author) = crate::authors::author_by_hash(&state.db, &hash)
+        .await
+        .map_err(ApiError::internal)?
+    else {
+        return Err(ApiError::not_found("author not found"));
+    };
+    if author.status != "revoked" && author.status != "retired" {
+        return Err(ApiError::bad("请先撤销作者许可，再删除许可记录"));
+    }
+    crate::authors::delete_author(&state.db, &hash)
+        .await
+        .map_err(ApiError::internal)?;
+    crate::accounts::audit(
+        &state.db,
+        Some(&actor.user_id),
+        "author.delete",
+        Some("author"),
+        Some(&hash),
+        author.display_name.as_deref(),
+    )
+    .await
+    .ok();
+    Ok(Json(json!({"ok": true, "message": "作者许可已删除"})).into_response())
 }
 
 async fn storage_get(State(state): State<AppState>) -> Json<Value> {

@@ -292,6 +292,20 @@ pub async fn set_status(
     .await
 }
 
+pub async fn delete_user(db: &Database, user_id: &str) -> Result<()> {
+    let user_id = user_id.to_string();
+    db.call(move |conn| {
+        conn.execute("DELETE FROM email_tokens WHERE user_id = ?1", [&user_id])?;
+        conn.execute(
+            "DELETE FROM oauth_states WHERE user_id = ?1 OR link_user_id = ?1",
+            [&user_id],
+        )?;
+        conn.execute("DELETE FROM users WHERE id = ?1", [&user_id])?;
+        Ok(())
+    })
+    .await
+}
+
 pub async fn set_role(db: &Database, user_id: &str, role: &str) -> Result<()> {
     let user_id = user_id.to_string();
     let role = role.to_string();
@@ -802,6 +816,19 @@ pub async fn restore_theme_submissions(db: &Database, user_id: &str, theme_id: &
     .await
 }
 
+pub async fn delete_theme_submissions(db: &Database, user_id: &str, theme_id: &str) -> Result<()> {
+    let user_id = user_id.to_string();
+    let theme_id = theme_id.to_string();
+    db.call(move |conn| {
+        conn.execute(
+            "DELETE FROM submissions WHERE user_id = ?1 AND theme_id = ?2",
+            params![user_id, theme_id],
+        )?;
+        Ok(())
+    })
+    .await
+}
+
 pub async fn submission_owned(db: &Database, id: &str, user_id: &str) -> Result<Option<String>> {
     let id = id.to_string();
     let user_id = user_id.to_string();
@@ -813,6 +840,19 @@ pub async fn submission_owned(db: &Database, id: &str, user_id: &str) -> Result<
                 |row| row.get(0),
             )
             .optional()?)
+    })
+    .await
+}
+
+pub async fn delete_submission(db: &Database, id: &str, user_id: &str) -> Result<()> {
+    let id = id.to_string();
+    let user_id = user_id.to_string();
+    db.call(move |conn| {
+        conn.execute(
+            "DELETE FROM submissions WHERE id = ?1 AND user_id = ?2",
+            params![id, user_id],
+        )?;
+        Ok(())
     })
     .await
 }

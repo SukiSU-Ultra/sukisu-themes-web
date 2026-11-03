@@ -71,8 +71,10 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/my-themes/{id}/download", get(download_my_theme))
         .route("/my-themes/withdraw", post(withdraw_my_theme))
         .route("/my-themes/restore", post(restore_my_theme))
+        .route("/my-themes/delete", post(delete_my_theme))
         .route("/submissions", get(my_submissions))
         .route("/submissions/withdraw", post(withdraw_submission))
+        .route("/submissions/delete", post(delete_submission))
         .route("/preview", get(account_preview))
         .route("/theme-id/next", get(next_theme_id))
         .route("/submit", post(submit_theme))
@@ -1647,6 +1649,55 @@ async fn restore_my_theme(
     Ok(Json(json!({"ok": true, "message": "主题已重新发布"})))
 }
 
+async fn delete_my_theme(
+    State(state): State<AppState>,
+    Extension(session): Extension<SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
+    let value = json_body(body).await?;
+    let id = value
+        .get("id")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if !crate::util::valid_theme_id(&id) {
+        return Err(ApiError::bad("无效的主题 ID"));
+    }
+    if state.jobs.is_running() {
+        return Err(ApiError::conflict("存储迁移进行中，请稍后再试"));
+    }
+    let Some((meta_file, meta)) = crate::catalog::find_theme_meta(&state.paths, &id) else {
+        return Err(ApiError::not_found("主题不存在"));
+    };
+    if !theme_owned_by_user(&state, &session, &meta).await? {
+        return Err(ApiError::forbidden("无权删除该主题"));
+    }
+    if meta.withdrawn_at.is_none() {
+        return Err(ApiError::bad("只有已撤回主题可以永久删除"));
+    }
+    crate::catalog::remove_theme_files(&state.store, Some(&meta_file), &meta)
+        .await
+        .map_err(ApiError::internal)?;
+    crate::catalog::rebuild_catalog(&state.store, &state.paths)
+        .await
+        .map_err(ApiError::internal)?;
+    state.refresh_withdrawn_assets();
+    accounts::delete_theme_submissions(&state.db, &session.user_id, &id)
+        .await
+        .map_err(ApiError::internal)?;
+    let _ = accounts::audit(
+        &state.db,
+        Some(&session.user_id),
+        "theme.delete.self",
+        Some("theme"),
+        Some(&id),
+        None,
+    )
+    .await;
+    Ok(Json(json!({"ok": true, "message": "主题已永久删除"})))
+}
+
 async fn my_submissions(
     State(state): State<AppState>,
     Extension(session): Extension<SessionInfo>,
@@ -1726,6 +1777,42 @@ async fn withdraw_submission(
         .await
         .map_err(ApiError::internal)?;
     Ok(Json(json!({"ok": true, "message": "投稿已撤回"})))
+}
+
+async fn delete_submission(
+    State(state): State<AppState>,
+    Extension(session): Extension<SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
+    let value = json_body(body).await?;
+    let id = value
+        .get("submissionId")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let owned = accounts::submission_owned(&state.db, &id, &session.user_id)
+        .await
+        .map_err(ApiError::internal)?;
+    let Some(status) = owned else {
+        return Err(ApiError::not_found("投稿不存在"));
+    };
+    if status != "withdrawn" && status != "rejected" {
+        return Err(ApiError::bad("只有已撤回或已拒绝的投稿记录可以删除"));
+    }
+    accounts::delete_submission(&state.db, &id, &session.user_id)
+        .await
+        .map_err(ApiError::internal)?;
+    let _ = accounts::audit(
+        &state.db,
+        Some(&session.user_id),
+        "submission.delete.self",
+        Some("submission"),
+        Some(&id),
+        None,
+    )
+    .await;
+    Ok(Json(json!({"ok": true, "message": "投稿记录已删除"})))
 }
 
 #[derive(Deserialize)]

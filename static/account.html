@@ -665,7 +665,7 @@ input:-webkit-autofill:focus {
         </div>
         <div class="card">
           <h3>已撤回主题</h3>
-          <p class="hint">撤回后保留 14 天，只有作者可以预览和下载；14 天后自动永久删除，期间可以重新发布。</p>
+          <p class="hint">撤回后保留 14 天，只有作者可以预览和下载；期间可以重新发布，也可以打开详情永久删除。</p>
           <div class="theme-grid" id="withdrawnGrid"></div>
           <div class="empty hidden" id="withdrawnEmpty">没有已撤回主题</div>
         </div>
@@ -1086,7 +1086,7 @@ input:-webkit-autofill:focus {
     const withdrawn = theme.status === 'withdrawn';
     const tags = (theme.tags || []).map(tag => '<span>' + escapeHtml(tag) + '</span>').join('');
     const withdrawAction = withdrawn
-      ? '<button class="btn" id="myThemeRestore" type="button">重新发布</button>'
+      ? '<button class="btn" id="myThemeRestore" type="button">重新发布</button><button class="btn danger" id="myThemeDelete" type="button">永久删除</button>'
       : '<button class="btn danger" id="myThemeWithdraw" type="button">撤回并下架</button>';
     $('myThemeBody').innerHTML = `
       ${hero ? '<img class="dialog-hero" id="myThemeHero" src="' + escapeHtml(hero) + '" alt="">' : ''}
@@ -1143,6 +1143,19 @@ input:-webkit-autofill:focus {
         } catch (error) { toast(error.message, true); }
       });
     }
+    const deleteButton = $('myThemeDelete');
+    if (deleteButton) {
+      deleteButton.addEventListener('click', async () => {
+        if (!confirm('确认永久删除该主题？主题包、预览图和截图会立即移除，且无法恢复。')) return;
+        try {
+          await api('/my-themes/delete', { method: 'POST', body: JSON.stringify({ id: theme.id }) });
+          toast('主题已永久删除');
+          dialog.close();
+          await loadThemes();
+          await loadSubmissions();
+        } catch (error) { toast(error.message, true); }
+      });
+    }
     dialog.showModal();
   }
 
@@ -1180,6 +1193,20 @@ input:-webkit-autofill:focus {
           try {
             await api('/submissions/withdraw', { method: 'POST', body: JSON.stringify({ submissionId: item.submissionId }) });
             toast('已撤回');
+            loadSubmissions();
+          } catch (error) { toast(error.message, true); }
+        });
+        el.appendChild(button);
+      }
+      if (item.status === 'withdrawn' || item.status === 'rejected') {
+        const button = document.createElement('button');
+        button.className = 'btn danger small';
+        button.textContent = '删除记录';
+        button.addEventListener('click', async () => {
+          if (!confirm('确认删除这条投稿记录？删除后无法恢复。')) return;
+          try {
+            await api('/submissions/delete', { method: 'POST', body: JSON.stringify({ submissionId: item.submissionId }) });
+            toast('投稿记录已删除');
             loadSubmissions();
           } catch (error) { toast(error.message, true); }
         });

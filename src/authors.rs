@@ -149,6 +149,18 @@ pub async fn set_author_status(
     .await
 }
 
+pub async fn delete_author(db: &Database, hash: &str) -> Result<usize> {
+    let hash = hash.to_string();
+    db.call(move |conn| Ok(conn.execute("DELETE FROM authors WHERE hash = ?1", [&hash])?))
+        .await
+}
+
+pub async fn delete_authors_for_user(db: &Database, user_id: &str) -> Result<usize> {
+    let user_id = user_id.to_string();
+    db.call(move |conn| Ok(conn.execute("DELETE FROM authors WHERE user_id = ?1", [&user_id])?))
+        .await
+}
+
 pub async fn bind_author_to_user(
     db: &Database,
     hash: &str,

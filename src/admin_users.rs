@@ -22,6 +22,7 @@ pub fn router() -> Router<AppState> {
         .route("/users/{id}/reject", post(user_reject))
         .route("/users/{id}/disable", post(user_disable))
         .route("/users/{id}/enable", post(user_enable))
+        .route("/users/{id}/delete", post(user_delete))
         .route("/users/{id}/reset-password", post(user_reset_password))
         .route("/users/{id}/role", post(user_role))
         .route("/users/{id}/author/bind", post(user_author_bind))
@@ -299,6 +300,50 @@ async fn user_enable(
     .await
     .ok();
     Ok(Json(json!({"ok": true, "message": "账号已启用"})))
+}
+
+async fn user_delete(
+    State(state): State<AppState>,
+    Extension(actor): Extension<SessionInfo>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    if id == actor.user_id {
+        return Err(ApiError::bad("不能删除当前登录账号"));
+    }
+    let user = accounts::user_by_id(&state.db, &id)
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::not_found("用户不存在"))?;
+    if user.role == "admin" {
+        return Err(ApiError::bad("管理员账号不能删除，请先取消管理员身份"));
+    }
+    if user.status != "disabled" && user.status != "rejected" {
+        return Err(ApiError::bad("只有已禁用或已拒绝的账号可以删除"));
+    }
+    state.sessions.revoke_user(&id).await;
+    if let Some(avatar) = user.avatar.as_deref().filter(|value| !value.is_empty()) {
+        let _ = state.store.delete(avatar).await;
+    }
+    let removed_authors = authors::delete_authors_for_user(&state.db, &id)
+        .await
+        .map_err(ApiError::internal)?;
+    accounts::delete_user(&state.db, &id)
+        .await
+        .map_err(ApiError::internal)?;
+    accounts::audit(
+        &state.db,
+        Some(&actor.user_id),
+        "user.delete",
+        Some("user"),
+        Some(&id),
+        Some(&format!(
+            "{}; authors={removed_authors}",
+            user.username
+        )),
+    )
+    .await
+    .ok();
+    Ok(Json(json!({"ok": true, "message": "账号已永久删除"})))
 }
 
 async fn user_reset_password(
