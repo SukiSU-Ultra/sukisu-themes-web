@@ -1146,7 +1146,75 @@
     "累计下载量": "Total downloads",
     "热度：总下载量 + 近 7 天下载 × 10": "Heat: total downloads + last 7 days × 10",
     "热度": "Heat",
-    "下载": "Download"
+    "下载": "Download",
+    "留言与回复": "Comments & replies",
+    "清空留言": "Clear comments",
+    "公开": "Public",
+    "仅作者可见": "Author only",
+    "发送": "Send",
+    "写下留言或回复…支持表情": "Write a comment or reply… Emoji supported",
+    "作者": "Author",
+    "管理员": "Admin",
+    "消息": "Messages",
+    "这里汇总你参与的留言和作者回复；作者还能看到自己主题下的全部留言。只有作者和管理员能看到私密留言。": "Messages you take part in and author replies. Authors also see every comment on their own themes. Private comments are visible only to the theme author and admins.",
+    "刷新": "Refresh",
+    "一键清空": "Clear all",
+    "还没有留言。到「发现主题」里打开一个主题就能留言。": "No messages yet. Open a theme in Discover to leave a comment.",
+    "正在加载留言…": "Loading comments…",
+    "还没有留言，来留下第一条吧。": "No comments yet. Be the first to leave one.",
+    "取消": "Cancel",
+    "回复": "Reply",
+    "删除": "Delete",
+    "正在加载消息…": "Loading messages…",
+    "正在回复": "Replying to",
+    "暂无留言": "No comments",
+    "我的主题": "My theme",
+    "选择一条留言后点击「回复」": "Select a comment and click Reply",
+    "回复留言…支持表情": "Reply… Emoji supported",
+    "评论管理": "Comment moderation",
+    "查看、删除和清理主题留言；私密留言只有主题作者和管理员可见。": "Review, delete, and clear theme comments. Private comments are visible only to the theme author and admins.",
+    "自动清理": "Automatic cleanup",
+    "正在读取保留设置…": "Loading retention settings…",
+    "保存设置": "Save settings",
+    "保留天数": "Retention days",
+    "0 表示永久保留；到期留言会在后台每小时清理一次。": "0 keeps comments forever; expired comments are cleaned up hourly in the background.",
+    "全部主题": "All themes",
+    "全部可见性": "All visibility",
+    "搜索留言内容、用户、主题…": "Search comment text, users, themes…",
+    "没有符合条件的留言": "No matching comments",
+    "上一页": "Previous",
+    "下一页": "Next",
+    "清空该主题留言": "Clear this theme's comments",
+    "清空该主题": "Clear this theme",
+    "按主题筛选": "Filter by theme",
+    "按可见性筛选": "Filter by visibility",
+    "查看所有主题留言与私密留言，删除单条、按主题清理或设置自动清理天数。": "Review all public and private theme comments, delete one, clear a theme, or configure automatic cleanup.",
+    "这个主题还没有留言。": "This theme has no comments yet.",
+    "留言不会自动删除": "Comments are kept indefinitely",
+    "写点什么再发送": "Write something before sending",
+    "留言已发送": "Comment sent",
+    "回复已发送": "Reply sent",
+    "请先选择要回复的留言": "Select a comment to reply to first",
+    "已删除": "Deleted",
+    "评论内容不能为空": "Comment cannot be empty",
+    "评论内容过长": "Comment is too long",
+    "评论包含不支持的控制字符": "Comment contains unsupported control characters",
+    "评论不存在": "Comment not found",
+    "无权删除该评论": "You cannot delete this comment",
+    "无权回复该私密留言": "You cannot reply to this private message",
+    "回复的评论不存在": "The comment being replied to does not exist",
+    "回复的评论不属于该主题": "The comment belongs to a different theme",
+    "缺少评论 ID": "Missing comment ID",
+    "评论参数无效": "Invalid comment parameters",
+    "保留天数不能为负数": "Retention days cannot be negative",
+    "当前永久保留；输入 0 表示不自动删除，最多 3650 天。": "Currently kept forever. Enter 0 to disable automatic deletion; the maximum is 3650 days.",
+    "提到了你": "Mentioned you",
+    "输入用户名搜索，或选择平台标识：": "Type a username to search, or pick a platform tag:",
+    "没有匹配的用户": "No matching users",
+    "写下留言或回复…支持 Markdown、@用户 和表情": "Write a comment or reply… Markdown, @mentions and emoji supported",
+    "回复留言…支持 Markdown、@用户 和表情": "Reply… Markdown, @mentions and emoji supported",
+    "搜索过于频繁，请稍后再试": "Too many searches. Try again shortly.",
+    "留言过于频繁，请稍后再试": "You are commenting too quickly. Try again shortly."
   },
   "patterns": [
     [
@@ -1588,6 +1656,42 @@
     [
       "^已用 (.*) / (.*) · 优先级 (.*)$",
       "Used $1 / $2 · Priority $3"
+    ],
+    [
+      "^留言会在 ([0-9]+) 天后自动删除$",
+      "Comments are deleted after $1 days"
+    ],
+    [
+      "^已清空 ([0-9]+) 条留言$",
+      "Cleared $1 comments"
+    ],
+    [
+      "^第 ([0-9]+)–([0-9]+) 条 / 共 ([0-9]+) 条$",
+      "Showing $1–$2 of $3"
+    ],
+    [
+      "^当前保留 ([0-9]+) 天，到期留言会在后台自动清理。$",
+      "Keeping comments for $1 days; expired comments are cleaned up in the background."
+    ],
+    [
+      "^已保存：([0-9]+) 天后自动删除$",
+      "Saved: comments are deleted after $1 days"
+    ],
+    [
+      "^已保存：永久保留$",
+      "Saved: comments are kept forever"
+    ],
+    [
+      "^评论最多 ([0-9]+) 个字符$",
+      "Comments are limited to $1 characters"
+    ],
+    [
+      "^([0-9]+) 条$",
+      "$1 comments"
+    ],
+    [
+      "^([0-9]+) 条留言$",
+      "$1 comments"
     ]
   ]
 }

@@ -71,6 +71,10 @@ impl MetaIndex {
         self.by_id.get(id)
     }
 
+    pub fn themes(&self) -> impl Iterator<Item = &Meta> {
+        self.by_id.values()
+    }
+
     pub fn theme_for_asset(&self, asset: &str) -> Option<&Meta> {
         self.theme_for_asset
             .get(asset)

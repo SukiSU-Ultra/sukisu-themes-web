@@ -9,6 +9,7 @@ mod auth;
 mod auth_settings_api;
 mod authors;
 mod catalog;
+mod comments;
 mod config;
 mod db;
 mod images;
@@ -77,10 +78,16 @@ async fn main() -> anyhow::Result<()> {
             if let Err(error) = catalog::refresh_catalog_stats(&cleanup_state.paths) {
                 tracing::warn!("catalog stats refresh warning: {error:#}");
             }
+            if let Err(error) = comments::purge_expired(&cleanup_state.db).await {
+                tracing::warn!("comment cleanup warning: {error:#}");
+            }
             cleanup_state.reload_theme_stats();
             tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
         }
     });
+    if let Err(error) = comments::purge_expired(&state.db).await {
+        tracing::warn!("comment cleanup warning: {error:#}");
+    }
     if let Err(error) = catalog::backfill_meta_assets(&state.store, &state.paths).await {
         tracing::warn!("storage init warning: {error:#}");
     }

@@ -59,6 +59,28 @@ Rust 编写的主题镜像、投稿审核和账号系统，提供 Android 管理
 - 管理后台主题列表支持 `GET /api/themes?sort=hot|downloads|updated|name|size&q=...&tag=...&limit=...&offset=...`。
 - 用户中心 `GET /account/api/discover?limit=5&exclude=id1,id2&author=...` 返回随机主题预览；`GET /account/api/themes/{id}/download` 下载并计数。
 
+## 主题留言与消息
+
+留言按主题保存在 SQLite（`theme_comments` 表），支持任意 UTF-8 文本和表情。
+
+- 用户中心 / 管理器：
+  - `GET /account/api/themes/{id}/comments` 返回当前用户可见的留言线程。
+  - `POST /account/api/themes/{id}/comments`，请求体 `{content, visibility, parentId}`；`visibility` 为 `public` 或 `author`，回复会继承顶层留言的可见性。
+  - `POST /account/api/comments/delete`，请求体 `{id}`；留言者、主题作者和管理员可删除，删除顶层留言会级联删除回复。
+  - `POST /account/api/comments/clear`，请求体 `{themeId?}`；普通用户清空自己参与的留言，主题作者清空该主题全部留言，管理员不传 `themeId` 时清空全部。
+  - `GET /account/api/messages` 返回按主题分组的消息；普通用户看到自己参与的线程和被公开提及的线程，主题作者看到自己主题下的全部留言，管理员看到全部。
+  - `GET /account/api/users/search?q=` 返回最多 10 个活跃账号（仅用户名、显示名、角色、是否作者），用于 `@` 提及选择器。
+  - `GET /account/api/users/{id}/avatar` 是公开头像接口，只返回该用户保存的头像资源；评论 JSON 的 `avatarUrl` 指向它。
+  - `GET /account/api/themes/{id}/comments` 允许匿名读取公开评论（私密留言仍只对留言者、作者和管理员可见）；发表评论、回复和删除仍需登录。
+- 评论内容支持 Markdown（粗体、斜体、行内代码、围栏代码块、链接）和表情；`@username` 会通知本站账号，`username@github` / `@bilibili` 等平台提及会渲染成对应平台链接。
+- 公开评论中的 `@username` 会在被提及用户的消息页显示“提到了你”；私密留言不会产生站内提及通知，避免泄露私密线程。
+- 管理后台：
+  - `GET /api/comments?theme=&q=&visibility=&offset=&limit=` 列出全部留言。
+  - `POST /api/comments/delete`、`POST /api/comments/clear`（`{themeId?}`）。
+  - `GET/POST /api/comments/settings`，请求体 `{retentionDays}`；`0` 表示永久保留，默认 30 天，最大 3650 天。
+- 私密留言（`visibility=author`）仅留言者、主题作者和管理员可见；公开留言对所有已登录用户可见。
+- 自动清理在服务启动时及之后每小时执行一次，按 `createdAt` 删除超过保留天数的留言；永久删除主题时也会清理该主题的留言。
+
 ## 性能与并发
 
 - SQLite 使用 WAL，并默认开 4 个连接组成的小连接池；可用 `THEME_DB_POOL_SIZE` 调整（1-32）。读写仍由 SQLite 串行化，但读请求不再互相阻塞。

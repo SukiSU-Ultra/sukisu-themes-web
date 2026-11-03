@@ -217,6 +217,7 @@ impl AppState {
     }
 }
 
+#[derive(Debug)]
 pub struct ApiError {
     status: StatusCode,
     message: String,
@@ -327,6 +328,7 @@ pub fn router(state: AppState) -> Router {
         .merge(crate::network_api::router())
         .merge(crate::auth_settings_api::router())
         .merge(crate::sources_api::router())
+        .merge(crate::comments::admin_router())
         .merge(crate::resumable::router())
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard))
         .layer(middleware::from_fn(csrf_guard));
@@ -1912,6 +1914,7 @@ async fn delete_theme(State(state): State<AppState>, body: Bytes) -> ApiResult<R
     catalog::remove_theme_files(&state.store, Some(&meta_file), &meta)
         .await
         .map_err(ApiError::internal)?;
+    let _ = crate::comments::clear_theme(&state.db, id).await;
     let themes = catalog::rebuild_catalog(&state.store, &state.paths)
         .await
         .map_err(ApiError::internal)?;

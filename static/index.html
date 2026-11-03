@@ -517,6 +517,44 @@ footer { margin-top: 38px; padding-top: 18px; border-top: 1px solid var(--line);
 .theme-detail-meta span { padding: 3px 8px; border: 1px solid var(--line); border-radius: 99px; background: var(--input-bg); }
 .theme-detail-section { margin-top: 14px; }
 .theme-detail-section h4 { margin: 0 0 6px; font-size: 13px; }
+/* ── Comment moderation ────────────────────────────────────────────── */
+.comment-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 9px; }
+.comment-head h4 { margin: 0; font-size: 13px; }
+.comment-retention { color: var(--faint); font-size: 11px; }
+.comment-list { display: flex; flex-direction: column; gap: 9px; }
+.comment-thread { border: 1px solid var(--line); border-radius: 12px; background: var(--input-bg); padding: 10px 11px; }
+.comment-item { display: flex; gap: 9px; }
+.comment-avatar { width: 30px; height: 30px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--gradient); color: #fff; font-weight: 800; font-size: 12px; text-transform: uppercase; object-fit: cover; }
+.comment-body { flex: 1; min-width: 0; }
+.comment-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--faint); font-size: 11px; }
+.comment-meta b { color: var(--text); font-size: 12.5px; font-weight: 700; }
+.comment-badge { padding: 1px 6px; border-radius: 99px; border: 1px solid var(--line); font-size: 10px; line-height: 1.5; }
+.comment-badge.author { color: var(--accent); border-color: rgba(103, 232, 249, .3); }
+.comment-badge.admin { color: var(--accent-3); border-color: rgba(167, 139, 250, .32); }
+.comment-badge.private { color: var(--warn); border-color: rgba(251, 191, 36, .3); }
+.comment-badge.mention { color: var(--accent-2); border-color: rgba(96, 165, 250, .36); }
+.comment-content { margin-top: 5px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+.comment-content a { color: var(--accent-2); text-decoration: none; border-bottom: 1px dashed rgba(96, 165, 250, .42); }
+.comment-content code { padding: 1px 4px; border-radius: 5px; background: var(--code-bg); color: var(--code-text); font-family: var(--font-mono); font-size: .92em; }
+.comment-content strong { color: var(--text); }
+.comment-content pre.comment-code { margin: 6px 0 0; padding: 9px 10px; overflow: auto; border: 1px solid var(--line); border-radius: 9px; background: var(--code-bg); }
+.comment-content pre.comment-code code { padding: 0; background: none; font-size: 11px; line-height: 1.55; }
+.mention.local { padding: 1px 5px; border-radius: 6px; color: var(--accent-3); background: rgba(167, 139, 250, .12); border: 1px solid rgba(167, 139, 250, .22); }
+.comment-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; }
+.comment-actions button { padding: 0; border: 0; background: none; color: var(--faint); font-size: 11px; }
+.comment-actions button:hover { color: var(--accent-2); }
+.comment-actions button.danger:hover { color: var(--bad); }
+.comment-replies { display: flex; flex-direction: column; gap: 9px; margin-top: 10px; padding-left: 12px; border-left: 2px solid var(--line); }
+.comment-replies .comment-avatar { width: 24px; height: 24px; font-size: 10px; }
+.comment-empty { padding: 8px 0; color: var(--faint); font-size: 12px; line-height: 1.7; }
+.comment-admin-row { border: 1px solid var(--line); border-radius: 12px; background: var(--input-bg); padding: 11px 13px; margin-bottom: 9px; }
+.comment-admin-row .comment-meta { margin-bottom: 4px; }
+.comment-admin-row .comment-content { margin-top: 4px; }
+.comment-meta .comment-avatar { width: 20px; height: 20px; font-size: 9px; }
+.comment-pager { display: flex; align-items: center; gap: 9px; justify-content: flex-end; margin-top: 12px; }
+button.small { height: 32px; padding: 0 11px; font-size: 11.5px; }
+button.danger { color: var(--bad); border-color: rgba(251, 113, 133, .3); }
+.comment-admin-row .comment-actions { margin-top: 7px; }
 .sha-box { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--input-bg); font-family: var(--font-mono); font-size: 11px; line-height: 1.6; word-break: break-all; color: var(--muted); }
 .sha-ok { color: var(--ok); }
 .sha-missing { color: var(--warn); }
@@ -1291,6 +1329,7 @@ input:-webkit-autofill:focus {
       <a href="/account/" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c.8-4 3.1-6 7-6s6.2 2 7 6"/></svg>用户中心 <span style="margin-left:auto;color:var(--faint)">↗</span></a>
       <div class="nav-label">主题</div>
       <a href="#pending"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 5h14v14H5z"/><path d="M8 9h8M8 13h5"/></svg>待审核 <span class="nav-badge" id="pendingNavBadge">0</span></a>
+      <a href="#comments"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 12a7 7 0 0 1-7 7H8l-4 3v-4.5A7 7 0 0 1 4 12a7 7 0 0 1 7-7h2a7 7 0 0 1 7 7Z"/><path d="M8.5 11h7M8.5 14h4"/></svg>评论管理 <span class="nav-badge" id="commentsNavBadge">0</span></a>
       <a href="#themes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="m4 16 4.5-4.5 3 3 3-3L20 16"/><circle cx="15.5" cy="8.5" r="1.6"/></svg>主题预览</a>
       <a href="#upload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>上传主题</a>
       <div class="nav-label">系统</div>
@@ -1464,6 +1503,39 @@ input:-webkit-autofill:focus {
       <div class="section-head"><div><h3>自动审批作者</h3><p>首次投稿审核通过后，作者 ID 会获得许可；以后使用同一 ID 投稿将自动发布。</p></div><span class="pill" id="authorsPill">0 位</span></div>
       <div id="authorsList"></div>
       <div class="empty" id="authorsEmpty"><b>还没有自动审批作者</b>批准第一篇投稿后，作者 ID 会出现在这里。</div>
+    </section>
+
+    <section id="comments" class="page">
+      <div class="section-head"><div><h3>评论管理</h3><p>查看、删除和清理主题留言；私密留言只有主题作者和管理员可见。</p></div><span class="pill" id="commentsPill">0 条</span></div>
+      <div class="card">
+        <div class="section-head"><div><h4>自动清理</h4><p class="hint" id="commentRetentionHint">正在读取保留设置…</p></div><button class="primary" id="saveCommentRetention" type="button">保存设置</button></div>
+        <div class="form-grid">
+          <div><label for="commentRetentionDays">保留天数</label><input id="commentRetentionDays" type="number" min="0" max="3650" step="1" value="30"><div class="field-hint">0 表示永久保留；到期留言会在后台每小时清理一次。</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="toolbar">
+          <div class="search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+            <input id="commentSearch" type="search" placeholder="搜索留言内容、用户、主题…">
+          </div>
+          <select id="commentThemeFilter" class="sort-select" title="按主题筛选"><option value="">全部主题</option></select>
+          <select id="commentVisibilityFilter" class="sort-select" title="按可见性筛选">
+            <option value="">全部可见性</option>
+            <option value="public">公开</option>
+            <option value="author">仅作者可见</option>
+          </select>
+          <button id="commentsRefresh" type="button">刷新</button>
+          <button class="danger" id="commentsClearAll" type="button">一键清空</button>
+        </div>
+        <div id="commentAdminList"></div>
+        <div class="empty" id="commentAdminEmpty">没有符合条件的留言</div>
+        <div class="comment-pager">
+          <span class="comment-retention" id="commentPageInfo"></span>
+          <button class="small" id="commentPrev" type="button">上一页</button>
+          <button class="small" id="commentNext" type="button">下一页</button>
+        </div>
+      </div>
     </section>
 
     <section id="themes" class="page">
@@ -2385,6 +2457,7 @@ const SITE_MENTIONS = {
   zhihu: 'https://www.zhihu.com',
   threads: 'https://www.threads.net',
   douyin: 'https://www.douyin.com',
+  x: 'https://x.com',
 };
 
 function userMentionUrl(user, platform) {
@@ -2400,7 +2473,8 @@ function userMentionUrl(user, platform) {
     case 'xda': return 'https://xdaforums.com/m/' + name + '/';
     case 'youtube': return 'https://www.youtube.com/@' + name;
     case 'afdian': return 'https://afdian.com/a/' + name;
-    case 'twitter': return 'https://x.com/' + name;
+    case 'twitter':
+      case 'x': return 'https://x.com/' + name;
     case 'zhihu': return 'https://www.zhihu.com/people/' + name;
     case 'threads': return 'https://www.threads.net/@' + name;
     case 'douyin': return 'https://www.douyin.com/search/' + name;
@@ -2416,7 +2490,7 @@ function renderInlineMarkdown(value) {
   html = html.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
     '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
   // Usernames may contain CJK and other Unicode letters, not just ASCII.
-  html = html.replace(/(^|[^\p{L}\p{N}@._·~+-])([\p{L}\p{N}\p{M}._·~+-]+)@(github|gitee|bilibili|coolapk|telegram|weibo|xiaohongshu|xda|youtube|afdian|twitter|zhihu|threads|douyin)(?![\p{L}\p{N}._~+-]*\.)/giu,
+  html = html.replace(/(^|[^\p{L}\p{N}@._·~+-])([\p{L}\p{N}\p{M}._·~+-]+)@(github|gitee|bilibili|coolapk|telegram|weibo|xiaohongshu|xda|youtube|afdian|twitter|x|zhihu|threads|douyin)(?![\p{L}\p{N}._~+-]*\.)/giu,
     (match, prefix, user, platform) => {
       const url = userMentionUrl(user, platform);
       return url ? `${prefix}<a class="mention" href="${url}" target="_blank" rel="noreferrer">${user}@${platform}</a>` : match;
@@ -2427,7 +2501,36 @@ function renderInlineMarkdown(value) {
       ? `${prefix}<a class="mention" href="${url}" target="_blank" rel="noreferrer">@${name}</a>`
       : match;
   });
+  html = html.replace(/(^|[^\p{L}\p{N}@._·~+-])@([\p{L}\p{M}\p{N}._-]{3,32})(?![\p{L}\p{N}._-])/gu, (match, prefix, name) => {
+    if (SITE_MENTIONS[name.toLowerCase()]) return match;
+    return prefix + '<span class="mention local">@' + name + '</span>';
+  });
+  html = html.replace(/(^|[\s(（])(https?:\/\/[^\s<]+)/gu, (match, prefix, url) => {
+    const trailing = (url.match(/[.,;:!?，。；：！？)）]+$/) || [''])[0];
+    const clean = trailing ? url.slice(0, -trailing.length) : url;
+    return prefix + '<a href="' + clean + '" target="_blank" rel="noreferrer">' + clean + '</a>' + trailing;
+  });
   return html.replace(/\n/g, '<br>');
+}
+
+function renderCommentMarkdown(value) {
+  return String(value || '').split(/(```[\s\S]*?```)/g).map(part => {
+    if (part.startsWith('```') && part.endsWith('```')) {
+      const body = part.slice(3, -3).replace(/^\n/, '').replace(/\n$/, '');
+      return '<pre class="comment-code"><code>' + escapeHtml(body) + '</code></pre>';
+    }
+    const placeholders = [];
+    const masked = part.replace(/`([^`\n]+)`/g, (match, code) => {
+      const token = '\u0000INLINECODE' + placeholders.length + '\u0000';
+      placeholders.push('<code>' + escapeHtml(code) + '</code>');
+      return token;
+    });
+    let html = renderInlineMarkdown(masked);
+    placeholders.forEach((code, index) => {
+      html = html.replace('\u0000INLINECODE' + index + '\u0000', code);
+    });
+    return html;
+  }).join('');
 }
 
 function formatSize(bytes) {
@@ -2459,6 +2562,17 @@ let pendingItems = [];
 let themeQuery = '';
 let pendingQuery = '';
 let themeSort = 'hot';
+let themeDetailId = '';
+let themeDetailRetentionDays = 0;
+let adminCommentItems = [];
+let adminCommentTotal = 0;
+let adminCommentOffset = 0;
+let adminCommentLimit = 50;
+let adminCommentQuery = '';
+let adminCommentTheme = '';
+let adminCommentVisibility = '';
+let adminCommentLoading = false;
+let adminCommentSettingsLoaded = false;
 
 // Canonical tag keys are stored in the catalog; the mapping keeps aliases and localized
 // labels consistent between the upload form, search, cards and the detail dialog.
@@ -2625,13 +2739,280 @@ function openThemeDetail(theme) {
     <div class="theme-detail-section">
       <h4>描述</h4>
       <div>${renderInlineMarkdown(theme.description || '暂无描述')}</div>
+    </div>
+    <div class="theme-detail-section" id="themeDetailComments">
+      <div class="comment-head">
+        <h4>留言与回复</h4>
+        <div class="row" style="margin:0">
+          <span class="comment-retention" id="themeDetailRetention"></span>
+          <button class="danger small" id="themeDetailClearComments" type="button">清空该主题留言</button>
+        </div>
+      </div>
+      <div class="comment-list" id="themeDetailCommentList"><div class="comment-empty">正在加载留言…</div></div>
     </div>`;
+  themeDetailId = theme.id || '';
+  loadThemeDetailComments(themeDetailId);
   dialog.showModal();
 }
 
 $('themeDetailClose').addEventListener('click', () => $('themeDetailDialog').close());
 $('themeDetailDialog').addEventListener('click', event => {
   if (event.target === $('themeDetailDialog')) $('themeDetailDialog').close();
+});
+
+// ── Comment moderation ──────────────────────────────────────────────
+function commentRetentionLabel(days) {
+  const value = Number(days) || 0;
+  return value > 0 ? '留言会在 ' + value + ' 天后自动删除' : '留言不会自动删除';
+}
+
+function commentBadgesHtml(item) {
+  const badges = [];
+  if (item.isThemeAuthor) badges.push('<span class="comment-badge author">作者</span>');
+  if (item.isAdmin) badges.push('<span class="comment-badge admin">管理员</span>');
+  if (item.visibility === 'author') badges.push('<span class="comment-badge private">仅作者可见</span>');
+  if (item.mentionsMe) badges.push('<span class="comment-badge mention">提到了你</span>');
+  return badges.join('');
+}
+
+function adminCommentItemHtml(item) {
+  const name = item.displayName || item.username || '匿名用户';
+  const initial = String(name).trim().slice(0, 1) || '?';
+  const avatar = item.avatarUrl
+    ? '<img class="comment-avatar" src="' + escapeHtml(item.avatarUrl) + '" alt="" loading="lazy">'
+    : '<span class="comment-avatar">' + escapeHtml(initial) + '</span>';
+  return '<div class="comment-item">' +
+    avatar +
+    '<div class="comment-body">' +
+    '<div class="comment-meta"><b>' + escapeHtml(name) + '</b>' +
+    '<span>@' + escapeHtml(item.username || '—') + '</span>' +
+    commentBadgesHtml(item) +
+    '<span>' + escapeHtml(formatTime(item.createdAt)) + '</span></div>' +
+    '<div class="comment-content">' + renderCommentMarkdown(item.content || '') + '</div>' +
+    '<div class="comment-actions"><button type="button" class="danger" data-admin-comment-delete="' +
+    escapeHtml(item.id) + '">删除</button></div>' +
+    '</div></div>';
+}
+
+function adminCommentThreadHtml(thread) {
+  const replies = (thread.replies || []).map(adminCommentItemHtml).join('');
+  return '<div class="comment-thread">' + adminCommentItemHtml(thread) +
+    (replies ? '<div class="comment-replies">' + replies + '</div>' : '') +
+    '</div>';
+}
+
+async function loadThemeDetailComments(themeId) {
+  const list = $('themeDetailCommentList');
+  if (!list) return;
+  try {
+    const data = await api('/comments?theme=' + encodeURIComponent(themeId) + '&limit=500');
+    if (themeDetailId !== themeId) return;
+    const threads = data.threads || [];
+    themeDetailRetentionDays = Number(data.retentionDays) || 0;
+    const retention = $('themeDetailRetention');
+    if (retention) retention.textContent = commentRetentionLabel(themeDetailRetentionDays);
+    list.innerHTML = threads.length
+      ? threads.map(adminCommentThreadHtml).join('')
+      : '<div class="comment-empty">这个主题还没有留言。</div>';
+  } catch (error) {
+    list.innerHTML = '<div class="comment-empty">' + escapeHtml(error.message) + '</div>';
+  }
+}
+
+async function loadCommentSettings() {
+  try {
+    const data = await api('/comments/settings');
+    const input = $('commentRetentionDays');
+    if (input) input.value = String(data.retentionDays ?? 30);
+    const hint = $('commentRetentionHint');
+    if (hint) {
+      const days = Number(data.retentionDays) || 0;
+      hint.textContent = days > 0
+        ? '当前保留 ' + days + ' 天，到期留言会在后台自动清理。'
+        : '当前永久保留；输入 0 表示不自动删除，最多 3650 天。';
+    }
+  } catch (error) {
+    const hint = $('commentRetentionHint');
+    if (hint) hint.textContent = '读取保留设置失败：' + error.message;
+  }
+}
+
+async function saveCommentSettings() {
+  const input = $('commentRetentionDays');
+  const days = Number(input ? input.value : 30);
+  if (!Number.isFinite(days) || days < 0) {
+    toast('保留天数不能为负数', 'bad');
+    return;
+  }
+  try {
+    const data = await api('/comments/settings', {
+      method: 'POST',
+      body: JSON.stringify({ retentionDays: Math.floor(days) }),
+    });
+    toast('已保存：' + ((Number(data.retentionDays) || 0) > 0
+      ? data.retentionDays + ' 天后自动删除'
+      : '永久保留'));
+    await loadCommentSettings();
+  } catch (error) {
+    toast(error.message, 'bad');
+  }
+}
+
+function populateCommentThemeFilter() {
+  const select = $('commentThemeFilter');
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = '<option value="">全部主题</option>';
+  themeItems.forEach(theme => {
+    const option = document.createElement('option');
+    option.value = theme.id;
+    option.textContent = theme.id + ' · ' + (theme.name || '');
+    select.appendChild(option);
+  });
+  select.value = current;
+}
+
+async function loadCommentsAdmin(offset = 0) {
+  if (adminCommentLoading) return;
+  adminCommentLoading = true;
+  adminCommentOffset = Math.max(0, offset);
+  const params = new URLSearchParams({
+    limit: String(adminCommentLimit),
+    offset: String(adminCommentOffset),
+  });
+  if (adminCommentQuery) params.set('q', adminCommentQuery);
+  if (adminCommentTheme) params.set('theme', adminCommentTheme);
+  if (adminCommentVisibility) params.set('visibility', adminCommentVisibility);
+  const list = $('commentAdminList');
+  if (list) list.innerHTML = '<div class="comment-empty">正在加载留言…</div>';
+  try {
+    if (!adminCommentSettingsLoaded) {
+      await loadCommentSettings();
+      adminCommentSettingsLoaded = true;
+    }
+    if (!themeItems.length) await loadThemes();
+    populateCommentThemeFilter();
+    const data = await api('/comments?' + params.toString());
+    adminCommentItems = data.comments || [];
+    adminCommentTotal = Number(data.total) || 0;
+    if (!adminCommentItems.length && adminCommentTotal > 0 && adminCommentOffset > 0) {
+      // Deleting the last item on a page can leave the offset past the end.
+      adminCommentLoading = false;
+      return loadCommentsAdmin(Math.max(0, adminCommentTotal - adminCommentLimit));
+    }
+    const pill = $('commentsPill');
+    if (pill) pill.textContent = adminCommentTotal + ' 条';
+    const badge = $('commentsNavBadge');
+    if (badge) {
+      badge.textContent = adminCommentTotal > 99 ? '99+' : String(adminCommentTotal);
+      badge.style.display = adminCommentTotal ? 'inline-block' : 'none';
+    }
+    renderCommentsAdmin();
+  } catch (error) {
+    if (list) list.innerHTML = '<div class="comment-empty">' + escapeHtml(error.message) + '</div>';
+    const empty = $('commentAdminEmpty');
+    if (empty) empty.style.display = 'none';
+  } finally {
+    adminCommentLoading = false;
+  }
+}
+
+function renderCommentsAdmin() {
+  const list = $('commentAdminList');
+  if (!list) return;
+  list.innerHTML = '';
+  const empty = $('commentAdminEmpty');
+  if (empty) empty.style.display = adminCommentItems.length ? 'none' : 'block';
+  adminCommentItems.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'comment-admin-row';
+    const name = item.displayName || item.username || '匿名用户';
+    const initial = String(name).trim().slice(0, 1) || '?';
+    const avatar = item.avatarUrl
+      ? '<img class="comment-avatar" src="' + escapeHtml(item.avatarUrl) + '" alt="" loading="lazy">'
+      : '<span class="comment-avatar">' + escapeHtml(initial) + '</span>';
+    row.innerHTML =
+      '<div class="comment-meta">' + avatar + '<b>' + escapeHtml(name) + '</b>' +
+      '<span>@' + escapeHtml(item.username || '—') + '</span>' +
+      commentBadgesHtml(item) +
+      '<span>' + escapeHtml(item.themeName || item.themeId || '—') + '</span>' +
+      '<span>' + escapeHtml(formatTime(item.createdAt)) + '</span>' +
+      (item.parentId ? '<span>回复</span>' : '') + '</div>' +
+      '<div class="comment-content">' + renderCommentMarkdown(item.content || '') + '</div>' +
+      '<div class="comment-actions"><button type="button" class="danger" data-admin-comment-delete="' +
+      escapeHtml(item.id) + '">删除</button></div>';
+    list.appendChild(row);
+  });
+  const start = adminCommentTotal ? adminCommentOffset + 1 : 0;
+  const end = adminCommentOffset + adminCommentItems.length;
+  const info = $('commentPageInfo');
+  if (info) info.textContent = '第 ' + start + '–' + end + ' 条 / 共 ' + adminCommentTotal + ' 条';
+  const prev = $('commentPrev');
+  if (prev) prev.disabled = adminCommentOffset <= 0;
+  const next = $('commentNext');
+  if (next) next.disabled = adminCommentOffset + adminCommentItems.length >= adminCommentTotal;
+}
+
+async function deleteAdminComment(id) {
+  if (!id || !confirm('确认删除这条留言？其下的回复也会一并删除。')) return;
+  try {
+    await api('/comments/delete', { method: 'POST', body: JSON.stringify({ id }) });
+    toast('已删除');
+    if (themeDetailId) await loadThemeDetailComments(themeDetailId);
+    if (currentPage === 'comments') await loadCommentsAdmin(adminCommentOffset);
+  } catch (error) {
+    toast(error.message, 'bad');
+  }
+}
+
+async function clearAdminComments(themeId) {
+  const scope = themeId ? '该主题下的全部留言' : '所有主题的全部留言';
+  if (!confirm('确认清空' + scope + '？此操作不可恢复。')) return;
+  try {
+    const data = await api('/comments/clear', {
+      method: 'POST',
+      body: JSON.stringify(themeId ? { themeId } : {}),
+    });
+    toast('已清空 ' + (data.deleted || 0) + ' 条留言');
+    if (themeId && themeDetailId === themeId) await loadThemeDetailComments(themeId);
+    if (currentPage === 'comments') await loadCommentsAdmin(0);
+  } catch (error) {
+    toast(error.message, 'bad');
+  }
+}
+
+function handleAdminCommentClick(event) {
+  const clearTheme = event.target.closest('#themeDetailClearComments');
+  if (clearTheme) {
+    if (themeDetailId) clearAdminComments(themeDetailId);
+    return;
+  }
+  const button = event.target.closest('[data-admin-comment-delete]');
+  if (button) deleteAdminComment(button.dataset.adminCommentDelete);
+}
+
+$('themeDetailBody').addEventListener('click', handleAdminCommentClick);
+$('commentAdminList').addEventListener('click', handleAdminCommentClick);
+$('saveCommentRetention').addEventListener('click', saveCommentSettings);
+$('commentsRefresh').addEventListener('click', () => loadCommentsAdmin(adminCommentOffset));
+$('commentsClearAll').addEventListener('click', () => clearAdminComments(''));
+$('commentPrev').addEventListener('click', () => loadCommentsAdmin(Math.max(0, adminCommentOffset - adminCommentLimit)));
+$('commentNext').addEventListener('click', () => loadCommentsAdmin(adminCommentOffset + adminCommentLimit));
+let commentSearchTimer = 0;
+$('commentSearch').addEventListener('input', () => {
+  clearTimeout(commentSearchTimer);
+  commentSearchTimer = setTimeout(() => {
+    adminCommentQuery = $('commentSearch').value.trim();
+    loadCommentsAdmin(0);
+  }, 250);
+});
+$('commentThemeFilter').addEventListener('change', () => {
+  adminCommentTheme = $('commentThemeFilter').value;
+  loadCommentsAdmin(0);
+});
+$('commentVisibilityFilter').addEventListener('change', () => {
+  adminCommentVisibility = $('commentVisibilityFilter').value;
+  loadCommentsAdmin(0);
 });
 
 function renderPending(submissions) {
@@ -4334,6 +4715,7 @@ const PAGE_LABELS = {
   overview: 'Overview',
   users: 'Users',
   pending: 'Review queue',
+  comments: 'Comments',
   authors: 'Author licenses',
   themes: 'Theme preview',
   upload: 'Upload theme',
@@ -4350,6 +4732,7 @@ const PAGE_TITLES = {
   overview: '主题镜像控制台',
   users: '用户与作者',
   pending: '待审核投稿',
+  comments: '评论管理',
   authors: '作者许可',
   themes: '主题预览',
   upload: '上传主题',
@@ -4366,6 +4749,7 @@ const PAGE_LEADS = {
   overview: '管理访问令牌、审核主题投稿，以及查看客户端需要使用的 API 地址。',
   users: '管理用户账号、作者绑定申请、资料和权限。',
   pending: '检查投稿预览、作者信息与包内容，通过后立即写入 catalog。',
+  comments: '查看所有主题留言与私密留言，删除单条、按主题清理或设置自动清理天数。',
   authors: '维护可信作者指纹与自动发布许可。',
   themes: '浏览已发布主题，检查预览图、截图和下载信息。',
   upload: '从主题包或当前设备预设创建投稿，并在发布前校验内容。',
@@ -4399,6 +4783,7 @@ function showPage(id, smooth = false) {
   if (page === 'storage') loadStorage();
   if (page === 'locations' || page === 'settings') loadLocations();
   if (page === 'users') loadUsers();
+  if (page === 'comments') loadCommentsAdmin(0);
   if (page === 'network') loadNetwork();
   if (page === 'auth') loadAuthSettings();
   window.scrollTo({ top: 0, behavior: smooth ? 'smooth' : 'auto' });

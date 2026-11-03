@@ -165,6 +165,62 @@ button { cursor: pointer; font: inherit; }
 .dialog-section a { color: var(--accent-2); text-decoration: none; border-bottom: 1px dashed rgba(96, 165, 250, .45); }
 .dialog-section code { padding: 1px 4px; border-radius: 5px; background: rgba(2, 6, 18, .5); color: var(--text); font-family: var(--font-mono); font-size: .92em; }
 .dialog-section strong { color: var(--text); }
+/* ── Comments and private messages ─────────────────────────────────── */
+.comment-section { border-top: 1px solid var(--line); padding-top: 14px; }
+.comment-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 9px; }
+.comment-head h4 { margin: 0; font-size: 13px; }
+.comment-retention { color: var(--faint); font-size: 11px; }
+.comment-list { display: flex; flex-direction: column; gap: 9px; }
+.comment-thread { border: 1px solid var(--line); border-radius: 12px; background: var(--input-bg); padding: 10px 11px; }
+.comment-item { display: flex; gap: 9px; }
+.comment-avatar { width: 30px; height: 30px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--gradient); color: #fff; font-weight: 800; font-size: 12px; text-transform: uppercase; object-fit: cover; }
+.comment-body { flex: 1; min-width: 0; }
+.comment-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--faint); font-size: 11px; }
+.comment-meta b { color: var(--text); font-size: 12.5px; font-weight: 700; }
+.comment-badge { padding: 1px 6px; border-radius: 99px; border: 1px solid var(--line); font-size: 10px; line-height: 1.5; }
+.comment-badge.author { color: var(--accent); border-color: rgba(103, 232, 249, .3); }
+.comment-badge.admin { color: var(--accent-3); border-color: rgba(167, 139, 250, .32); }
+.comment-badge.private { color: var(--warn); border-color: rgba(251, 191, 36, .3); }
+.comment-badge.mention { color: var(--accent-2); border-color: rgba(96, 165, 250, .36); }
+.comment-content { margin-top: 5px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+.comment-content a { color: var(--accent-2); text-decoration: none; border-bottom: 1px dashed rgba(96, 165, 250, .42); }
+.comment-content code { padding: 1px 4px; border-radius: 5px; background: rgba(2, 6, 18, .5); color: var(--text); font-family: var(--font-mono); font-size: .92em; }
+.comment-content strong { color: var(--text); }
+.comment-content em { font-style: italic; }
+.comment-content pre.comment-code { margin: 6px 0 0; padding: 9px 10px; overflow: auto; border: 1px solid var(--line); border-radius: 9px; background: rgba(2, 6, 18, .5); }
+.comment-content pre.comment-code code { padding: 0; background: none; font-size: 11px; line-height: 1.55; }
+.mention.local { padding: 1px 5px; border-radius: 6px; color: var(--accent-3); background: rgba(167, 139, 250, .12); border: 1px solid rgba(167, 139, 250, .22); }
+.mention-suggest { margin-top: 6px; max-height: 190px; overflow: auto; display: grid; gap: 2px; padding: 5px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.mention-suggest button { display: flex; align-items: center; gap: 7px; width: 100%; padding: 6px 8px; border: 0; border-radius: 7px; background: none; color: var(--text); font: inherit; font-size: 12px; text-align: left; }
+.mention-suggest button:hover { background: var(--gradient-soft); }
+.mention-suggest .mention-platform { color: var(--faint); font-family: var(--font-mono); font-size: 11px; }
+.mention-suggest .mention-hint { padding: 6px 8px; color: var(--faint); font-size: 11px; }
+.comment-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; }
+.comment-actions button { padding: 0; border: 0; background: none; color: var(--faint); font-size: 11px; }
+.comment-actions button:hover { color: var(--accent-2); }
+.comment-actions button.danger:hover { color: var(--bad); }
+.comment-replies { display: flex; flex-direction: column; gap: 9px; margin-top: 10px; padding-left: 12px; border-left: 2px solid var(--line); }
+.comment-replies .comment-avatar { width: 24px; height: 24px; font-size: 10px; }
+.comment-empty { padding: 8px 0; color: var(--faint); font-size: 12px; line-height: 1.7; }
+.comment-composer { margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--input-bg); }
+.comment-composer textarea { width: 100%; min-height: 62px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; font-size: 12.5px; line-height: 1.6; resize: vertical; outline: none; }
+.comment-composer textarea:focus { border-color: var(--line-strong); box-shadow: 0 0 0 3px rgba(96, 165, 250, .12); }
+.comment-composer-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.comment-format-row { display: flex; align-items: center; gap: 2px; margin-top: 6px; overflow-x: auto; }
+.comment-format-row button { height: 28px; min-width: 30px; padding: 0 8px; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--muted); font: inherit; font-size: 11.5px; }
+.comment-format-row button:hover { background: var(--gradient-soft); border-color: var(--line); color: var(--text); }
+.comment-format-row button b { font-weight: 800; }
+.comment-format-row button i { font-style: italic; }
+.comment-format-row button code { font-family: var(--font-mono); font-size: 11px; }
+.comment-visibility { display: flex; gap: 6px; flex-wrap: wrap; margin-right: auto; }
+.comment-visibility button.active { border-color: var(--line-strong); background: var(--gradient-soft); color: var(--text); }
+.comment-reply-target { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; color: var(--accent-2); font-size: 11.5px; }
+.comment-reply-target button { padding: 0; border: 0; background: none; color: var(--faint); font-size: 11px; }
+.message-group { border: 1px solid var(--line); border-radius: 14px; background: var(--input-bg); padding: 13px 14px; margin-bottom: 12px; }
+.message-group-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.message-group-head b { display: block; font-size: 13.5px; }
+.message-group-head .comment-badge { margin-left: 6px; }
+.message-group-head .comment-actions { margin-top: 3px; }
 .sha-box { padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--input-bg); font-family: var(--font-mono); font-size: 10.5px; line-height: 1.6; word-break: break-all; color: var(--muted); }
 .theme-card img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: var(--gradient-soft); }
 .theme-cover { position: relative; overflow: hidden; }
@@ -550,6 +606,7 @@ input:-webkit-autofill:focus {
       <button data-view="upload">上传主题</button>
       <button data-view="content">我的内容 <span class="view-badge hidden" id="contentBadge">0</span></button>
       <button data-view="discover">发现主题</button>
+      <button data-view="messages">消息</button>
       <div class="side-foot" id="sideInfo">—</div>
     </aside>
 
@@ -749,6 +806,24 @@ input:-webkit-autofill:focus {
           <div class="empty hidden" id="discoverEmpty">暂时还没有其他作者的主题，稍后再来看看。</div>
         </div>
       </section>
+
+      <section id="view-messages" class="view hidden">
+        <div class="card">
+          <div class="discover-head">
+            <div>
+              <h3>消息</h3>
+              <p class="hint">这里汇总你参与的留言和作者回复；作者还能看到自己主题下的全部留言。只有作者和管理员能看到私密留言。</p>
+            </div>
+            <div class="row">
+              <button class="btn" id="messagesRefresh" type="button">刷新</button>
+              <button class="btn danger" id="messagesClear" type="button">一键清空</button>
+            </div>
+          </div>
+          <p class="comment-retention" id="messagesRetention" style="margin:6px 0 14px"></p>
+          <div id="messagesList"></div>
+          <div class="empty hidden" id="messagesEmpty">还没有留言。到「发现主题」里打开一个主题就能留言。</div>
+        </div>
+      </section>
     </main>
   </div>
 </div>
@@ -789,6 +864,20 @@ input:-webkit-autofill:focus {
   let discoverAuthor = '';
   let discoverLoaded = false;
   let discoverBusy = false;
+  let commentTheme = null;
+  let commentItems = [];
+  let commentReplyTarget = null;
+  let commentVisibility = 'public';
+  let commentBusy = false;
+  let commentRetentionDays = 0;
+  let commentRequestSeq = 0;
+  let mentionSuggestSeq = 0;
+  let mentionSuggestTimer = 0;
+  let messagesData = [];
+  let messagesLoading = false;
+  let messagesLoaded = false;
+  let messagesRetentionDays = 0;
+  const messageReplyTargets = new Map();
 
   function toast(message, bad) {
     const el = $('toast');
@@ -958,6 +1047,7 @@ input:-webkit-autofill:focus {
     if (name === 'author') loadAuthors();
     if (name === 'upload') loadUploadView();
     if (name === 'discover' && !discoverLoaded) loadDiscover();
+    if (name === 'messages') loadMessages(true);
   }
 
   function renderProfile(data) {
@@ -1183,6 +1273,7 @@ input:-webkit-autofill:focus {
     zhihu: 'https://www.zhihu.com',
     threads: 'https://www.threads.net',
     douyin: 'https://www.douyin.com',
+    x: 'https://x.com',
   };
 
   function userMentionUrl(user, platform) {
@@ -1198,7 +1289,8 @@ input:-webkit-autofill:focus {
       case 'xda': return 'https://xdaforums.com/m/' + name + '/';
       case 'youtube': return 'https://www.youtube.com/@' + name;
       case 'afdian': return 'https://afdian.com/a/' + name;
-      case 'twitter': return 'https://x.com/' + name;
+      case 'twitter':
+      case 'x': return 'https://x.com/' + name;
       case 'zhihu': return 'https://www.zhihu.com/people/' + name;
       case 'threads': return 'https://www.threads.net/@' + name;
       case 'douyin': return 'https://www.douyin.com/search/' + name;
@@ -1214,7 +1306,7 @@ input:-webkit-autofill:focus {
     html = html.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
       '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
     // Usernames may contain CJK and other Unicode letters, not just ASCII.
-    html = html.replace(/(^|[^\p{L}\p{N}@._·~+-])([\p{L}\p{N}\p{M}._·~+-]+)@(github|gitee|bilibili|coolapk|telegram|weibo|xiaohongshu|xda|youtube|afdian|twitter|zhihu|threads|douyin)(?![\p{L}\p{N}._~+-]*\.)/giu,
+    html = html.replace(/(^|[^\p{L}\p{N}@._·~+-])([\p{L}\p{N}\p{M}._·~+-]+)@(github|gitee|bilibili|coolapk|telegram|weibo|xiaohongshu|xda|youtube|afdian|twitter|x|zhihu|threads|douyin)(?![\p{L}\p{N}._~+-]*\.)/giu,
       (match, prefix, user, platform) => {
         const url = userMentionUrl(user, platform);
         return url ? `${prefix}<a class="mention" href="${url}" target="_blank" rel="noreferrer">${user}@${platform}</a>` : match;
@@ -1224,6 +1316,18 @@ input:-webkit-autofill:focus {
       return url
         ? `${prefix}<a class="mention" href="${url}" target="_blank" rel="noreferrer">@${name}</a>`
         : match;
+    });
+    // Local account mentions are styled but not linked: the mirror has no
+    // public profile page, and mentioning is about notifications.
+    html = html.replace(/(^|[^\p{L}\p{N}@._·~+-])@([\p{L}\p{M}\p{N}._-]{3,32})(?![\p{L}\p{N}._-])/gu, (match, prefix, name) => {
+      if (SITE_MENTIONS[name.toLowerCase()]) return match;
+      return prefix + '<span class="mention local">@' + name + '</span>';
+    });
+    // Bare URLs (the manager renderer already links these).
+    html = html.replace(/(^|[\s(（])(https?:\/\/[^\s<]+)/gu, (match, prefix, url) => {
+      const trailing = (url.match(/[.,;:!?，。；：！？)）]+$/) || [''])[0];
+      const clean = trailing ? url.slice(0, -trailing.length) : url;
+      return prefix + '<a href="' + clean + '" target="_blank" rel="noreferrer">' + clean + '</a>' + trailing;
     });
     return html.replace(/\n/g, '<br>');
   }
@@ -1585,6 +1689,36 @@ input:-webkit-autofill:focus {
       <div class="row" style="margin-top:16px">
         <a class="btn primary" href="${escapeHtml(downloadUrl)}">下载主题包</a>
         <button class="btn" id="discoverAuthorThemes" type="button">查看该作者的主题</button>
+      </div>
+      <div class="dialog-section comment-section" id="discoverComments">
+        <div class="comment-head">
+          <h4>留言与回复</h4>
+          <div class="row">
+            <span class="comment-retention" id="discoverCommentCount"></span>
+            <span class="comment-retention" id="discoverRetention"></span>
+            <button class="btn danger small hidden" id="discoverClearComments" type="button">清空留言</button>
+          </div>
+        </div>
+        <div class="comment-list" id="discoverCommentList"><div class="comment-empty">正在加载留言…</div></div>
+        <div class="comment-composer">
+          <div class="comment-reply-target hidden" id="discoverReplyTarget"></div>
+          <textarea id="discoverCommentInput" maxlength="2000" placeholder="写下留言或回复…支持 Markdown、@用户 和表情"></textarea>
+          <div class="comment-format-row">
+            <button type="button" data-md-format="bold" title="粗体"><b>B</b></button>
+            <button type="button" data-md-format="italic" title="斜体"><i>I</i></button>
+            <button type="button" data-md-format="code" title="行内代码">&lt;/&gt;</button>
+            <button type="button" data-md-format="codeblock" title="代码块">&#96;&#96;&#96;</button>
+            <button type="button" data-md-format="link" title="链接">🔗</button>
+          </div>
+          <div class="mention-suggest hidden" id="discoverMentionSuggest"></div>
+          <div class="comment-composer-row">
+            <div class="comment-visibility">
+              <button type="button" class="pill" data-comment-visibility="public">公开</button>
+              <button type="button" class="pill" data-comment-visibility="author">仅作者可见</button>
+            </div>
+            <button class="btn primary small" id="discoverCommentSubmit" type="button">发送</button>
+          </div>
+        </div>
       </div>`;
     $('discoverBody').querySelectorAll('.dialog-thumbs button').forEach(button => {
       button.addEventListener('click', () => {
@@ -1600,8 +1734,595 @@ input:-webkit-autofill:focus {
         filterDiscoverByAuthor(theme.author);
       });
     }
+    commentReplyTarget = null;
+    commentVisibility = 'public';
+    const commentInput = $('discoverCommentInput');
+    if (commentInput) commentInput.value = '';
+    hideMentionSuggest();
+    loadThemeComments(theme);
     dialog.showModal();
   }
+
+  // ── Comments and private messages ──────────────────────────────────
+  function commentRetentionText(days) {
+    const value = Number(days) || 0;
+    return value > 0 ? '留言会在 ' + value + ' 天后自动删除' : '留言不会自动删除';
+  }
+
+  function commentItemHtml(comment, options = {}) {
+    const name = comment.displayName || comment.username || '匿名用户';
+    const initial = String(name).trim().slice(0, 1) || '?';
+    const badges = [];
+    if (comment.isThemeAuthor) badges.push('<span class="comment-badge author">作者</span>');
+    if (comment.isAdmin) badges.push('<span class="comment-badge admin">管理员</span>');
+    if (comment.visibility === 'author') badges.push('<span class="comment-badge private">仅作者可见</span>');
+    if (comment.mentionsMe) badges.push('<span class="comment-badge mention">提到了你</span>');
+    const themeAttr = options.themeId
+      ? ' data-theme-id="' + escapeHtml(options.themeId) + '"'
+      : '';
+    const actions = [];
+    if (comment.canReply) {
+      actions.push('<button type="button" data-comment-action="reply" data-comment-id="' +
+        escapeHtml(comment.id) + '" data-comment-name="' + escapeHtml(name) + '"' + themeAttr + '>回复</button>');
+    }
+    if (comment.canDelete) {
+      actions.push('<button type="button" class="danger" data-comment-action="delete" data-comment-id="' +
+        escapeHtml(comment.id) + '"' + themeAttr + '>删除</button>');
+    }
+    const avatar = comment.avatarUrl
+      ? '<img class="comment-avatar" src="' + escapeHtml(comment.avatarUrl) + '" alt="" loading="lazy">'
+      : '<span class="comment-avatar">' + escapeHtml(initial) + '</span>';
+    return '<div class="comment-item">' +
+      avatar +
+      '<div class="comment-body">' +
+      '<div class="comment-meta"><b>' + escapeHtml(name) + '</b>' + badges.join('') +
+      '<span>' + escapeHtml(formatTime(comment.createdAt)) + '</span></div>' +
+      '<div class="comment-content">' + renderCommentMarkdown(comment.content || '') + '</div>' +
+      (actions.length ? '<div class="comment-actions">' + actions.join('') + '</div>' : '') +
+      '</div></div>';
+  }
+
+  function commentThreadHtml(thread, options = {}) {
+    const replies = (thread.replies || [])
+      .map(reply => commentItemHtml(reply, options))
+      .join('');
+    return '<div class="comment-thread">' + commentItemHtml(thread, options) +
+      (replies ? '<div class="comment-replies">' + replies + '</div>' : '') +
+      '</div>';
+  }
+
+  function renderThemeComments() {
+    const list = $('discoverCommentList');
+    if (!list) return;
+    const retention = $('discoverRetention');
+    if (retention) retention.textContent = commentRetentionText(commentRetentionDays);
+    const count = $('discoverCommentCount');
+    if (count) {
+      const total = commentItems.reduce(
+        (sum, thread) => sum + 1 + ((thread.replies || []).length),
+        0,
+      );
+      count.textContent = total + ' 条留言';
+    }
+    const target = $('discoverReplyTarget');
+    if (target) {
+      if (commentReplyTarget) {
+        target.classList.remove('hidden');
+        target.innerHTML = '正在回复 <b>@' + escapeHtml(commentReplyTarget.name || '') +
+          '</b> <button type="button" data-comment-action="cancel-reply">取消</button>';
+      } else {
+        target.classList.add('hidden');
+        target.innerHTML = '';
+      }
+    }
+    document.querySelectorAll('[data-comment-visibility]').forEach(button => {
+      button.classList.toggle('active', button.dataset.commentVisibility === commentVisibility);
+    });
+    list.innerHTML = commentItems.length
+      ? commentItems.map(thread => commentThreadHtml(thread)).join('')
+      : '<div class="comment-empty">还没有留言，来留下第一条吧。</div>';
+  }
+
+  async function loadThemeComments(theme) {
+    commentTheme = theme;
+    const list = $('discoverCommentList');
+    if (list) list.innerHTML = '<div class="comment-empty">正在加载留言…</div>';
+    const sequence = ++commentRequestSeq;
+    try {
+      const data = await api('/themes/' + encodeURIComponent(theme.id) + '/comments');
+      if (sequence !== commentRequestSeq) return;
+      commentItems = data.comments || [];
+      commentRetentionDays = Number(data.retentionDays) || 0;
+      const clearButton = $('discoverClearComments');
+      if (clearButton) {
+        clearButton.classList.toggle('hidden', !(data.isThemeAuthor || data.isAdmin));
+      }
+      renderThemeComments();
+    } catch (error) {
+      if (sequence !== commentRequestSeq || !list) return;
+      list.innerHTML = '<div class="comment-empty">' + escapeHtml(error.message) + '</div>';
+    }
+  }
+
+  async function submitThemeComment() {
+    if (!commentTheme || commentBusy) return;
+    const input = $('discoverCommentInput');
+    const content = (input ? input.value : '').trim();
+    if (!content) {
+      toast('写点什么再发送', true);
+      return;
+    }
+    commentBusy = true;
+    const button = $('discoverCommentSubmit');
+    if (button) button.disabled = true;
+    try {
+      await api('/themes/' + encodeURIComponent(commentTheme.id) + '/comments', {
+        method: 'POST',
+        body: JSON.stringify({
+          content,
+          visibility: commentVisibility,
+          parentId: commentReplyTarget ? commentReplyTarget.id : null,
+        }),
+      });
+      if (input) input.value = '';
+      hideMentionSuggest();
+      commentReplyTarget = null;
+      await loadThemeComments(commentTheme);
+      messagesLoaded = false;
+      toast('留言已发送');
+    } catch (error) {
+      toast(error.message, true);
+    } finally {
+      commentBusy = false;
+      if (button) button.disabled = false;
+    }
+  }
+
+  async function deleteComment(id) {
+    if (!confirm('确认删除这条留言？其下的回复也会一并删除。')) return;
+    try {
+      await api('/comments/delete', { method: 'POST', body: JSON.stringify({ id }) });
+      toast('已删除');
+      messagesLoaded = false;
+      if (commentTheme) await loadThemeComments(commentTheme);
+      if (currentView === 'messages') await loadMessages(true);
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  async function clearComments(themeId) {
+    const scope = themeId
+      ? '你与该主题相关的留言（作者会清空该主题下的全部留言）'
+      : '你参与的全部留言（作者会清空自己主题下的留言）';
+    if (!confirm('确认清空' + scope + '？此操作不可恢复。')) return;
+    try {
+      const data = await api('/comments/clear', {
+        method: 'POST',
+        body: JSON.stringify(themeId ? { themeId } : {}),
+      });
+      toast('已清空 ' + (data.deleted || 0) + ' 条留言');
+      messagesLoaded = false;
+      if (commentTheme) await loadThemeComments(commentTheme);
+      if (currentView === 'messages') await loadMessages(true);
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  async function loadMessages(force) {
+    if (messagesLoading) return;
+    if (messagesLoaded && !force) {
+      renderMessages();
+      return;
+    }
+    messagesLoading = true;
+    const list = $('messagesList');
+    if (list) list.innerHTML = '<div class="comment-empty">正在加载消息…</div>';
+    try {
+      const data = await api('/messages');
+      messagesData = data.conversations || [];
+      messagesRetentionDays = Number(data.retentionDays) || 0;
+      messagesLoaded = true;
+      renderMessages();
+    } catch (error) {
+      if (list) list.innerHTML = '<div class="comment-empty">' + escapeHtml(error.message) + '</div>';
+      const empty = $('messagesEmpty');
+      if (empty) empty.classList.add('hidden');
+    } finally {
+      messagesLoading = false;
+    }
+  }
+
+  function renderMessages() {
+    const list = $('messagesList');
+    if (!list) return;
+    const empty = $('messagesEmpty');
+    const retention = $('messagesRetention');
+    if (retention) retention.textContent = commentRetentionText(messagesRetentionDays);
+    list.innerHTML = '';
+    if (empty) empty.classList.toggle('hidden', messagesData.length > 0);
+    messagesData.forEach(conversation => {
+      const themeId = conversation.themeId || '';
+      const target = messageReplyTargets.get(themeId);
+      const threads = (conversation.comments || [])
+        .map(thread => commentThreadHtml(thread, { themeId }))
+        .join('');
+      const group = document.createElement('div');
+      group.className = 'message-group';
+      group.innerHTML =
+        '<div class="message-group-head">' +
+        '<div><b>' + escapeHtml(conversation.themeName || themeId) + '</b>' +
+        (conversation.mentioned ? '<span class="comment-badge mention">提到了你</span>' : '') +
+        '<span class="muted">' + escapeHtml(conversation.themeAuthor || '') +
+        (conversation.isThemeAuthor ? ' · 我的主题' : '') + '</span>' +
+        '<div class="comment-actions">' +
+        '<button type="button" data-message-action="clear-theme" data-theme-id="' + escapeHtml(themeId) + '">清空该主题</button>' +
+        '</div></div>' +
+        '<span class="comment-retention">' + escapeHtml(formatTime(conversation.lastAt)) + '</span>' +
+        '</div>' +
+        '<div class="comment-list">' + (threads || '<div class="comment-empty">暂无留言</div>') + '</div>' +
+        '<div class="comment-composer">' +
+        (target
+          ? '<div class="comment-reply-target">正在回复 <b>@' + escapeHtml(target.name || '') +
+            '</b> <button type="button" data-message-action="cancel-reply" data-theme-id="' +
+            escapeHtml(themeId) + '">取消</button></div>'
+          : '<div class="comment-reply-target">选择一条留言后点击「回复」</div>') +
+        '<textarea data-message-input="' + escapeHtml(themeId) +
+        '" maxlength="2000" placeholder="回复留言…支持 Markdown、@用户 和表情"></textarea>' +
+        '<div class="comment-format-row">' +
+        '<button type="button" data-message-md-format="bold" title="粗体"><b>B</b></button>' +
+        '<button type="button" data-message-md-format="italic" title="斜体"><i>I</i></button>' +
+        '<button type="button" data-message-md-format="code" title="行内代码">&lt;/&gt;</button>' +
+        '<button type="button" data-message-md-format="codeblock" title="代码块">```</button>' +
+        '<button type="button" data-message-md-format="link" title="链接">🔗</button>' +
+        '</div>' +
+        '<div class="mention-suggest hidden" data-message-mention-panel="' +
+        escapeHtml(themeId) + '"></div>' +
+        '<div class="comment-composer-row">' +
+        '<span class="comment-retention">' + escapeHtml(commentRetentionText(messagesRetentionDays)) + '</span>' +
+        '<button class="btn primary small" type="button" data-message-submit="' +
+        escapeHtml(themeId) + '">发送</button>' +
+        '</div></div>';
+      list.appendChild(group);
+    });
+  }
+
+  async function submitMessageReply(themeId) {
+    const target = messageReplyTargets.get(themeId);
+    if (!target) {
+      toast('请先选择要回复的留言', true);
+      return;
+    }
+    const input = Array.from(document.querySelectorAll('[data-message-input]'))
+      .find(element => element.dataset.messageInput === themeId);
+    const content = (input ? input.value : '').trim();
+    if (!content) {
+      toast('写点什么再发送', true);
+      return;
+    }
+    try {
+      await api('/themes/' + encodeURIComponent(themeId) + '/comments', {
+        method: 'POST',
+        body: JSON.stringify({ content, parentId: target.id }),
+      });
+      messageReplyTargets.delete(themeId);
+      toast('回复已发送');
+      if (commentTheme && commentTheme.id === themeId) {
+        await loadThemeComments(commentTheme);
+      }
+      await loadMessages(true);
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  function activeMentionQuery(input) {
+    const value = input.value;
+    const cursor = input.selectionStart ?? value.length;
+    const before = value.slice(0, cursor);
+    const match = before.match(/(?:^|[\s(（])@([\p{L}\p{M}\p{N}._-]{0,32})$/u);
+    return match ? match[1] : null;
+  }
+
+  function hideMentionSuggest() {
+    const panel = $('discoverMentionSuggest');
+    if (!panel) return;
+    panel.classList.add('hidden');
+    panel.innerHTML = '';
+  }
+
+  function platformMentionButtons(query) {
+    const lower = String(query || '').toLowerCase();
+    return Object.keys(SITE_MENTIONS)
+      .filter(name => !lower || name.startsWith(lower))
+      .map(name => '<button type="button" data-mention-insert="@' + name + ' "><span class="mention-platform">@' + name + '</span></button>')
+      .join('');
+  }
+
+  function replaceActiveMention(input, token) {
+    const value = input.value;
+    const cursor = input.selectionStart ?? value.length;
+    const before = value.slice(0, cursor);
+    const after = value.slice(input.selectionEnd ?? cursor);
+    const replaced = before.replace(
+      /(^|[\s(（])@([\p{L}\p{M}\p{N}._-]{0,32})$/u,
+      (match, prefix) => prefix + token,
+    );
+    input.value = replaced + after;
+    const position = replaced.length;
+    input.setSelectionRange(position, position);
+    input.focus();
+  }
+
+  function insertMentionToken(token) {
+    const input = $('discoverCommentInput');
+    if (!input) return;
+    replaceActiveMention(input, token);
+    hideMentionSuggest();
+    hideMessageMentionPanels();
+  }
+
+  function hideMessageMentionPanels() {
+    document.querySelectorAll('[data-message-mention-panel]').forEach(panel => {
+      panel.classList.add('hidden');
+      panel.innerHTML = '';
+    });
+  }
+
+  function messageMentionPanel(input) {
+    const themeId = input ? input.dataset.messageInput : '';
+    return Array.from(document.querySelectorAll('[data-message-mention-panel]'))
+      .find(panel => panel.dataset.messageMentionPanel === themeId) || null;
+  }
+
+  function insertMessageMention(button) {
+    const panel = button.closest('[data-message-mention-panel]');
+    const themeId = panel ? panel.dataset.messageMentionPanel : '';
+    const input = Array.from(document.querySelectorAll('[data-message-input]'))
+      .find(element => element.dataset.messageInput === themeId);
+    if (!input) return;
+    replaceActiveMention(input, button.dataset.messageMentionInsert || '');
+    hideMessageMentionPanels();
+  }
+
+  async function updateMessageMentionSuggest(input) {
+    const panel = messageMentionPanel(input);
+    if (!panel) return;
+    const query = activeMentionQuery(input);
+    if (query === null) {
+      panel.classList.add('hidden');
+      panel.innerHTML = '';
+      return;
+    }
+    hideMessageMentionPanels();
+    hideMentionSuggest();
+    const platforms = Object.keys(SITE_MENTIONS)
+      .filter(name => !query || name.startsWith(query.toLowerCase()))
+      .map(name => '<button type="button" data-message-mention-insert="@' + name + ' "><span class="mention-platform">@' + name + '</span></button>')
+      .join('');
+    if (!query) {
+      panel.classList.remove('hidden');
+      panel.innerHTML = '<div class="mention-hint">输入用户名搜索，或选择平台标识：</div>' + platforms;
+      return;
+    }
+    const sequence = ++mentionSuggestSeq;
+    if (mentionSuggestTimer) clearTimeout(mentionSuggestTimer);
+    mentionSuggestTimer = setTimeout(async () => {
+      try {
+        const data = await api('/users/search?q=' + encodeURIComponent(query));
+        if (sequence !== mentionSuggestSeq) return;
+        const users = data.users || [];
+        const userButtons = users.map(user => {
+          const name = user.displayName || user.username;
+          const initial = String(name).trim().slice(0, 1) || '?';
+          return '<button type="button" data-message-mention-insert="@' + escapeHtml(user.username) + ' ">' +
+            '<span class="comment-avatar" style="width:22px;height:22px;font-size:10px">' + escapeHtml(initial) + '</span>' +
+            '<span>' + escapeHtml(name) + ' <span class="muted">@' + escapeHtml(user.username) + '</span></span>' +
+            (user.isAuthor ? '<span class="comment-badge author">作者</span>' : '') +
+            '</button>';
+        }).join('');
+        panel.classList.remove('hidden');
+        panel.innerHTML = (userButtons || '<div class="mention-hint">没有匹配的用户</div>') + platforms;
+      } catch (error) {
+        if (sequence !== mentionSuggestSeq) return;
+        panel.classList.remove('hidden');
+        panel.innerHTML = '<div class="mention-hint">' + escapeHtml(error.message) + '</div>' + platforms;
+      }
+    }, 220);
+  }
+
+  async function updateMentionSuggest() {
+    const input = $('discoverCommentInput');
+    const panel = $('discoverMentionSuggest');
+    if (!input || !panel) return;
+    hideMessageMentionPanels();
+    const query = activeMentionQuery(input);
+    if (query === null) {
+      hideMentionSuggest();
+      return;
+    }
+    const platforms = platformMentionButtons(query);
+    if (!query) {
+      panel.classList.remove('hidden');
+      panel.innerHTML = '<div class="mention-hint">输入用户名搜索，或选择平台标识：</div>' + platforms;
+      return;
+    }
+    const sequence = ++mentionSuggestSeq;
+    if (mentionSuggestTimer) clearTimeout(mentionSuggestTimer);
+    mentionSuggestTimer = setTimeout(async () => {
+      try {
+        const data = await api('/users/search?q=' + encodeURIComponent(query));
+        if (sequence !== mentionSuggestSeq) return;
+        const users = data.users || [];
+        const userButtons = users.map(user => {
+          const name = user.displayName || user.username;
+          const initial = String(name).trim().slice(0, 1) || '?';
+          return '<button type="button" data-mention-insert="@' + escapeHtml(user.username) + ' ">' +
+            '<span class="comment-avatar" style="width:22px;height:22px;font-size:10px">' + escapeHtml(initial) + '</span>' +
+            '<span>' + escapeHtml(name) + ' <span class="muted">@' + escapeHtml(user.username) + '</span></span>' +
+            (user.isAuthor ? '<span class="comment-badge author">作者</span>' : '') +
+            '</button>';
+        }).join('');
+        panel.classList.remove('hidden');
+        panel.innerHTML = (userButtons || '<div class="mention-hint">没有匹配的用户</div>') + platforms;
+      } catch (error) {
+        if (sequence !== mentionSuggestSeq) return;
+        panel.classList.remove('hidden');
+        panel.innerHTML = '<div class="mention-hint">' + escapeHtml(error.message) + '</div>' + platforms;
+      }
+    }, 220);
+  }
+
+  function applyMarkdownFormat(input, action) {
+    if (!input) return;
+    const value = input.value;
+    const start = input.selectionStart ?? value.length;
+    const end = input.selectionEnd ?? start;
+    const selected = value.slice(start, end);
+    const wrap = (prefix, suffix, placeholder) => {
+      const body = selected || placeholder;
+      const inserted = prefix + body + suffix;
+      input.value = value.slice(0, start) + inserted + value.slice(end);
+      const cursorStart = selected ? start + inserted.length : start + prefix.length;
+      const cursorEnd = selected ? cursorStart : cursorStart + body.length;
+      input.setSelectionRange(cursorStart, cursorEnd);
+      input.focus();
+    };
+    switch (action) {
+      case 'bold': wrap('**', '**', '粗体'); break;
+      case 'italic': wrap('*', '*', '斜体'); break;
+      case 'code': wrap('`', '`', '代码'); break;
+      case 'codeblock': wrap('\n```\n', '\n```\n', '代码'); break;
+      case 'link': wrap('[', '](https://)', '链接文字'); break;
+      case 'quote':
+        if (selected) {
+          const quoted = selected.split('\n').map(line => '> ' + line).join('\n');
+          input.value = value.slice(0, start) + quoted + value.slice(end);
+          input.setSelectionRange(start, start + quoted.length);
+          input.focus();
+        } else {
+          wrap('> ', '', '');
+        }
+        break;
+      default: break;
+    }
+    hideMentionSuggest();
+    hideMessageMentionPanels();
+  }
+
+  function handleCommentAction(event) {
+    const messageFormatButton = event.target.closest('[data-message-md-format]');
+    if (messageFormatButton) {
+      const composer = messageFormatButton.closest('.comment-composer');
+      const input = composer ? composer.querySelector('[data-message-input]') : null;
+      applyMarkdownFormat(input, messageFormatButton.dataset.messageMdFormat);
+      return;
+    }
+    const formatButton = event.target.closest('[data-md-format]');
+    if (formatButton) {
+      applyMarkdownFormat($('discoverCommentInput'), formatButton.dataset.mdFormat);
+      return;
+    }
+    const messageMentionButton = event.target.closest('[data-message-mention-insert]');
+    if (messageMentionButton) {
+      insertMessageMention(messageMentionButton);
+      return;
+    }
+    const mentionButton = event.target.closest('[data-mention-insert]');
+    if (mentionButton) {
+      insertMentionToken(mentionButton.dataset.mentionInsert || '');
+      return;
+    }
+    const visibilityButton = event.target.closest('[data-comment-visibility]');
+    if (visibilityButton) {
+      commentVisibility = visibilityButton.dataset.commentVisibility;
+      renderThemeComments();
+      return;
+    }
+    const action = event.target.closest('[data-comment-action]');
+    if (action) {
+      const kind = action.dataset.commentAction;
+      if (kind === 'cancel-reply') {
+        commentReplyTarget = null;
+        renderThemeComments();
+        return;
+      }
+      if (kind === 'reply') {
+        const themeId = action.dataset.themeId;
+        if (themeId) {
+          messageReplyTargets.set(themeId, {
+            id: action.dataset.commentId,
+            name: action.dataset.commentName || '',
+          });
+          renderMessages();
+          const input = Array.from(document.querySelectorAll('[data-message-input]'))
+            .find(element => element.dataset.messageInput === themeId);
+          if (input) input.focus();
+        } else {
+          commentReplyTarget = {
+            id: action.dataset.commentId,
+            name: action.dataset.commentName || '',
+          };
+          renderThemeComments();
+          const input = $('discoverCommentInput');
+          if (input) input.focus();
+        }
+        return;
+      }
+      if (kind === 'delete') {
+        deleteComment(action.dataset.commentId);
+        return;
+      }
+    }
+    if (event.target.closest('#discoverCommentSubmit')) {
+      submitThemeComment();
+      return;
+    }
+    const messageSubmit = event.target.closest('[data-message-submit]');
+    if (messageSubmit) {
+      submitMessageReply(messageSubmit.dataset.messageSubmit);
+      return;
+    }
+    const messageAction = event.target.closest('[data-message-action]');
+    if (messageAction) {
+      const themeId = messageAction.dataset.themeId || '';
+      if (messageAction.dataset.messageAction === 'cancel-reply') {
+        messageReplyTargets.delete(themeId);
+        renderMessages();
+      } else if (messageAction.dataset.messageAction === 'clear-theme') {
+        clearComments(themeId);
+      }
+      return;
+    }
+    if (event.target.closest('#discoverClearComments')) {
+      if (commentTheme) clearComments(commentTheme.id);
+    }
+  }
+
+  $('discoverBody').addEventListener('click', handleCommentAction);
+  $('messagesList').addEventListener('click', handleCommentAction);
+  $('discoverBody').addEventListener('input', event => {
+    if (event.target && event.target.id === 'discoverCommentInput') updateMentionSuggest();
+  });
+  $('discoverBody').addEventListener('keydown', event => {
+    if (event.target && event.target.id === 'discoverCommentInput' && event.key === 'Escape') {
+      hideMentionSuggest();
+    }
+  });
+  $('messagesList').addEventListener('input', event => {
+    const input = event.target.closest('[data-message-input]');
+    if (input) updateMessageMentionSuggest(input);
+  });
+  $('messagesList').addEventListener('keydown', event => {
+    if (event.key === 'Escape') hideMessageMentionPanels();
+  });
+  document.addEventListener('click', event => {
+    if (!event.target.closest('#discoverComments')) hideMentionSuggest();
+    if (!event.target.closest('#messagesList')) hideMessageMentionPanels();
+  });
+  $('messagesRefresh').addEventListener('click', () => loadMessages(true));
+  $('messagesClear').addEventListener('click', () => clearComments(''));
 
   $('discoverShuffle').addEventListener('click', () => {
     discoverAuthor = '';
@@ -1611,6 +2332,26 @@ input:-webkit-autofill:focus {
   $('discoverDialog').addEventListener('click', event => {
     if (event.target === $('discoverDialog')) $('discoverDialog').close();
   });
+
+  function renderCommentMarkdown(value) {
+    return String(value || '').split(/(```[\s\S]*?```)/g).map(part => {
+      if (part.startsWith('```') && part.endsWith('```')) {
+        const body = part.slice(3, -3).replace(/^\n/, '').replace(/\n$/, '');
+        return '<pre class="comment-code"><code>' + escapeHtml(body) + '</code></pre>';
+      }
+      const placeholders = [];
+      const masked = part.replace(/`([^`\n]+)`/g, (match, code) => {
+        const token = '\u0000INLINECODE' + placeholders.length + '\u0000';
+        placeholders.push('<code>' + escapeHtml(code) + '</code>');
+        return token;
+      });
+      let html = renderInlineMarkdown(masked);
+      placeholders.forEach((code, index) => {
+        html = html.replace('\u0000INLINECODE' + index + '\u0000', code);
+      });
+      return html;
+    }).join('');
+  }
 
   function escapeHtml(value) {
     return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);

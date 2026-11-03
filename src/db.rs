@@ -189,6 +189,30 @@ CREATE TABLE IF NOT EXISTS theme_download_days (
     PRIMARY KEY (theme_id, day)
 );
 CREATE INDEX IF NOT EXISTS theme_download_days_day_idx ON theme_download_days(day);
+
+CREATE TABLE IF NOT EXISTS theme_comments (
+    id TEXT PRIMARY KEY,
+    theme_id TEXT NOT NULL,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    parent_id TEXT REFERENCES theme_comments(id) ON DELETE CASCADE,
+    visibility TEXT NOT NULL DEFAULT 'public',
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS theme_comments_theme_idx ON theme_comments(theme_id, created_at);
+CREATE INDEX IF NOT EXISTS theme_comments_user_idx ON theme_comments(user_id, created_at);
+CREATE INDEX IF NOT EXISTS theme_comments_parent_idx ON theme_comments(parent_id);
+CREATE INDEX IF NOT EXISTS theme_comments_created_idx ON theme_comments(created_at);
+
+CREATE TABLE IF NOT EXISTS theme_comment_mentions (
+    comment_id TEXT NOT NULL REFERENCES theme_comments(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (comment_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS theme_comment_mentions_user_idx
+    ON theme_comment_mentions(user_id);
 "#;
 
 #[derive(Clone)]
@@ -259,7 +283,33 @@ impl Database {
                     PRIMARY KEY (theme_id, day)
                 );
                 CREATE INDEX IF NOT EXISTS theme_download_days_day_idx
-                    ON theme_download_days(day);",
+                    ON theme_download_days(day);
+                CREATE TABLE IF NOT EXISTS theme_comments (
+                    id TEXT PRIMARY KEY,
+                    theme_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    parent_id TEXT REFERENCES theme_comments(id) ON DELETE CASCADE,
+                    visibility TEXT NOT NULL DEFAULT 'public',
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS theme_comments_theme_idx
+                    ON theme_comments(theme_id, created_at);
+                CREATE INDEX IF NOT EXISTS theme_comments_user_idx
+                    ON theme_comments(user_id, created_at);
+                CREATE INDEX IF NOT EXISTS theme_comments_parent_idx
+                    ON theme_comments(parent_id);
+                CREATE INDEX IF NOT EXISTS theme_comments_created_idx
+                    ON theme_comments(created_at);
+                CREATE TABLE IF NOT EXISTS theme_comment_mentions (
+                    comment_id TEXT NOT NULL REFERENCES theme_comments(id) ON DELETE CASCADE,
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (comment_id, user_id)
+                );
+                CREATE INDEX IF NOT EXISTS theme_comment_mentions_user_idx
+                    ON theme_comment_mentions(user_id);",
             )?;
             let has_auto_publish: i64 = conn.query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('authors') WHERE name = 'auto_publish'",

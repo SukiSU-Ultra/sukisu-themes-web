@@ -71,6 +71,15 @@ pub fn router(state: AppState) -> Router<AppState> {
             post(generate_reset_author),
         )
         .route("/discover", get(discover_themes))
+        .route(
+            "/themes/{id}/comments",
+            get(crate::comments::account_list).post(crate::comments::account_create),
+        )
+        .route("/comments/delete", post(crate::comments::account_delete))
+        .route("/comments/clear", post(crate::comments::account_clear))
+        .route("/messages", get(crate::comments::account_messages))
+        .route("/users/search", get(crate::comments::account_user_search))
+        .route("/users/{id}/avatar", get(crate::comments::user_avatar))
         .route("/themes/{id}/download", get(download_published_theme))
         .route("/my-themes", get(my_themes))
         .route("/my-themes/{id}/download", get(download_my_theme))
@@ -105,10 +114,18 @@ async fn account_guard(
     if PUBLIC_PATHS.contains(&path.as_str()) {
         return next.run(request).await;
     }
+    // Avatars are public profile images.
+    if request.method() == axum::http::Method::GET
+        && path.starts_with("/users/")
+        && path.ends_with("/avatar")
+    {
+        return next.run(request).await;
+    }
     let headers = request.headers();
     let bearer = auth::bearer_token(headers);
     let user_cookie = auth::session_token(headers, auth::USER_SESSION_COOKIE);
     let admin_cookie = auth::session_token(headers, auth::ADMIN_SESSION_COOKIE);
+    let has_credentials = bearer.is_some() || user_cookie.is_some() || admin_cookie.is_some();
     let session = if let Some(token) = bearer.as_deref().or(user_cookie.as_deref()) {
         state.sessions.validate(token, "user").await
     } else {
@@ -122,6 +139,29 @@ async fn account_guard(
         None
     };
     let Some(session) = session else {
+        // A supplied but invalid credential must fail loudly instead of
+        // silently downgrading the caller to a guest; otherwise a logged-in
+        // client keeps an expired session and loses reply/delete permissions.
+        if has_credentials {
+            return ApiError::unauthorized("登录已过期，请重新登录").into_response();
+        }
+        // Comments are publicly readable; posting and moderation still
+        // require a signed-in account, and a valid session is preferred above.
+        if request.method() == axum::http::Method::GET
+            && path.starts_with("/themes/")
+            && path.ends_with("/comments")
+        {
+            request.extensions_mut().insert(SessionInfo {
+                user_id: String::new(),
+                username: String::new(),
+                display_name: String::new(),
+                role: "guest".to_string(),
+                status: "active".to_string(),
+                email_verified: false,
+                scope: "guest".to_string(),
+            });
+            return next.run(request).await;
+        }
         return ApiError::unauthorized("请先登录").into_response();
     };
     if session.status == "rejected" || session.status == "disabled" {
@@ -170,7 +210,7 @@ async fn optional_session(state: &AppState, headers: &HeaderMap) -> Option<Sessi
     None
 }
 
-fn rate_allowed(state: &AppState, key: &str, max: usize, window_secs: u64) -> bool {
+pub(crate) fn rate_allowed(state: &AppState, key: &str, max: usize, window_secs: u64) -> bool {
     let mut rate = state.account_rate.lock().unwrap();
     let now = Instant::now();
     let hits = rate.entry(key.to_string()).or_default();
@@ -1845,6 +1885,7 @@ async fn delete_my_theme(
     crate::catalog::remove_theme_files(&state.store, Some(&meta_file), &meta)
         .await
         .map_err(ApiError::internal)?;
+    let _ = crate::comments::clear_theme(&state.db, &id).await;
     crate::catalog::rebuild_catalog(&state.store, &state.paths)
         .await
         .map_err(ApiError::internal)?;
