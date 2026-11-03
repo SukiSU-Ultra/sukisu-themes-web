@@ -46,6 +46,9 @@ pub struct CatalogEntry {
     pub description: String,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Package carries separate light and dark halves for the system theme switch.
+    #[serde(default)]
+    pub adaptive: bool,
     #[serde(default)]
     pub license: String,
     #[serde(default)]
@@ -84,6 +87,8 @@ pub struct Meta {
     pub description: String,
     #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub adaptive: bool,
     #[serde(default)]
     pub license: String,
     #[serde(rename = "minManagerVersion", default)]
@@ -150,6 +155,8 @@ pub struct PendingMeta {
     pub description: String,
     #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub adaptive: bool,
     #[serde(default)]
     pub license: String,
     #[serde(rename = "minManagerVersion", default)]
@@ -259,6 +266,7 @@ pub struct PackageInfo {
     pub has_background: bool,
     pub has_card_background: bool,
     pub sticker_count: usize,
+    pub adaptive: bool,
 }
 
 impl PackageInfo {
@@ -269,6 +277,7 @@ impl PackageInfo {
             "hasBackground": self.has_background,
             "hasCardBackground": self.has_card_background,
             "stickerCount": self.sticker_count,
+            "adaptive": self.adaptive,
         })
     }
 }

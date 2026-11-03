@@ -151,6 +151,7 @@ button { cursor: pointer; font: inherit; }
 .dialog-head h3 { flex: 1; margin: 0; font-size: 16px; }
 .dialog-body { max-height: calc(88vh - 68px); overflow: auto; padding: 15px 18px 20px; }
 .dialog-hero { width: 100%; max-height: 280px; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); background: var(--gradient-soft); }
+.dialog-cover { position: relative; }
 .dialog-thumbs { display: flex; gap: 7px; overflow-x: auto; margin-top: 8px; }
 .dialog-thumbs button { flex: none; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: none; }
 .dialog-thumbs button.active { border-color: var(--accent); }
@@ -166,6 +167,37 @@ button { cursor: pointer; font: inherit; }
 .dialog-section strong { color: var(--text); }
 .sha-box { padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--input-bg); font-family: var(--font-mono); font-size: 10.5px; line-height: 1.6; word-break: break-all; color: var(--muted); }
 .theme-card img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: var(--gradient-soft); }
+.theme-cover { position: relative; overflow: hidden; }
+.adaptive-badge {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  z-index: 1;
+  padding: 3px 9px;
+  border-radius: 99px;
+  border: 1px solid rgba(255, 255, 255, .38);
+  background: rgba(12, 18, 32, .6);
+  color: #e8f5ff;
+  font-size: 10.5px;
+  font-weight: 600;
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+html[data-theme="light"] .adaptive-badge {
+  border-color: rgba(14, 116, 144, .28);
+  background: rgba(255, 255, 255, .82);
+  color: #0e7490;
+}
+.adaptive-chip {
+  border-color: rgba(56, 189, 248, .42) !important;
+  background: rgba(14, 165, 233, .13) !important;
+  color: #7dd3fc !important;
+}
+html[data-theme="light"] .adaptive-chip {
+  border-color: rgba(14, 116, 144, .3) !important;
+  background: rgba(14, 165, 233, .1) !important;
+  color: #0369a1 !important;
+}
 .theme-body { padding: 11px 12px; }
 .theme-body b { font-size: 13px; }
 .theme-body p { margin: 5px 0 0; color: var(--faint); font-size: 11px; }
@@ -600,6 +632,7 @@ input:-webkit-autofill:focus {
             <div class="field"><label for="userUpVersion">版本号</label><input id="userUpVersion" type="number" min="1" value="1"></div>
             <div class="field"><label for="userUpName">名称</label><input id="userUpName" placeholder="主题名称"></div>
             <div class="field"><label for="userUpTags">标签</label><input id="userUpTags" placeholder="light, pink, cute"><div class="mention-hints" data-tag-target="userUpTags">
+              <button type="button" class="mention-chip" data-tag="adaptive">自适应主题</button>
               <button type="button" class="mention-chip" data-tag="light">light</button>
               <button type="button" class="mention-chip" data-tag="dark">dark</button>
               <button type="button" class="mention-chip" data-tag="pink">pink</button>
@@ -610,7 +643,7 @@ input:-webkit-autofill:focus {
               <button type="button" class="mention-chip" data-tag="blue">blue</button>
               <button type="button" class="mention-chip" data-tag="purple">purple</button>
               <button type="button" class="mention-chip" data-tag="green">green</button>
-            </div></div>
+            </div><div class="field-hint">包含亮/暗两套外观的自适应主题包会自动添加「自适应主题」标签。</div></div>
             <div class="field"><label for="userUpLicense">许可证</label><select id="userUpLicense"><option value="CC-BY-4.0">CC-BY-4.0</option><option value="CC-BY-SA-4.0">CC-BY-SA-4.0</option><option value="CC-BY-NC-4.0">CC-BY-NC-4.0</option><option value="CC-BY-NC-SA-4.0">CC-BY-NC-SA-4.0</option><option value="CC0-1.0">CC0-1.0</option><option value="MIT">MIT</option><option value="Apache-2.0">Apache-2.0</option><option value="GPL-3.0">GPL-3.0</option><option value="All Rights Reserved">All Rights Reserved</option><option value="">未指定</option></select></div>
             <div class="field"><label for="userUpMin">最低管理器版本</label><input id="userUpMin" type="number" min="0" value="0"><div class="muted">默认使用当前管理器版本，可手动修改</div></div>
             <div class="field"><label for="userUpAuthor">作者</label><input id="userUpAuthor" readonly placeholder="账号作者"></div>
@@ -1043,6 +1076,42 @@ input:-webkit-autofill:focus {
     } catch (_) {}
   }
 
+  const ADAPTIVE_TAG = 'adaptive';
+  const ADAPTIVE_TAG_ALIASES = new Set(['adaptive', 'auto', 'automatic', 'lightdark', 'light/dark', '自适应', '自适应主题', '自适应主题包']);
+  // Take the source label from the upload form's chip before SukisuI18n translates it. Generated
+  // cards keep the Chinese source so the existing MutationObserver can switch languages later.
+  const ADAPTIVE_TAG_SOURCE_LABEL = (() => {
+    const chip = document.querySelector('[data-tag="adaptive"]');
+    return (chip && chip.textContent.trim()) || ADAPTIVE_TAG;
+  })();
+
+  function adaptiveTagLabel() {
+    return ADAPTIVE_TAG_SOURCE_LABEL;
+  }
+
+  function canonicalTag(tag) {
+    const normalized = String(tag || '').trim().toLowerCase();
+    return ADAPTIVE_TAG_ALIASES.has(normalized) ? ADAPTIVE_TAG : normalized;
+  }
+
+  function tagLabel(tag) {
+    const value = String(tag || '').trim();
+    return canonicalTag(value) === ADAPTIVE_TAG ? adaptiveTagLabel() : value;
+  }
+
+  function isAdaptiveTheme(theme) {
+    return !!theme.adaptive ||
+      (theme.tags || []).some(tag => canonicalTag(tag) === ADAPTIVE_TAG);
+  }
+
+  function adaptiveBadge() {
+    return '<span class="adaptive-badge">' + escapeHtml(adaptiveTagLabel()) + '</span>';
+  }
+
+  function renderTagChips(tags) {
+    return (tags || []).map(tag => '<span>' + escapeHtml(tagLabel(tag)) + '</span>').join('');
+  }
+
   function matchesQuery(item, query) {
     const needle = String(query || '').trim().toLowerCase();
     if (!needle) return true;
@@ -1050,7 +1119,8 @@ input:-webkit-autofill:focus {
       item.id, item.submissionId, item.name, item.author,
       item.description, item.changelog, item.license, item.status,
       item.rejectReason, item.sha256, String(item.version || ''),
-      (item.tags || []).join(' '),
+      (item.tags || []).join(' '), (item.tags || []).map(tagLabel).join(' '),
+      isAdaptiveTheme(item) ? adaptiveTagLabel() + ' adaptive' : '',
     ].join(' ').toLowerCase();
     return needle.split(/\s+/).every(part => haystack.includes(part));
   }
@@ -1118,7 +1188,10 @@ input:-webkit-autofill:focus {
   function buildMyThemeCard(theme) {
     const card = document.createElement('div');
     card.className = 'theme-card';
-    const img = theme.previewPath ? '<img src="' + assetUrl(theme.previewPath) + '" alt="">' : '';
+    const img = theme.previewPath
+      ? '<div class="theme-cover"><img src="' + assetUrl(theme.previewPath) + '" alt="">' +
+        (isAdaptiveTheme(theme) ? adaptiveBadge() : '') + '</div>'
+      : '';
     const sha = String(theme.sha256 || '');
     const shaLine = sha
       ? '<p class="mono" title="' + escapeHtml(sha) + '">SHA-256 ' + escapeHtml(sha.slice(0, 16)) + '…</p>'
@@ -1167,12 +1240,15 @@ input:-webkit-autofill:focus {
       : '';
     const sha = String(theme.sha256 || '');
     const withdrawn = theme.status === 'withdrawn';
-    const tags = (theme.tags || []).map(tag => '<span>' + escapeHtml(tag) + '</span>').join('');
+    const tags = renderTagChips(theme.tags);
+    const adaptiveMeta = isAdaptiveTheme(theme)
+      ? '<span class="adaptive-chip">' + escapeHtml(adaptiveTagLabel()) + '</span>'
+      : '';
     const withdrawAction = withdrawn
       ? '<button class="btn" id="myThemeRestore" type="button">重新发布</button><button class="btn danger" id="myThemeDelete" type="button">永久删除</button>'
       : '<button class="btn danger" id="myThemeWithdraw" type="button">撤回并下架</button>';
     $('myThemeBody').innerHTML = `
-      ${hero ? '<img class="dialog-hero" id="myThemeHero" src="' + escapeHtml(hero) + '" alt="">' : ''}
+      ${hero ? '<div class="dialog-cover"><img class="dialog-hero" id="myThemeHero" src="' + escapeHtml(hero) + '" alt="">' + (isAdaptiveTheme(theme) ? adaptiveBadge() : '') + '</div>' : ''}
       ${thumbs}
       <div class="dialog-meta">
         <span>ID：${escapeHtml(theme.id || '—')}</span>
@@ -1182,7 +1258,7 @@ input:-webkit-autofill:focus {
         ${withdrawn ? '<span>已撤回</span>' : ''}
       </div>
       ${withdrawn && theme.expiresAt ? '<div class="dialog-meta"><span>撤回保留至 ' + escapeHtml(formatTime(theme.expiresAt)) + '</span></div>' : ''}
-      <div class="dialog-meta">${tags}</div>
+      <div class="dialog-meta">${tags}${adaptiveMeta}</div>
       <div class="dialog-section">
         <h4>SHA-256 完整性校验</h4>
         <div class="sha-box">${sha ? escapeHtml(sha) : '未生成校验值'}</div>
@@ -1610,14 +1686,16 @@ document.querySelectorAll('[data-tag-target]').forEach(group => {
   const sync = () => {
     const tags = input.value.split(/[,，\n]/).map(item => item.trim()).filter(Boolean);
     group.querySelectorAll('[data-tag]').forEach(button => {
-      button.classList.toggle('active', tags.includes(button.dataset.tag));
+      const canonical = canonicalTag(button.dataset.tag);
+      button.classList.toggle('active', tags.some(tag => canonicalTag(tag) === canonical));
     });
   };
   group.querySelectorAll('[data-tag]').forEach(button => {
     button.addEventListener('click', () => {
       const tags = input.value.split(/[,，\n]/).map(item => item.trim()).filter(Boolean);
       const tag = button.dataset.tag;
-      const index = tags.indexOf(tag);
+      const canonical = canonicalTag(tag);
+      const index = tags.findIndex(item => canonicalTag(item) === canonical);
       if (index >= 0) tags.splice(index, 1);
       else if (tags.length < 10) tags.push(tag);
       input.value = tags.join(', ');

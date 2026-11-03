@@ -511,6 +511,7 @@ footer { margin-top: 38px; padding-top: 18px; border-top: 1px solid var(--line);
 .theme-detail-head h3 { margin: 0; flex: 1; font-size: 17px; }
 .theme-detail-body { max-height: calc(86vh - 75px); overflow: auto; padding: 18px 20px 22px; }
 .theme-detail-hero { width: 100%; max-height: 260px; object-fit: cover; border-radius: 14px; border: 1px solid var(--line); margin-bottom: 14px; }
+.theme-detail-cover { position: relative; }
 .theme-detail-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; color: var(--faint); font-size: 12px; }
 .theme-detail-meta span { padding: 3px 8px; border: 1px solid var(--line); border-radius: 99px; background: var(--input-bg); }
 .theme-detail-section { margin-top: 14px; }
@@ -532,6 +533,37 @@ footer { margin-top: 38px; padding-top: 18px; border-top: 1px solid var(--line);
 .theme-preview { position: relative; aspect-ratio: 16/10; overflow: hidden; background: linear-gradient(135deg, #121b30, #1b1330); }
 html[data-theme="light"] .theme-preview { background: linear-gradient(135deg, #e2e8f0, #dbeafe); }
 .theme-preview img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .35s; }
+.adaptive-badge {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  z-index: 1;
+  padding: 3px 9px;
+  border-radius: 99px;
+  border: 1px solid rgba(255, 255, 255, .38);
+  background: rgba(12, 18, 32, .6);
+  color: #e8f5ff;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+html[data-theme="light"] .adaptive-badge {
+  border-color: rgba(14, 116, 144, .28);
+  background: rgba(255, 255, 255, .82);
+  color: #0e7490;
+}
+.adaptive-chip {
+  border-color: rgba(56, 189, 248, .42) !important;
+  background: rgba(14, 165, 233, .13) !important;
+  color: #7dd3fc !important;
+}
+html[data-theme="light"] .adaptive-chip {
+  border-color: rgba(14, 116, 144, .3) !important;
+  background: rgba(14, 165, 233, .1) !important;
+  color: #0369a1 !important;
+}
 .theme-card:hover .theme-preview img { transform: scale(1.035); }
 .theme-preview .fallback { position: absolute; inset: 0; display: grid; place-items: center; color: var(--faint); font-size: 12px; background: radial-gradient(circle at 30% 20%, rgba(103, 232, 249, .12), transparent 45%), linear-gradient(135deg, #111a2d, #1a1230); }
 html[data-theme="light"] .theme-preview .fallback,
@@ -1439,6 +1471,7 @@ input:-webkit-autofill:focus {
             <div><label for="upAuthorHash">作者</label><select id="upAuthorHash" name="ownerHash"><option value="">选择作者</option></select></div>
             <div><label for="upAuthor">作者名称</label><input id="upAuthor" name="author" readonly placeholder="选择作者后自动填写"></div>
             <div><label for="upTags">标签</label><input id="upTags" name="tags" placeholder="light, pink, cute"><div class="mention-hints" data-tag-target="upTags">
+              <button type="button" class="mention-chip" data-tag="adaptive">自适应主题</button>
               <button type="button" class="mention-chip" data-tag="light">light</button>
               <button type="button" class="mention-chip" data-tag="dark">dark</button>
               <button type="button" class="mention-chip" data-tag="pink">pink</button>
@@ -1449,7 +1482,7 @@ input:-webkit-autofill:focus {
               <button type="button" class="mention-chip" data-tag="blue">blue</button>
               <button type="button" class="mention-chip" data-tag="purple">purple</button>
               <button type="button" class="mention-chip" data-tag="green">green</button>
-            </div></div>
+            </div><div class="field-hint">包含亮/暗两套外观的自适应主题包会自动添加「自适应主题」标签。</div></div>
             <div><label for="upLicense">许可证</label><select id="upLicense" name="license"><option value="CC-BY-4.0">CC-BY-4.0</option><option value="CC-BY-SA-4.0">CC-BY-SA-4.0</option><option value="CC-BY-NC-4.0">CC-BY-NC-4.0</option><option value="CC-BY-NC-SA-4.0">CC-BY-NC-SA-4.0</option><option value="CC0-1.0">CC0-1.0</option><option value="MIT">MIT</option><option value="Apache-2.0">Apache-2.0</option><option value="GPL-3.0">GPL-3.0</option><option value="All Rights Reserved">All Rights Reserved</option><option value="">未指定</option></select></div>
             <div><label for="upMin">最低管理器版本</label><input id="upMin" name="minManagerVersion" type="number" min="0" value="0"><div class="field-hint">默认使用当前管理器版本，可手动修改</div></div>
             <div><label for="upPackage">主题包 (.sukisu)</label><input id="upPackage" name="package" type="file" accept=".sukisu,application/octet-stream" required></div>
@@ -2357,12 +2390,56 @@ let pendingItems = [];
 let themeQuery = '';
 let pendingQuery = '';
 
+// Canonical tag keys are stored in the catalog; the mapping keeps aliases and localized
+// labels consistent between the upload form, search, cards and the detail dialog.
+const ADAPTIVE_TAG = 'adaptive';
+const ADAPTIVE_TAG_ALIASES = new Set(['adaptive', 'auto', 'automatic', 'lightdark', 'light/dark', '自适应', '自适应主题', '自适应主题包']);
+// Take the source label from the upload form's chip before SukisuI18n translates it. Generated
+// cards keep the Chinese source so the existing MutationObserver can switch languages later.
+const ADAPTIVE_TAG_SOURCE_LABEL = (() => {
+  const chip = document.querySelector('[data-tag="adaptive"]');
+  return (chip && chip.textContent.trim()) || ADAPTIVE_TAG;
+})();
+
+function adaptiveTagLabel() {
+  return ADAPTIVE_TAG_SOURCE_LABEL;
+}
+
+function canonicalTag(tag) {
+  const normalized = String(tag || '').trim().toLowerCase();
+  return ADAPTIVE_TAG_ALIASES.has(normalized) ? ADAPTIVE_TAG : normalized;
+}
+
+function tagLabel(tag) {
+  const value = String(tag || '').trim();
+  return canonicalTag(value) === ADAPTIVE_TAG ? adaptiveTagLabel() : value;
+}
+
+function tagsMarkAdaptive(tags) {
+  return (tags || []).some(tag => canonicalTag(tag) === ADAPTIVE_TAG);
+}
+
+function isAdaptiveTheme(theme) {
+  return !!theme.adaptive || tagsMarkAdaptive(theme.tags);
+}
+
+function adaptiveBadge() {
+  return '<span class="adaptive-badge">' + escapeHtml(adaptiveTagLabel()) + '</span>';
+}
+
+function renderTagChips(tags, limit) {
+  return (tags || []).slice(0, limit || tags.length)
+    .map(tag => `<span>${escapeHtml(tagLabel(tag))}</span>`).join('');
+}
+
 function matchesQuery(item, query) {
   const needle = String(query || '').trim().toLowerCase();
   if (!needle) return true;
   const haystack = [
     item.id, item.name, item.author, item.description,
-    (item.tags || []).join(' '), item.submissionId, item.authorFingerprint,
+    (item.tags || []).join(' '), (item.tags || []).map(tagLabel).join(' '),
+    isAdaptiveTheme(item) ? adaptiveTagLabel() + ' adaptive' : '',
+    item.submissionId, item.authorFingerprint,
   ].join(' ').toLowerCase();
   return needle.split(/\s+/).every(part => haystack.includes(part));
 }
@@ -2389,11 +2466,10 @@ function renderThemeGrid() {
   filtered.forEach(theme => {
     const card = document.createElement('div');
     card.className = 'theme-card';
-    const preview = theme.previewUrl
+    const preview = (theme.previewUrl
       ? `<img src="${escapeHtml(theme.previewUrl)}" alt="${escapeHtml(theme.name)}" loading="lazy">`
-      : '<div class="fallback">暂无预览图</div>';
-    const tags = (theme.tags || []).slice(0, 5)
-      .map(tag => `<span>${escapeHtml(tag)}</span>`).join('');
+      : '<div class="fallback">暂无预览图</div>') + (isAdaptiveTheme(theme) ? adaptiveBadge() : '');
+    const tags = renderTagChips(theme.tags, 5);
     const avatar = theme.avatarUrl
       ? `<img class="author-avatar" src="${escapeHtml(theme.avatarUrl)}" alt="" loading="lazy">`
       : '';
@@ -2444,10 +2520,12 @@ function openThemeDetail(theme) {
   if (!dialog || typeof dialog.showModal !== 'function') return;
   $('themeDetailTitle').textContent = theme.name || theme.id || '主题详情';
   const preview = theme.previewUrl
-    ? `<img class="theme-detail-hero" src="${escapeHtml(theme.previewUrl)}" alt="${escapeHtml(theme.name)}" loading="lazy">`
+    ? `<div class="theme-detail-cover"><img class="theme-detail-hero" src="${escapeHtml(theme.previewUrl)}" alt="${escapeHtml(theme.name)}" loading="lazy">${isAdaptiveTheme(theme) ? adaptiveBadge() : ''}</div>`
     : '';
-  const tags = (theme.tags || [])
-    .map(tag => `<span>${escapeHtml(tag)}</span>`).join('');
+  const tags = renderTagChips(theme.tags);
+  const adaptiveMeta = isAdaptiveTheme(theme)
+    ? '<span class="adaptive-chip">' + escapeHtml(adaptiveTagLabel()) + '</span>'
+    : '';
   const sha = String(theme.sha256 || '');
   const verified = theme.verified !== false && sha.length === 64;
   $('themeDetailBody').innerHTML = `
@@ -2460,7 +2538,7 @@ function openThemeDetail(theme) {
       ${theme.license ? `<span>${escapeHtml(theme.license)}</span>` : ''}
       ${theme.updatedAt ? `<span>${escapeHtml(formatTime(theme.updatedAt))}</span>` : ''}
     </div>
-    <div class="theme-detail-meta">${tags}</div>
+    <div class="theme-detail-meta">${tags}${adaptiveMeta}</div>
     <div class="theme-detail-section">
       <h4>SHA-256 完整性校验</h4>
       <div class="sha-box">${sha ? escapeHtml(sha) : '未生成校验值'}</div>
@@ -2502,11 +2580,10 @@ function renderPendingList() {
     return;
   }
   filtered.forEach(item => {
-    const preview = item.previewUrl
+    const preview = (item.previewUrl
       ? `<img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.name)}" loading="lazy">`
-      : '<div class="fallback">暂无预览图</div>';
-    const tags = (item.tags || []).slice(0, 5)
-      .map(tag => `<span>${escapeHtml(tag)}</span>`).join('');
+      : '<div class="fallback">暂无预览图</div>') + (isAdaptiveTheme(item) ? adaptiveBadge() : '');
+    const tags = renderTagChips(item.tags, 5);
     const avatar = item.avatarUrl
       ? `<img class="author-avatar" src="${escapeHtml(item.avatarUrl)}" alt="" loading="lazy">`
       : '';
@@ -4488,14 +4565,16 @@ document.querySelectorAll('[data-tag-target]').forEach(group => {
   const sync = () => {
     const tags = input.value.split(/[,，\n]/).map(item => item.trim()).filter(Boolean);
     group.querySelectorAll('[data-tag]').forEach(button => {
-      button.classList.toggle('active', tags.includes(button.dataset.tag));
+      const canonical = canonicalTag(button.dataset.tag);
+      button.classList.toggle('active', tags.some(tag => canonicalTag(tag) === canonical));
     });
   };
   group.querySelectorAll('[data-tag]').forEach(button => {
     button.addEventListener('click', () => {
       const tags = input.value.split(/[,，\n]/).map(item => item.trim()).filter(Boolean);
       const tag = button.dataset.tag;
-      const index = tags.indexOf(tag);
+      const canonical = canonicalTag(tag);
+      const index = tags.findIndex(item => canonicalTag(item) === canonical);
       if (index >= 0) tags.splice(index, 1);
       else if (tags.length < 10) tags.push(tag);
       input.value = tags.join(', ');

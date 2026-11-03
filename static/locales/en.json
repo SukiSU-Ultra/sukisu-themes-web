@@ -1121,7 +1121,11 @@
     "进入": "Open",
     "移除": "Remove",
     "来源配额不能低于该位置当前已用大小": "The source quota cannot be lower than the current usage of this location.",
-    "可写位置会把 themes / previews / screenshots / avatars 写到该根目录下。": "A writable location stores themes / previews / screenshots / avatars under this root."
+    "可写位置会把 themes / previews / screenshots / avatars 写到该根目录下。": "A writable location stores themes / previews / screenshots / avatars under this root.",
+    "自适应主题": "Adaptive theme",
+    "自适应": "Adaptive",
+    "自适应主题包": "Adaptive theme package",
+    "包含亮/暗两套外观的自适应主题包会自动添加「自适应主题」标签。": "Adaptive theme packages with separate light and dark appearances get the “Adaptive theme” tag automatically."
   },
   "patterns": [
     [

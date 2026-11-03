@@ -1449,6 +1449,7 @@ async fn my_themes(
                 "author": meta.author,
                 "description": meta.description,
                 "tags": meta.tags,
+                "adaptive": meta.adaptive || crate::catalog::tags_mark_adaptive(&meta.tags),
                 "license": meta.license,
                 "minManagerVersion": meta.min_manager_version,
                 "changelog": meta.changelog,

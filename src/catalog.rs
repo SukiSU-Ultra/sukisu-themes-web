@@ -37,6 +37,27 @@ pub fn read_meta_file(path: &Path) -> Option<Meta> {
     serde_json::from_str(&text).ok()
 }
 
+/// Older metadata predates the explicit `adaptive` flag; the canonical tag still marks it.
+pub fn tags_mark_adaptive(tags: &[String]) -> bool {
+    tags.iter().any(|tag| {
+        matches!(
+            tag.trim().to_lowercase().as_str(),
+            "adaptive"
+                | "auto"
+                | "automatic"
+                | "lightdark"
+                | "light/dark"
+                | "自适应"
+                | "自适应主题"
+                | "自适应主题包"
+        )
+    })
+}
+
+fn meta_is_adaptive(meta: &Meta) -> bool {
+    meta.adaptive || tags_mark_adaptive(&meta.tags)
+}
+
 pub fn write_meta(path: &Path, meta: &Meta) -> Result<()> {
     let mut data = serde_json::to_vec_pretty(meta)?;
     data.push(b'\n');
@@ -113,6 +134,7 @@ async fn build_catalog_entry(store: &AssetStore, meta: &Meta) -> Option<CatalogE
         author: meta.author.clone(),
         description: meta.description.clone(),
         tags: meta.tags.clone(),
+        adaptive: meta_is_adaptive(meta),
         license: meta.license.clone(),
         size: store.size(&meta.package).await,
         sha256,
@@ -223,7 +245,7 @@ pub async fn rebuild_catalog(store: &AssetStore, paths: &Paths) -> Result<Vec<Ca
         schema: 1,
         format_version: CURRENT_FORMAT_VERSION,
         min_format_version: MIN_FORMAT_VERSION,
-        supported_formats: vec![MIN_FORMAT_VERSION, CURRENT_FORMAT_VERSION],
+        supported_formats: (MIN_FORMAT_VERSION..=CURRENT_FORMAT_VERSION).collect(),
         generated_at: Some(now_iso()),
         themes: themes.clone(),
     };
@@ -389,6 +411,7 @@ pub fn pending_submissions(paths: &Paths) -> Vec<Value> {
             "author": meta.author,
             "description": meta.description,
             "tags": meta.tags,
+            "adaptive": meta.adaptive || tags_mark_adaptive(&meta.tags),
             "license": meta.license,
             "minManagerVersion": meta.min_manager_version,
             "size": size,
@@ -637,6 +660,7 @@ pub async fn admin_themes(paths: &Paths) -> Vec<Value> {
                 "author": theme.author,
                 "description": theme.description,
                 "tags": theme.tags,
+                "adaptive": theme.adaptive || tags_mark_adaptive(&theme.tags),
                 "size": theme.size,
                 "license": theme.license,
                 "sha256": theme.sha256,

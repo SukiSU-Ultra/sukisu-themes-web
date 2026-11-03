@@ -660,7 +660,7 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
         "tokenHeader": TOKEN_HEADER,
         "formatVersion": CURRENT_FORMAT_VERSION,
         "minFormatVersion": MIN_FORMAT_VERSION,
-        "supportedFormats": [MIN_FORMAT_VERSION, CURRENT_FORMAT_VERSION],
+        "supportedFormats": (MIN_FORMAT_VERSION..=CURRENT_FORMAT_VERSION).collect::<Vec<_>>(),
         "catalog": catalog::catalog_state(&state.paths),
         "pendingCount": pending_count,
         "pendingBytes": pending_bytes,

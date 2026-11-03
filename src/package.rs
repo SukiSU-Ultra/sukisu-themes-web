@@ -10,9 +10,11 @@ use crate::config::{CURRENT_FORMAT_VERSION, MIN_FORMAT_VERSION, PACKAGE_KEY, PAC
 use crate::models::PackageInfo;
 use crate::util::truthy;
 
-const MAX_ENTRIES: usize = 32;
-const MAX_UNCOMPRESSED_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_ENTRIES: usize = 64;
+const MAX_UNCOMPRESSED_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_THEME_JSON_BYTES: u64 = 64 * 1024;
+const ADAPTIVE_FORMAT_VERSION: u32 = 3;
+const MAX_STICKERS_PER_VARIANT: usize = 5;
 
 pub fn validate_package(data: &[u8]) -> Result<PackageInfo> {
     if data.len() < 4 + 12 + 16 || !data.starts_with(PACKAGE_MAGIC) {
@@ -74,9 +76,35 @@ pub fn validate_package(data: &[u8]) -> Result<PackageInfo> {
             _ => 0,
         })
         .unwrap_or(MIN_FORMAT_VERSION);
-    if package_version != MIN_FORMAT_VERSION && package_version != CURRENT_FORMAT_VERSION {
+    if !(MIN_FORMAT_VERSION..=CURRENT_FORMAT_VERSION).contains(&package_version) {
         bail!("不支持的主题包版本");
     }
+
+    let adaptive = theme.get("adaptive").map(truthy).unwrap_or(false);
+    if adaptive {
+        if package_version < ADAPTIVE_FORMAT_VERSION {
+            bail!("自适应主题包需要格式 v{ADAPTIVE_FORMAT_VERSION}");
+        }
+        let light = theme
+            .get("light")
+            .and_then(Value::as_object)
+            .ok_or_else(|| anyhow::anyhow!("自适应主题包缺少亮色变体"))?;
+        let dark = theme
+            .get("dark")
+            .and_then(Value::as_object)
+            .ok_or_else(|| anyhow::anyhow!("自适应主题包缺少暗色变体"))?;
+        let light_info = validate_variant("亮色", light, &names, "light")?;
+        let dark_info = validate_variant("暗色", dark, &names, "dark")?;
+        return Ok(PackageInfo {
+            deep: true,
+            package_version,
+            has_background: light_info.has_background || dark_info.has_background,
+            has_card_background: light_info.has_card_background || dark_info.has_card_background,
+            sticker_count: light_info.sticker_count + dark_info.sticker_count,
+            adaptive: true,
+        });
+    }
+
     let has_background = theme.get("hasBackground").map(truthy).unwrap_or(false);
     let has_card_background = theme.get("hasCardBackground").map(truthy).unwrap_or(false);
     if has_background && !names.contains("background") {
@@ -89,7 +117,7 @@ pub fn validate_package(data: &[u8]) -> Result<PackageInfo> {
         .iter()
         .filter(|name| name.starts_with("card_sticker_"))
         .collect();
-    if stickers.len() > 5 {
+    if stickers.len() > MAX_STICKERS_PER_VARIANT {
         bail!("主题包贴纸数量过多");
     }
     for name in &stickers {
@@ -101,6 +129,53 @@ pub fn validate_package(data: &[u8]) -> Result<PackageInfo> {
     Ok(PackageInfo {
         deep: true,
         package_version,
+        has_background,
+        has_card_background,
+        sticker_count: stickers.len(),
+        adaptive: false,
+    })
+}
+
+struct VariantInfo {
+    has_background: bool,
+    has_card_background: bool,
+    sticker_count: usize,
+}
+
+/// Validates one half of an adaptive package. Image entries use the mode suffix, so the same
+/// checks as a v2 package apply per variant instead of once for the whole archive.
+fn validate_variant(
+    label: &str,
+    variant: &serde_json::Map<String, Value>,
+    names: &HashSet<String>,
+    suffix: &str,
+) -> Result<VariantInfo> {
+    let has_background = variant.get("hasBackground").map(truthy).unwrap_or(false);
+    let has_card_background = variant
+        .get("hasCardBackground")
+        .map(truthy)
+        .unwrap_or(false);
+    if has_background && !names.contains(&format!("background_{suffix}")) {
+        bail!("{label}变体缺少背景图");
+    }
+    if has_card_background && !names.contains(&format!("card_background_{suffix}")) {
+        bail!("{label}变体缺少卡片背景图");
+    }
+    let prefix = format!("card_sticker_{suffix}_");
+    let stickers: Vec<&String> = names
+        .iter()
+        .filter(|name| name.starts_with(&prefix))
+        .collect();
+    if stickers.len() > MAX_STICKERS_PER_VARIANT {
+        bail!("{label}变体贴纸数量过多");
+    }
+    for name in &stickers {
+        let index = name.trim_start_matches(&prefix);
+        if index.is_empty() || !index.chars().all(|ch| ch.is_ascii_digit()) {
+            bail!("{label}变体贴纸条目无效");
+        }
+    }
+    Ok(VariantInfo {
         has_background,
         has_card_background,
         sticker_count: stickers.len(),
@@ -158,6 +233,47 @@ mod tests {
         assert_eq!(info.package_version, 2);
         assert!(info.has_background);
         assert_eq!(info.sticker_count, 0);
+    }
+
+    #[test]
+    fn validates_adaptive_package() {
+        let theme = serde_json::json!({
+            "version": 3,
+            "adaptive": true,
+            "light": {
+                "hasBackground": true,
+                "hasCardBackground": true,
+            },
+            "dark": {
+                "hasBackground": true,
+                "hasCardBackground": false,
+            },
+        });
+        let package = build_package(
+            &theme,
+            &[
+                ("background_light", b"light-bg"),
+                ("card_background_light", b"light-card"),
+                ("background_dark", b"dark-bg"),
+            ],
+        );
+        let info = validate_package(&package).unwrap();
+        assert!(info.adaptive);
+        assert_eq!(info.package_version, 3);
+        assert!(info.has_background);
+        assert!(info.has_card_background);
+    }
+
+    #[test]
+    fn rejects_adaptive_without_variant_image() {
+        let theme = serde_json::json!({
+            "version": 3,
+            "adaptive": true,
+            "light": {"hasBackground": true},
+            "dark": {"hasBackground": true},
+        });
+        let package = build_package(&theme, &[("background_light", b"light-bg")]);
+        assert!(validate_package(&package).is_err());
     }
 
     #[test]

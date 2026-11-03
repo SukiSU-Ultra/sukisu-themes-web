@@ -273,6 +273,50 @@ fn split_tags(value: &str) -> Vec<String> {
         .collect()
 }
 
+pub const ADAPTIVE_TAG: &str = "adaptive";
+
+/// Tag aliases accepted from older clients and translated to the canonical catalog key.
+fn canonical_tag(tag: &str) -> String {
+    let normalized = tag.trim().to_lowercase();
+    match normalized.as_str() {
+        "adaptive" | "auto" | "automatic" | "lightdark" | "light/dark" | "自适应"
+        | "自适应主题" | "自适应主题包" => ADAPTIVE_TAG.to_string(),
+        _ => tag.trim().to_string(),
+    }
+}
+
+/// Collapses adaptive aliases and makes sure a package detected as adaptive carries its tag,
+/// so catalog clients and previews can badge it without inspecting the package again.
+fn normalize_tags(tags: Vec<String>, adaptive: bool) -> Vec<String> {
+    let mut normalized: Vec<String> = Vec::with_capacity(tags.len() + 1);
+    for tag in tags {
+        let canonical = canonical_tag(&tag);
+        if canonical.is_empty() {
+            continue;
+        }
+        if normalized
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&canonical) || existing == &canonical)
+        {
+            continue;
+        }
+        normalized.push(canonical);
+    }
+    if adaptive {
+        if let Some(index) = normalized
+            .iter()
+            .position(|tag| tag.eq_ignore_ascii_case(ADAPTIVE_TAG))
+        {
+            normalized.remove(index);
+        } else if normalized.len() >= 10 {
+            normalized.pop();
+        }
+        normalized.insert(0, ADAPTIVE_TAG.to_string());
+    }
+    normalized.truncate(10);
+    normalized
+}
+
 pub async fn prepare_upload(form: UploadForm) -> Result<PreparedUpload, String> {
     let theme_id = form.id.trim().to_string();
     if !valid_theme_id(&theme_id) {
@@ -314,7 +358,7 @@ pub async fn prepare_upload(form: UploadForm) -> Result<PreparedUpload, String> 
     if min_manager_version < 0 {
         return Err("最低管理器版本必须是非负整数".to_string());
     }
-    let tags = split_tags(&form.tags);
+    let mut tags = split_tags(&form.tags);
     if tags.len() > 10 || tags.iter().any(|tag| tag.chars().count() > 24) {
         return Err("标签过多或过长".to_string());
     }
@@ -333,8 +377,8 @@ pub async fn prepare_upload(form: UploadForm) -> Result<PreparedUpload, String> 
                 .trim()
                 .parse::<u32>()
                 .map_err(|_| "主题包格式版本无效".to_string())?;
-            if declared != crate::config::MIN_FORMAT_VERSION
-                && declared != crate::config::CURRENT_FORMAT_VERSION
+            if !(crate::config::MIN_FORMAT_VERSION..=crate::config::CURRENT_FORMAT_VERSION)
+                .contains(&declared)
             {
                 return Err("不支持的主题包格式版本".to_string());
             }
@@ -345,6 +389,17 @@ pub async fn prepare_upload(form: UploadForm) -> Result<PreparedUpload, String> 
         }
         _ => package_info.package_version,
     };
+    if package_info.adaptive
+        && tags.len() >= 10
+        && !tags.iter().any(|tag| canonical_tag(tag) == ADAPTIVE_TAG)
+    {
+        return Err("自适应主题会自动添加 adaptive 标签，请将标签减少到 9 个".to_string());
+    }
+    tags = normalize_tags(tags, package_info.adaptive);
+    if !package_info.adaptive {
+        // A stale tag from an earlier package selection must not make a plain theme look adaptive.
+        tags.retain(|tag| canonical_tag(tag) != ADAPTIVE_TAG);
+    }
 
     let preview_input_ext = form.preview.ext.clone();
     let preview_data = form.preview.data;
@@ -478,6 +533,10 @@ pub fn load_pending_upload(
         }
         None => None,
     };
+    let mut tags = normalize_tags(meta.tags.clone(), package_info.adaptive);
+    if !package_info.adaptive {
+        tags.retain(|tag| canonical_tag(tag) != ADAPTIVE_TAG);
+    }
     Ok(PreparedUpload {
         id: theme_id,
         version: meta.version.max(0) as u32,
@@ -489,7 +548,7 @@ pub fn load_pending_upload(
         name: meta.name.trim().to_string(),
         author: meta.author.trim().to_string(),
         description: meta.description.trim().to_string(),
-        tags: meta.tags.clone(),
+        tags,
         license: meta.license.trim().to_string(),
         min_manager_version: meta.min_manager_version,
         changelog: meta.changelog.trim().to_string(),
@@ -617,6 +676,7 @@ pub async fn publish_theme(
         author: prepared.author.clone(),
         description: prepared.description.clone(),
         tags: prepared.tags.clone(),
+        adaptive: prepared.package_info.adaptive,
         license: prepared.license.clone(),
         min_manager_version: prepared.min_manager_version,
         format_version: prepared.format_version,
@@ -736,6 +796,7 @@ pub fn write_pending(
             "author": prepared.author,
             "description": prepared.description,
             "tags": prepared.tags,
+            "adaptive": prepared.package_info.adaptive,
             "license": prepared.license,
             "minManagerVersion": prepared.min_manager_version,
             "changelog": prepared.changelog,
@@ -771,4 +832,32 @@ pub fn pending_directory_size(directory: &Path) -> u64 {
 
 pub fn normalize_key_or_err(key: &str) -> Result<String, String> {
     normalize_asset_key(key).ok_or_else(|| "无效的资源路径".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn canonicalizes_adaptive_tag_aliases() {
+        let tags = normalize_tags(
+            vec![
+                "自适应主题".to_string(),
+                "pink".to_string(),
+                "Adaptive".to_string(),
+            ],
+            true,
+        );
+        assert_eq!(tags, vec!["adaptive".to_string(), "pink".to_string()]);
+    }
+
+    #[test]
+    fn adds_adaptive_tag_without_exceeding_the_limit() {
+        let mut tags: Vec<String> = (0..10).map(|index| format!("tag{index}")).collect();
+        tags[9] = "自适应".to_string();
+        let tags = normalize_tags(tags, true);
+        assert_eq!(tags.len(), 10);
+        assert_eq!(tags.first().map(String::as_str), Some("adaptive"));
+        assert_eq!(tags.iter().filter(|tag| *tag == "adaptive").count(), 1);
+    }
 }
