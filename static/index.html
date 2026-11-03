@@ -2416,12 +2416,12 @@ function renderInlineMarkdown(value) {
   html = html.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
     '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
   // Usernames may contain CJK and other Unicode letters, not just ASCII.
-  html = html.replace(/(^|[^\p{L}\p{N}@._·-])([\p{L}\p{N}\p{M}._·-]+)@(github|gitee|bilibili|coolapk|telegram|weibo|xiaohongshu|xda|youtube|afdian|twitter|zhihu|threads|douyin)(?![\p{L}\p{N}._-]*\.)/giu,
+  html = html.replace(/(^|[^\p{L}\p{N}@._·~+-])([\p{L}\p{N}\p{M}._·~+-]+)@(github|gitee|bilibili|coolapk|telegram|weibo|xiaohongshu|xda|youtube|afdian|twitter|zhihu|threads|douyin)(?![\p{L}\p{N}._~+-]*\.)/giu,
     (match, prefix, user, platform) => {
       const url = userMentionUrl(user, platform);
       return url ? `${prefix}<a class="mention" href="${url}" target="_blank" rel="noreferrer">${user}@${platform}</a>` : match;
     });
-  html = html.replace(/(^|[^\p{L}\p{N}@._·-])@([A-Za-z0-9_-]+)/gu, (match, prefix, name) => {
+  html = html.replace(/(^|[^\p{L}\p{N}@._·~+-])@([A-Za-z0-9_-]+)/gu, (match, prefix, name) => {
     const url = SITE_MENTIONS[name.toLowerCase()];
     return url
       ? `${prefix}<a class="mention" href="${url}" target="_blank" rel="noreferrer">@${name}</a>`
