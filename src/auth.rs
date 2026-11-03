@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
 use axum::http::HeaderMap;
 use subtle::ConstantTimeEq;
 
@@ -10,14 +14,62 @@ pub const USER_SESSION_COOKIE: &str = "sukisu_user_session";
 pub const SESSION_TTL_SECS: u64 = 12 * 60 * 60;
 pub const USER_SESSION_TTL_SECS: u64 = 12 * 60 * 60;
 
+/// A short positive cache avoids one SQLite query per authenticated request.
+/// Five seconds keeps revocation/disable effects near-immediate while still
+/// absorbing request bursts.
+const SESSION_CACHE_TTL: Duration = Duration::from_secs(5);
+const SESSION_CACHE_MAX_ENTRIES: usize = 4096;
+
+#[derive(Clone)]
+struct CachedSession {
+    info: SessionInfo,
+    expires_at: Instant,
+}
+
 #[derive(Clone)]
 pub struct SessionStore {
     db: Database,
+    cache: Arc<Mutex<HashMap<(String, String), CachedSession>>>,
 }
 
 impl SessionStore {
     pub fn new(db: Database) -> Self {
-        Self { db }
+        Self {
+            db,
+            cache: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    fn cached(&self, key: &(String, String)) -> Option<SessionInfo> {
+        let mut cache = self.cache.lock().ok()?;
+        let now = Instant::now();
+        if let Some(cached) = cache.get(key) {
+            if cached.expires_at > now {
+                return Some(cached.info.clone());
+            }
+            cache.remove(key);
+        }
+        None
+    }
+
+    fn remember(&self, key: (String, String), info: SessionInfo) {
+        let Ok(mut cache) = self.cache.lock() else {
+            return;
+        };
+        let now = Instant::now();
+        if cache.len() >= SESSION_CACHE_MAX_ENTRIES {
+            cache.retain(|_, cached| cached.expires_at > now);
+            if cache.len() >= SESSION_CACHE_MAX_ENTRIES {
+                cache.clear();
+            }
+        }
+        cache.insert(
+            key,
+            CachedSession {
+                info,
+                expires_at: now + SESSION_CACHE_TTL,
+            },
+        );
     }
 
     pub async fn create(
@@ -32,8 +84,17 @@ impl SessionStore {
     }
 
     pub async fn validate(&self, token: &str, scope: &str) -> Option<SessionInfo> {
+        let key = (accounts::hash_token(token), scope.to_string());
+        if let Some(info) = self.cached(&key) {
+            return Some(info);
+        }
         match accounts::validate_session(&self.db, token, scope).await {
-            Ok(value) => value,
+            Ok(value) => {
+                if let Some(info) = &value {
+                    self.remember(key, info.clone());
+                }
+                value
+            }
             Err(error) => {
                 tracing::warn!("session validation failed: {error:#}");
                 None
@@ -42,12 +103,19 @@ impl SessionStore {
     }
 
     pub async fn remove(&self, token: &str) {
+        if let Ok(mut cache) = self.cache.lock() {
+            let hash = accounts::hash_token(token);
+            cache.retain(|(cached_hash, _), _| cached_hash != &hash);
+        }
         if let Err(error) = accounts::delete_session(&self.db, token).await {
             tracing::warn!("session removal failed: {error:#}");
         }
     }
 
     pub async fn revoke_user(&self, user_id: &str) {
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.retain(|_, cached| cached.info.user_id != user_id);
+        }
         if let Err(error) = accounts::revoke_user_sessions(&self.db, user_id).await {
             tracing::warn!("session revocation failed: {error:#}");
         }

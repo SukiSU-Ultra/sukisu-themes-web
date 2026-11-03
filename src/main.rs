@@ -54,6 +54,15 @@ async fn main() -> anyhow::Result<()> {
     if let Err(error) = authors::import_legacy_authors(&state.db, &state.paths).await {
         tracing::warn!("author import warning: {error:#}");
     }
+    let flush_state = state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            interval.tick().await;
+            flush_state.flush_downloads().await;
+        }
+    });
     let cleanup_state = state.clone();
     tokio::spawn(async move {
         loop {
@@ -64,11 +73,24 @@ async fn main() -> anyhow::Result<()> {
             }
             cleanup_state.refresh_withdrawn_assets();
             resumable::cleanup_stale(&cleanup_state.paths);
+            cleanup_state.flush_downloads().await;
+            if let Err(error) = catalog::refresh_catalog_stats(&cleanup_state.paths) {
+                tracing::warn!("catalog stats refresh warning: {error:#}");
+            }
+            cleanup_state.reload_theme_stats();
             tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
         }
     });
     if let Err(error) = catalog::backfill_meta_assets(&state.store, &state.paths).await {
         tracing::warn!("storage init warning: {error:#}");
+    }
+    if catalog::read_catalog(&state.paths).is_none() {
+        if let Err(error) = catalog::rebuild_catalog(&state.store, &state.paths).await {
+            tracing::warn!("catalog init rebuild warning: {error:#}");
+        }
+    }
+    if let Err(error) = catalog::refresh_catalog_stats(&state.paths) {
+        tracing::warn!("catalog stats init warning: {error:#}");
     }
     state.refresh_withdrawn_assets();
 

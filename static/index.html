@@ -372,6 +372,7 @@ section { scroll-margin-top: 96px; margin-top: 38px; }
 .stat .sub { margin-top: 8px; color: var(--faint); font-size: 11.5px; }
 
 .grid { display: grid; grid-template-columns: 1.25fr .75fr; gap: 14px; margin-top: 14px; align-items: start; }
+#overview .grid > .card:last-child { grid-column: 1 / -1; }
 .card {
   position: relative;
   overflow: hidden;
@@ -572,6 +573,21 @@ html[data-theme="light"] .pending-preview .fallback { background: linear-gradien
 .theme-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text); font-size: 14.5px; font-weight: 650; letter-spacing: -.01em; }
 .theme-meta { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 5px; color: var(--faint); font-size: 11px; }
 .theme-meta .author { display: inline-flex; align-items: center; gap: 4px; }
+.theme-stat { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); background: var(--input-bg); font-weight: 600; }
+.theme-stat.hot { color: #fb923c; border-color: rgba(251, 146, 60, .28); }
+.theme-stat.dl { color: #38bdf8; border-color: rgba(56, 189, 248, .28); }
+html[data-theme="light"] .theme-stat.hot { color: #c2410c; }
+html[data-theme="light"] .theme-stat.dl { color: #0369a1; }
+.sort-select { height: 40px; min-width: 132px; padding: 0 12px; border-radius: 11px; border: 1px solid var(--line); background: var(--input-bg); color: var(--text); font: inherit; font-size: 12.5px; outline: none; }
+.sort-select:focus { border-color: var(--line-strong); box-shadow: 0 0 0 3px rgba(96, 165, 250, .12); }
+.stats.stats-5 { grid-template-columns: repeat(5, 1fr); }
+.top-themes { display: grid; gap: 8px; }
+.top-theme { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--input-bg); }
+.top-theme img { width: 54px; height: 36px; flex: none; object-fit: cover; border-radius: 7px; background: var(--gradient-soft); }
+.top-theme .top-theme-body { flex: 1; min-width: 0; }
+.top-theme b { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12.5px; }
+.top-theme span { color: var(--faint); font-size: 11px; }
+.top-theme .top-theme-rank { flex: none; width: 20px; text-align: center; color: var(--faint); font-family: var(--font-mono); font-size: 11px; }
 .author-avatar { width: 16px; height: 16px; border-radius: 50%; object-fit: cover; flex: none; background: var(--panel); }
 .theme-desc { display: -webkit-box; overflow: hidden; min-height: 36px; margin-top: 8px; color: var(--muted); font-size: 11.8px; line-height: 1.55; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .theme-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
@@ -651,6 +667,7 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
   .side-foot { display: none; }
   main { padding: 26px 20px 56px; }
   .stats { grid-template-columns: repeat(2, 1fr); }
+  .stats.stats-5 { grid-template-columns: repeat(2, 1fr); }
   .grid { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }
   .storage-grid { grid-template-columns: 1fr 1fr; }
@@ -1344,8 +1361,9 @@ input:-webkit-autofill:focus {
     </div>
 
     <section id="overview" class="page active">
-      <div class="stats">
+      <div class="stats stats-5">
         <div class="stat"><div class="label">主题数量</div><div class="value" id="themeCount">–</div><div class="sub">当前 catalog.json</div></div>
+        <div class="stat"><div class="label">总下载量</div><div class="value" id="downloadsStat">–</div><div class="sub" id="downloadsSub">近 7 天下载 –</div></div>
         <div class="stat"><div class="label">访问令牌</div><div class="value" id="tokenState">–</div><div class="sub" id="tokenSub">未设置</div></div>
         <div class="stat"><div class="label">Caddy</div><div class="value" id="caddyState">–</div><div class="sub">TLS / 反向代理</div></div>
         <div class="stat"><div class="label">存储模式</div><div class="value" id="storageMode">本地</div><div class="sub" id="storageSub">正在读取配额</div></div>
@@ -1382,6 +1400,16 @@ input:-webkit-autofill:focus {
           <div class="row">
             <button id="testCatalog">测试目录接口</button>
             <a class="pill" id="openMirror" target="_blank" rel="noreferrer" style="text-decoration:none"><span class="dot ok"></span>打开镜像</a>
+          </div>
+        </div>
+        <div class="card">
+          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3c1 3 4 4.5 4 8a4 4 0 0 1-8 0c0-1.4.5-2.4 1.5-3.5C9 10 9 11 9.5 12 10 9 11 6 12 3Z"/><path d="M12 21v-3"/></svg>热门主题</h4>
+          <p class="hint">按热度排序：总下载量 + 近 7 天下载 × 10。</p>
+          <div class="top-themes" id="topThemesList"></div>
+          <div class="empty hidden" id="topThemesEmpty">还没有下载记录</div>
+          <div class="row" style="margin-top:14px">
+            <a class="pill" href="#themes" style="text-decoration:none">查看全部主题</a>
+            <a class="pill" id="overviewHealthLink" href="/health" target="_blank" rel="noreferrer" style="text-decoration:none">健康检查</a>
           </div>
         </div>
       </div>
@@ -1445,6 +1473,13 @@ input:-webkit-autofill:focus {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
           <input id="themeSearch" type="search" placeholder="搜索已发布主题、作者、标签…">
         </div>
+        <select id="themeSort" class="sort-select" title="主题排序">
+          <option value="hot">热度优先</option>
+          <option value="downloads">下载量优先</option>
+          <option value="updated">最新更新</option>
+          <option value="name">名称</option>
+          <option value="size">体积</option>
+        </select>
       </div>
       <div class="theme-grid" id="themeGrid"></div>
       <div class="empty" id="themeEmpty"><b>目录里还没有主题</b>在上方上传主题包后，这里会显示预览图。</div>
@@ -2254,6 +2289,10 @@ function render(status) {
   const used = Number(storage.used || 0);
   const limit = Number(storage.limit || 0);
   $('storageMode').textContent = status.storageBackend === 's3' ? 'S3 对象存储' : '本地';
+  const stats = status.stats || {};
+  $('downloadsStat').textContent = formatCount(stats.downloads ?? 0);
+  $('downloadsSub').textContent = '近 7 天下载 ' + formatCount(stats.recentDownloads ?? 0);
+  renderTopThemes(stats.topThemes || []);
   $('overviewTokenState').textContent = status.tokenSet ? '已设置' : '未设置';
   $('overviewTokenState').style.color = status.tokenSet ? 'var(--ok)' : 'var(--bad)';
   $('overviewAdminState').textContent = stateText(status.adminService);
@@ -2298,6 +2337,28 @@ function render(status) {
   renderEndpoints(status.endpoints);
   const catalogUrl = status.catalogUrl || '<catalog-url>';
   $('curlExample').textContent = `curl -H "X-Sukisu-Theme-Token: $THEME_TOKEN" \\\n  ${catalogUrl}`;
+}
+
+function renderTopThemes(items) {
+  const list = $('topThemesList');
+  if (!list) return;
+  list.innerHTML = '';
+  $('topThemesEmpty').classList.toggle('hidden', items.length > 0);
+  items.forEach((theme, index) => {
+    const row = document.createElement('div');
+    row.className = 'top-theme';
+    const image = theme.previewUrl
+      ? `<img src="${escapeHtml(theme.previewUrl)}" alt="" loading="lazy">`
+      : '';
+    row.innerHTML = `
+      <span class="top-theme-rank">${index + 1}</span>
+      ${image}
+      <div class="top-theme-body">
+        <b>${escapeHtml(theme.name || theme.id)}</b>
+        <span>${escapeHtml(theme.author || '未知作者')} · 热度 ${formatCount(theme.heat)} · 下载 ${formatCount(theme.downloads)}</span>
+      </div>`;
+    list.appendChild(row);
+  });
 }
 
 function escapeHtml(value) {
@@ -2377,6 +2438,14 @@ function formatSize(bytes) {
     : Math.round(value / 1024) + ' KB';
 }
 
+function formatCount(value) {
+  const count = Math.max(0, Number(value) || 0);
+  if (count >= 100000000) return (count / 100000000).toFixed(1) + '亿';
+  if (count >= 10000) return (count / 10000).toFixed(count >= 100000 ? 0 : 1) + '万';
+  if (count >= 1000) return (count / 1000).toFixed(count >= 10000 ? 0 : 1) + 'k';
+  return String(count);
+}
+
 function formatStorage(bytes) {
   const value = Number(bytes) || 0;
   if (value >= 1024 * 1024 * 1024) return (value / 1024 / 1024 / 1024).toFixed(2) + ' GB';
@@ -2389,6 +2458,7 @@ let themeItems = [];
 let pendingItems = [];
 let themeQuery = '';
 let pendingQuery = '';
+let themeSort = 'hot';
 
 // Canonical tag keys are stored in the catalog; the mapping keeps aliases and localized
 // labels consistent between the upload form, search, cards and the detail dialog.
@@ -2478,6 +2548,8 @@ function renderThemeGrid() {
       <div class="theme-body">
         <div class="theme-title" title="${escapeHtml(theme.name)}">${escapeHtml(theme.name || theme.id)}</div>
         <div class="theme-meta">
+          <span class="theme-stat hot" title="热度：总下载量 + 近 7 天下载 × 10">热度 ${formatCount(theme.heat)}</span>
+          <span class="theme-stat dl" title="累计下载量">下载 ${formatCount(theme.downloads)}</span>
           <span>v${escapeHtml(theme.version)}</span>
           <span>格式 v${escapeHtml(theme.formatVersion ?? 1)}</span>
           ${theme.author ? `<span class="author">${avatar}作者：${escapeHtml(theme.author)}</span>` : ''}
@@ -2532,6 +2604,8 @@ function openThemeDetail(theme) {
     ${preview}
     <div class="theme-detail-meta">
       <span>ID：${escapeHtml(theme.id || '—')}</span>
+      <span class="theme-stat hot">热度 ${formatCount(theme.heat)}</span>
+      <span class="theme-stat dl">下载 ${formatCount(theme.downloads)}</span>
       <span>v${escapeHtml(theme.version || 1)}</span>
       <span>格式 v${escapeHtml(theme.formatVersion ?? 1)}</span>
       <span>${formatSize(theme.size)}</span>
@@ -2749,7 +2823,7 @@ async function deleteTheme(id) {
 
 async function loadThemes() {
   try {
-    const data = await api('/themes');
+    const data = await api('/themes?sort=' + encodeURIComponent(themeSort));
     renderThemes(data.themes || []);
     populateUploadThemes(data.themes || []);
   } catch (error) {
@@ -4392,6 +4466,10 @@ $('upUpdateSearch').addEventListener('input', () => populateUploadThemes());
 $('themeSearch').addEventListener('input', event => {
   themeQuery = event.target.value;
   renderThemeGrid();
+});
+$('themeSort').addEventListener('change', event => {
+  themeSort = event.target.value || 'hot';
+  loadThemes();
 });
 $('pendingSearch').addEventListener('input', event => {
   pendingQuery = event.target.value;

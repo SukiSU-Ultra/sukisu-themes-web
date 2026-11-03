@@ -1,11 +1,15 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::SystemTime;
 
 use anyhow::Result;
 use serde_json::{json, Value};
 
 use crate::config::{write_atomic, Paths, CURRENT_FORMAT_VERSION, MIN_FORMAT_VERSION};
+use crate::db::ThemeStats;
 use crate::models::{
     AuthorRecord, AuthorsFile, CatalogEntry, CatalogFile, JobState, Meta, PendingMeta, StorageUsage,
 };
@@ -16,6 +20,121 @@ use crate::util::{
 };
 
 pub const WITHDRAW_RETENTION_DAYS: i64 = 14;
+
+/// Bumped whenever theme metadata changes, so cached indexes can invalidate
+/// without rescanning the meta directory on every request.
+static META_REVISION: AtomicU64 = AtomicU64::new(1);
+/// Bumped on every catalog.json write so parsed catalogs can be cached.
+static CATALOG_REVISION: AtomicU64 = AtomicU64::new(1);
+
+struct CachedCatalog {
+    revision: u64,
+    len: u64,
+    modified: Option<SystemTime>,
+    catalog: Arc<CatalogFile>,
+}
+
+static CATALOG_CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedCatalog>>> = OnceLock::new();
+/// Serializes read-modify-write cycles on catalog.json.
+static CATALOG_WRITE_LOCK: Mutex<()> = Mutex::new(());
+
+fn catalog_write_guard() -> std::sync::MutexGuard<'static, ()> {
+    CATALOG_WRITE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+pub fn meta_revision() -> u64 {
+    META_REVISION.load(Ordering::Relaxed)
+}
+
+fn bump_meta_revision() {
+    META_REVISION.fetch_add(1, Ordering::Relaxed);
+}
+
+fn bump_catalog_revision() {
+    CATALOG_REVISION.fetch_add(1, Ordering::Relaxed);
+}
+
+/// In-memory view of `meta/*.json`, used by the user-center preview and
+/// discovery paths that previously scanned every meta file per request.
+#[derive(Default)]
+pub struct MetaIndex {
+    by_id: HashMap<String, Meta>,
+    theme_for_asset: HashMap<String, String>,
+    by_author_hash: HashMap<String, HashSet<String>>,
+    by_legacy_name: HashMap<String, HashSet<String>>,
+}
+
+impl MetaIndex {
+    pub fn theme_by_id(&self, id: &str) -> Option<&Meta> {
+        self.by_id.get(id)
+    }
+
+    pub fn theme_for_asset(&self, asset: &str) -> Option<&Meta> {
+        self.theme_for_asset
+            .get(asset)
+            .and_then(|id| self.by_id.get(id))
+    }
+
+    /// Theme ids owned by the given author hashes, plus legacy themes whose
+    /// empty author hash matched the account username.
+    pub fn owned_ids(&self, hashes: &HashSet<String>, username: &str) -> HashSet<String> {
+        let mut ids = HashSet::new();
+        for hash in hashes {
+            if let Some(owned) = self.by_author_hash.get(hash) {
+                ids.extend(owned.iter().cloned());
+            }
+        }
+        let username = username.trim().to_ascii_lowercase();
+        if !username.is_empty() {
+            if let Some(owned) = self.by_legacy_name.get(&username) {
+                ids.extend(owned.iter().cloned());
+            }
+        }
+        ids
+    }
+}
+
+pub fn build_meta_index(paths: &Paths) -> MetaIndex {
+    let mut index = MetaIndex::default();
+    let Ok(entries) = fs::read_dir(&paths.meta) else {
+        return index;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(meta) = read_meta_file(&path) else {
+            continue;
+        };
+        let id = meta.id.clone();
+        index.by_id.insert(id.clone(), meta.clone());
+        for asset in [&meta.preview]
+            .into_iter()
+            .chain(meta.screenshots.iter())
+            .chain(meta.avatar.iter())
+            .filter(|asset| !asset.is_empty())
+        {
+            index.theme_for_asset.insert(asset.clone(), id.clone());
+        }
+        let author_hash = meta.author_hash.as_deref().unwrap_or("").trim();
+        if author_hash.is_empty() {
+            let author = meta.author.trim().to_ascii_lowercase();
+            if !author.is_empty() {
+                index.by_legacy_name.entry(author).or_default().insert(id);
+            }
+        } else {
+            index
+                .by_author_hash
+                .entry(author_hash.to_string())
+                .or_default()
+                .insert(id);
+        }
+    }
+    index
+}
 
 pub fn withdrawal_expires_at(withdrawn_at: &str) -> Option<String> {
     chrono::DateTime::parse_from_rfc3339(withdrawn_at)
@@ -62,6 +181,7 @@ pub fn write_meta(path: &Path, meta: &Meta) -> Result<()> {
     let mut data = serde_json::to_vec_pretty(meta)?;
     data.push(b'\n');
     write_atomic(path, &data, 0o644)?;
+    bump_meta_revision();
     Ok(())
 }
 
@@ -81,9 +201,37 @@ pub fn find_theme_meta(paths: &Paths, theme_id: &str) -> Option<(PathBuf, Meta)>
     None
 }
 
-pub fn read_catalog(paths: &Paths) -> Option<CatalogFile> {
+pub fn read_catalog(paths: &Paths) -> Option<Arc<CatalogFile>> {
+    let metadata = fs::metadata(&paths.catalog).ok()?;
+    let len = metadata.len();
+    let modified = metadata.modified().ok();
+    let revision = CATALOG_REVISION.load(Ordering::Relaxed);
+    let cache = CATALOG_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(guard) = cache.lock() {
+        if let Some(entry) = guard.get(&paths.catalog) {
+            if entry.revision == revision && entry.len == len && entry.modified == modified {
+                return Some(entry.catalog.clone());
+            }
+        }
+    }
     let text = fs::read_to_string(&paths.catalog).ok()?;
-    serde_json::from_str(&text).ok()
+    let catalog = Arc::new(serde_json::from_str::<CatalogFile>(&text).ok()?);
+    if let Ok(mut guard) = cache.lock() {
+        // Bound test/dev churn; production normally has one storage root.
+        if guard.len() > 8 {
+            guard.clear();
+        }
+        guard.insert(
+            paths.catalog.clone(),
+            CachedCatalog {
+                revision,
+                len,
+                modified,
+                catalog: catalog.clone(),
+            },
+        );
+    }
+    Some(catalog)
 }
 
 pub async fn meta_asset_size(store: &AssetStore, meta: &Meta) -> u64 {
@@ -97,7 +245,11 @@ pub async fn meta_asset_size(store: &AssetStore, meta: &Meta) -> u64 {
     total
 }
 
-async fn build_catalog_entry(store: &AssetStore, meta: &Meta) -> Option<CatalogEntry> {
+async fn build_catalog_entry(
+    store: &AssetStore,
+    meta: &Meta,
+    stats: &HashMap<String, ThemeStats>,
+) -> Option<CatalogEntry> {
     if meta.withdrawn_at.is_some() {
         return None;
     }
@@ -144,6 +296,8 @@ async fn build_catalog_entry(store: &AssetStore, meta: &Meta) -> Option<CatalogE
         screenshot_paths: screenshots,
         updated_at: meta.updated_at.clone(),
         changelog: meta.changelog.clone(),
+        downloads: stats.get(&meta.id).map(|item| item.downloads).unwrap_or(0),
+        heat: stats.get(&meta.id).map(|item| item.heat).unwrap_or(0),
     };
     if let Some(avatar) = &meta.avatar {
         if normalize_asset_key(avatar).is_some() && store.exists(avatar).await {
@@ -229,9 +383,10 @@ pub async fn rebuild_catalog(store: &AssetStore, paths: &Paths) -> Result<Vec<Ca
             }
         }
     }
+    let stats = crate::db::load_theme_stats(&paths.db);
     let mut themes = Vec::new();
     for meta in metas {
-        if let Some(entry) = build_catalog_entry(store, &meta).await {
+        if let Some(entry) = build_catalog_entry(store, &meta, &stats).await {
             themes.push(entry);
         }
     }
@@ -241,6 +396,15 @@ pub async fn rebuild_catalog(store: &AssetStore, paths: &Paths) -> Result<Vec<Ca
             .cmp(&b.name.to_lowercase())
             .then_with(|| a.id.cmp(&b.id))
     });
+    let _guard = catalog_write_guard();
+    // A stats flush may have completed while this rebuild scanned assets.
+    let latest_stats = crate::db::load_theme_stats(&paths.db);
+    for theme in &mut themes {
+        if let Some(current) = latest_stats.get(&theme.id).copied() {
+            theme.downloads = current.downloads;
+            theme.heat = current.heat;
+        }
+    }
     let catalog = CatalogFile {
         schema: 1,
         format_version: CURRENT_FORMAT_VERSION,
@@ -249,10 +413,92 @@ pub async fn rebuild_catalog(store: &AssetStore, paths: &Paths) -> Result<Vec<Ca
         generated_at: Some(now_iso()),
         themes: themes.clone(),
     };
-    let mut data = serde_json::to_vec_pretty(&catalog)?;
-    data.push(b'\n');
+    // Machine-read catalog: compact JSON keeps transfer and parse costs down.
+    let data = serde_json::to_vec(&catalog)?;
     write_atomic(&paths.catalog, &data, 0o644)?;
+    bump_catalog_revision();
+    bump_meta_revision();
     Ok(themes)
+}
+
+/// Update counters for a batch of themes inside the published catalog.
+///
+/// Download flushes call this once per batch, so a busy store does not rewrite
+/// catalog.json for every package request.
+pub fn update_catalog_stats_batch(
+    paths: &Paths,
+    stats: &HashMap<String, ThemeStats>,
+) -> Result<bool> {
+    if stats.is_empty() {
+        return Ok(false);
+    }
+    let _guard = catalog_write_guard();
+    let Some(catalog) = read_catalog(paths) else {
+        return Ok(false);
+    };
+    let mut catalog = (*catalog).clone();
+    let mut changed = false;
+    for entry in &mut catalog.themes {
+        let Some(current) = stats.get(&entry.id).copied() else {
+            continue;
+        };
+        if entry.downloads != current.downloads || entry.heat != current.heat {
+            entry.downloads = current.downloads;
+            entry.heat = current.heat;
+            changed = true;
+        }
+    }
+    if changed {
+        let data = serde_json::to_vec(&catalog)?;
+        write_atomic(&paths.catalog, &data, 0o644)?;
+        bump_catalog_revision();
+    }
+    Ok(changed)
+}
+
+/// Update one theme's counters; kept for callers that do not batch.
+pub fn update_catalog_stats(paths: &Paths, theme_id: &str, stats: ThemeStats) -> Result<bool> {
+    let mut batch = HashMap::new();
+    batch.insert(theme_id.to_string(), stats);
+    update_catalog_stats_batch(paths, &batch)
+}
+
+/// Refresh every counter in the published catalog from the stats database.
+/// This is cheap compared with a full rebuild and lets heat decay hourly.
+pub fn refresh_catalog_stats(paths: &Paths) -> Result<bool> {
+    let _guard = catalog_write_guard();
+    let Some(catalog) = read_catalog(paths) else {
+        return Ok(false);
+    };
+    let mut catalog = (*catalog).clone();
+    let stats = crate::db::load_theme_stats(&paths.db);
+    let mut changed = false;
+    for theme in &mut catalog.themes {
+        let current = stats.get(&theme.id).copied().unwrap_or_default();
+        if theme.downloads != current.downloads || theme.heat != current.heat {
+            theme.downloads = current.downloads;
+            theme.heat = current.heat;
+            changed = true;
+        }
+    }
+    if changed {
+        let data = serde_json::to_vec(&catalog)?;
+        write_atomic(&paths.catalog, &data, 0o644)?;
+        bump_catalog_revision();
+    }
+    Ok(changed)
+}
+
+/// Extract the theme id from a package asset key such as
+/// `themes/11010-01-v3.sukisu`.
+pub fn theme_id_from_package_path(path: &str) -> Option<String> {
+    let file = path.strip_prefix("themes/")?;
+    let stem = file.strip_suffix(".sukisu")?;
+    let (id, version) = stem.rsplit_once("-v")?;
+    if version.parse::<i64>().is_err() || !crate::util::valid_theme_id(id) {
+        return None;
+    }
+    Some(id.to_string())
 }
 
 pub async fn remove_theme_files(
@@ -266,6 +512,7 @@ pub async fn remove_theme_files(
     if let Some(path) = meta_file {
         let _ = fs::remove_file(path);
     }
+    bump_meta_revision();
     Ok(())
 }
 
@@ -628,14 +875,16 @@ pub fn catalog_state(paths: &Paths) -> Value {
     })
 }
 
-pub async fn admin_themes(paths: &Paths) -> Vec<Value> {
+pub async fn admin_themes(paths: &Paths, stats: &HashMap<String, ThemeStats>) -> Vec<Value> {
     let Some(catalog) = read_catalog(paths) else {
         return Vec::new();
     };
+    let catalog = (*catalog).clone();
     catalog
         .themes
         .into_iter()
         .map(|theme| {
+            let theme_stats = stats.get(&theme.id).copied().unwrap_or_default();
             let preview_url = if theme.preview_path.is_empty() {
                 String::new()
             } else {
@@ -669,6 +918,8 @@ pub async fn admin_themes(paths: &Paths) -> Vec<Value> {
                 "previewUrl": preview_url,
                 "avatarUrl": avatar_url,
                 "path": theme.path,
+                "downloads": theme_stats.downloads,
+                "heat": theme_stats.heat,
             })
         })
         .collect()
@@ -729,6 +980,62 @@ mod tests {
             caddyfile: root.join("Caddyfile"),
             db: root.join("account.db"),
         }
+    }
+
+    #[test]
+    fn builds_meta_index_for_assets_and_ownership() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        std::fs::create_dir_all(root.join("meta")).unwrap();
+        std::fs::write(
+            root.join("meta/11010-01.json"),
+            r#"{
+                "id": "11010-01",
+                "author": "alice",
+                "authorHash": "hash-a",
+                "preview": "previews/11010-01-v1.jpg",
+                "screenshots": ["screenshots/11010-01-v1-01.jpg"],
+                "package": "themes/11010-01-v1.sukisu"
+            }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("meta/legacy.json"),
+            r#"{
+                "id": "legacy",
+                "author": "Bob",
+                "authorHash": "",
+                "preview": "previews/legacy-v1.jpg",
+                "package": "themes/legacy-v1.sukisu"
+            }"#,
+        )
+        .unwrap();
+
+        let index = build_meta_index(&test_paths(root));
+        assert!(index.theme_for_asset("previews/11010-01-v1.jpg").is_some());
+        assert!(index
+            .theme_for_asset("screenshots/11010-01-v1-01.jpg")
+            .is_some());
+        assert!(index.theme_for_asset("previews/missing.jpg").is_none());
+
+        let hashes = HashSet::from(["hash-a".to_string()]);
+        assert!(index.owned_ids(&hashes, "someone").contains("11010-01"));
+        assert!(index.owned_ids(&HashSet::new(), "bob").contains("legacy"));
+        assert!(!index.owned_ids(&HashSet::new(), "alice").contains("legacy"));
+    }
+
+    #[test]
+    fn parses_package_asset_paths() {
+        assert_eq!(
+            theme_id_from_package_path("themes/11010-01-v3.sukisu"),
+            Some("11010-01".to_string())
+        );
+        assert_eq!(
+            theme_id_from_package_path("themes/foo-v1.sukisu"),
+            Some("foo".to_string())
+        );
+        assert_eq!(theme_id_from_package_path("previews/1-v1.jpg"), None);
+        assert_eq!(theme_id_from_package_path("themes/abc.sukisu"), None);
     }
 
     #[tokio::test]

@@ -1125,9 +1125,54 @@
     "自适应主题": "Adaptive theme",
     "自适应": "Adaptive",
     "自适应主题包": "Adaptive theme package",
-    "包含亮/暗两套外观的自适应主题包会自动添加「自适应主题」标签。": "Adaptive theme packages with separate light and dark appearances get the “Adaptive theme” tag automatically."
+    "包含亮/暗两套外观的自适应主题包会自动添加「自适应主题」标签。": "Adaptive theme packages with separate light and dark appearances get the “Adaptive theme” tag automatically.",
+    "发现主题": "Discover themes",
+    "看看其他作者分享的主题，每次展示 5 个。": "Browse themes from other authors, 5 at a time.",
+    "随便看看": "Surprise me",
+    "正在挑选…": "Picking…",
+    "这位作者暂时没有更多主题。": "This author has no more themes.",
+    "暂时还没有其他作者的主题，稍后再来看看。": "No themes from other authors yet. Check back later.",
+    "查看该作者的主题": "View this author's themes",
+    "总下载量": "Total downloads",
+    "热门主题": "Popular themes",
+    "按热度排序：总下载量 + 近 7 天下载 × 10。": "Sorted by heat: total downloads + last 7 days × 10.",
+    "查看全部主题": "View all themes",
+    "热度优先": "Heat first",
+    "下载量优先": "Downloads first",
+    "最新更新": "Recently updated",
+    "体积": "Size",
+    "下载量": "Downloads",
+    "主题排序": "Theme sorting",
+    "累计下载量": "Total downloads",
+    "热度：总下载量 + 近 7 天下载 × 10": "Heat: total downloads + last 7 days × 10",
+    "热度": "Heat",
+    "下载": "Download"
   },
   "patterns": [
+    [
+      "^(.+) · 热度 (.+) · 下载 (.+)$",
+      "$1 · Heat $2 · Downloads $3"
+    ],
+    [
+      "^作者：(.+) ×$",
+      "Author: $1 ×"
+    ],
+    [
+      "^正在查看作者「(.+)」的主题，每次展示 5 个。$",
+      "Showing themes by “$1”, 5 at a time."
+    ],
+    [
+      "^近 7 天下载 (.+)$",
+      "Last 7 days: $1"
+    ],
+    [
+      "^热度 (.+)$",
+      "Heat $1"
+    ],
+    [
+      "^下载 (.+)$",
+      "Downloads $1"
+    ],
     [
       "^(.+)，当前共 ([0-9]+) 个主题 · (.+)$",
       "$1 · $2 {{p:$2|theme|themes}} total · $3"

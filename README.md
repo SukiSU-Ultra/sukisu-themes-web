@@ -5,6 +5,8 @@ Rust 编写的主题镜像、投稿审核和账号系统，提供 Android 管理
 ## 功能
 
 - 主题目录 `catalog.json`；上传前本地校验、服务端校验、图片压缩、SHA-256。
+- 每个主题记录累计下载量与热度；目录、管理后台和管理器均可按热度/下载量排序。
+- 用户中心「发现主题」随机预览其他作者的主题（每次 5 个），支持「随便看看」换一批和按作者筛选。
 - 自适应主题（格式 v3）：识别亮/暗两套外观，自动添加 `adaptive` 标签，目录、管理后台和用户中心预览同步显示对应标签。
 - 投稿审核、作者许可自动发布、管理员人工审核；撤回主题保留 14 天。
 - 统一登录、邮箱验证、密码重置、GitHub OAuth、作者身份绑定/重置。
@@ -22,10 +24,51 @@ Rust 编写的主题镜像、投稿审核和账号系统，提供 Android 管理
 | `/account/` | 用户中心 |
 | `/admin/` | 管理后台 |
 | `/admin/setup` | 首次初始化管理员 |
-| `/health` | 健康检查（Caddy 返回 `ok`） |
+| `/health` | 健康检查 JSON（数据库、存储、目录、下载统计） |
 | `/catalog.json` | 主题目录（需 `X-Sukisu-Theme-Token`） |
 | `/themes/*`、`/previews/*`、`/screenshots/*`、`/avatars/*` | 资源文件（需访问令牌） |
 | `/submit` | 管理器投稿（由服务端校验令牌） |
+
+## 下载统计、热度与健康检查
+
+- 下载量在主题包实际下发时累加；断点续传的后续 `Range` 请求不会重复计数。
+- 热度 = 累计下载量 + 近 7 天下载量 × 10（`HEAT_RECENT_WEIGHT`）。
+- `catalog.json` 的每个主题包含 `downloads` 和 `heat` 字段，管理器可直接显示数字标签并按二者排序。
+- 统计保存在 SQLite 的 `theme_stats`、`theme_download_days` 表；服务启动和每小时刷新目录中的热度。
+- `GET /health`（或 `/healthz`）返回健康状态、运行时间、数据库延迟、存储、目录和待审核统计：
+
+  ```json
+  {
+    "ok": true,
+    "status": "ok",
+    "version": "1.0.0",
+    "time": "2026-11-03T12:00:00Z",
+    "uptimeSeconds": 3600,
+    "checks": {
+      "database": { "ok": true, "latencyMs": 1 },
+      "storage": { "ok": true, "backend": "local", "diskFree": 1 },
+      "catalog": { "ok": true, "themes": 12, "generatedAt": "..." },
+      "pending": { "count": 0, "bytes": 0 }
+    },
+    "stats": { "downloads": 123, "recentDownloads": 45 }
+  }
+  ```
+
+  `status` 为 `ok` / `degraded`（目录为空）/ `down`（数据库或存储不可用，HTTP 503）。
+- 管理后台 `GET /api/status` 提供 `stats.downloads`、`stats.recentDownloads`、`stats.topThemes`；`GET /api/stats` 提供热度排行和近 14 天下载趋势。
+- 管理后台主题列表支持 `GET /api/themes?sort=hot|downloads|updated|name|size&q=...&tag=...&limit=...&offset=...`。
+- 用户中心 `GET /account/api/discover?limit=5&exclude=id1,id2&author=...` 返回随机主题预览；`GET /account/api/themes/{id}/download` 下载并计数。
+
+## 性能与并发
+
+- SQLite 使用 WAL，并默认开 4 个连接组成的小连接池；可用 `THEME_DB_POOL_SIZE` 调整（1-32）。读写仍由 SQLite 串行化，但读请求不再互相阻塞。
+- SQLite 连接使用 `synchronous=NORMAL`、内存临时表和 8 MB 页面缓存，适合以读为主的主题镜像。
+- 下载计数先写入内存缓冲区，每 3 秒批量落库并批量更新 `catalog.json`，不会每个请求都写数据库或重写目录文件。因此 `/health`、`/api/status` 和统计接口的下载数可能延迟约 3 秒。
+- 已发布主题的预览图、截图、作者信息和主题索引缓存在内存中；目录 `catalog.json` 也缓存解析结果，按 mtime/写入版本失效。
+- 登录会话有 5 秒正向缓存，避免每个已登录请求都查询 SQLite；登出和会话撤销会立即清理缓存，禁用账号最多延迟 5 秒生效。
+- SQLite 使用 `synchronous=NORMAL`：断电时可能丢失最后少量已提交事务，但数据库完整性不受影响。下载计数在崩溃时最多丢失约 3 秒缓冲。
+- `catalog.json`、HTML/JS 使用 `ETag` + `304`；主题包、预览图和截图按版本号返回长缓存头，重复访问可直接命中浏览器缓存（令牌保护资源使用 `private`，不进入共享缓存）。
+- 高流量部署建议：Caddy 保持 `encode zstd gzip`；`account.db` 放在本地 SSD，不要放 NFS/SMB；主题资源可以用 NAS/S3，但数据库必须本地；根据 CPU 和内存调整 `THEME_DB_POOL_SIZE`；系统文件描述符上限至少 4096。
 
 ## 依赖
 
@@ -123,7 +166,7 @@ target/aarch64-unknown-linux-musl/release/sukisu-theme-web
 | `/etc/sukisu-theme-web/sources.json` | 导入/可写存储位置（本地/NAS、OpenList/AList Token、配额） |
 | `/var/lib/sukisu-theme-web/account.db` | SQLite 账号数据库 |
 
-可以用 `THEME_STORAGE_ENV`、`THEME_DB_PATH`、`THEME_ADMIN_ENV`、`THEME_ADMIN_CONFIG`、`THEME_NETWORK_ENV`、`THEME_ACCOUNT_ENV`、`THEME_CADDYFILE`、`THEME_STATIC_DIR` 覆盖路径；`THEME_TOKEN_ENV`、`THEME_AUTHORS_FILE`、`THEME_ADMIN_PASSWORD_FILE`、`THEME_SOURCES_FILE` 分别覆盖令牌、作者、密码和导入/可写来源文件。
+可以用 `THEME_STORAGE_ENV`、`THEME_DB_PATH`、`THEME_ADMIN_ENV`、`THEME_ADMIN_CONFIG`、`THEME_NETWORK_ENV`、`THEME_ACCOUNT_ENV`、`THEME_CADDYFILE`、`THEME_STATIC_DIR` 覆盖路径；`THEME_TOKEN_ENV`、`THEME_AUTHORS_FILE`、`THEME_ADMIN_PASSWORD_FILE`、`THEME_SOURCES_FILE` 分别覆盖令牌、作者、密码和导入/可写来源文件。`THEME_DB_POOL_SIZE`（默认 4，范围 1-32）控制 SQLite 连接池大小。
 
 ### `storage.env`
 
@@ -278,7 +321,7 @@ http://:8080 {
 		reverse_proxy 127.0.0.1:8090
 	}
 	handle /health {
-		respond "ok" 200
+		reverse_proxy 127.0.0.1:8090
 	}
 
 	# 公共 UI 资源，必须在 token 校验之前
@@ -328,7 +371,8 @@ systemctl reload caddy
 - `/account/` 反代到 `http://127.0.0.1:8090`（保留前缀）。
 - `/i18n.js`、`/locales/*` 无需令牌即可访问。
 - `/themes/`、`/previews/`、`/screenshots/`、`/avatars/`、`/catalog.json` 校验 `X-Sukisu-Theme-Token`。
-- `/health` 直接返回 `200 ok`。
+- `/health` 反代到 `http://127.0.0.1:8090/health`，返回 JSON 健康状态；数据库或存储不可用时返回 HTTP 503。
+- 旧的 Caddy 配置如果仍使用 `respond "ok" 200`，请改成上面的 `reverse_proxy` 才能拿到详细健康信息。
 
 管理后台的「网络」页会改写 `THEME_CADDYFILE`（默认 `/etc/caddy/Caddyfile`）并重启服务；不使用 Caddy 时可设置 `THEME_DISABLE_SYSTEMCTL=1`，改用其他方式维护代理配置。
 

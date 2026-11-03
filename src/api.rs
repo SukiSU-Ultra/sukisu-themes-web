@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 use axum::body::Body;
@@ -13,6 +13,7 @@ use axum::{Json, Router};
 use bytes::Bytes;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use tokio::io::AsyncReadExt;
 use tokio_util::io::ReaderStream;
@@ -42,6 +43,12 @@ const EMBEDDED_LOGO_SVG: &[u8] = include_bytes!("../static/logo.svg");
 const EMBEDDED_I18N_JS: &str = include_str!("../static/i18n.js");
 const EMBEDDED_LOCALE_EN: &str = include_str!("../static/locales/en.json");
 
+struct MetaIndexCache {
+    revision: u64,
+    built_at: Instant,
+    index: Option<Arc<catalog::MetaIndex>>,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub paths: Arc<Paths>,
@@ -57,6 +64,14 @@ pub struct AppState {
     pub sources: Arc<crate::sources::SourcesStore>,
     pub login_failures: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
     withdrawn_assets: Arc<RwLock<HashSet<String>>>,
+    /// Serializes in-place catalog counter writes during download bursts.
+    stats_write_lock: Arc<tokio::sync::Mutex<()>>,
+    /// In-memory download counts waiting for the next batch flush.
+    download_buffer: Arc<Mutex<HashMap<String, u64>>>,
+    /// Snapshot of per-theme counters, refreshed after each batch flush.
+    theme_stats: Arc<RwLock<Arc<HashMap<String, crate::db::ThemeStats>>>>,
+    meta_index: Arc<tokio::sync::Mutex<MetaIndexCache>>,
+    pub started: Instant,
 }
 
 impl AppState {
@@ -74,6 +89,7 @@ impl AppState {
         let limit_bytes = settings.limit_bytes;
         let sessions = auth::SessionStore::new(db.clone());
         let withdrawn_assets = Arc::new(RwLock::new(catalog::withdrawn_asset_keys(&paths)));
+        let theme_stats = Arc::new(crate::db::load_theme_stats(&paths.db));
         Ok(Self {
             paths,
             settings: Arc::new(settings),
@@ -88,7 +104,102 @@ impl AppState {
             sources,
             login_failures: Arc::new(Mutex::new(HashMap::new())),
             withdrawn_assets,
+            stats_write_lock: Arc::new(tokio::sync::Mutex::new(())),
+            download_buffer: Arc::new(Mutex::new(HashMap::new())),
+            theme_stats: Arc::new(RwLock::new(theme_stats)),
+            meta_index: Arc::new(tokio::sync::Mutex::new(MetaIndexCache {
+                revision: 0,
+                built_at: Instant::now(),
+                index: None,
+            })),
+            started: Instant::now(),
         })
+    }
+
+    /// Count a package download in memory. The background flusher batches
+    /// these into SQLite and refreshes catalog.json a few seconds later.
+    pub fn record_theme_download(&self, theme_id: &str) {
+        if let Ok(mut buffer) = self.download_buffer.lock() {
+            *buffer.entry(theme_id.to_string()).or_insert(0) += 1;
+        }
+    }
+
+    /// Persist buffered download counts and update the public catalog.
+    pub async fn flush_downloads(&self) {
+        let counts = {
+            let Ok(mut buffer) = self.download_buffer.lock() else {
+                return;
+            };
+            if buffer.is_empty() {
+                return;
+            }
+            std::mem::take(&mut *buffer)
+        };
+        match crate::db::record_theme_downloads(&self.db, &counts).await {
+            Ok(stats) => {
+                if let Ok(mut guard) = self.theme_stats.write() {
+                    let mut updated = (**guard).clone();
+                    for (theme_id, value) in &stats {
+                        updated.insert(theme_id.clone(), *value);
+                    }
+                    *guard = Arc::new(updated);
+                }
+                let _guard = self.stats_write_lock.lock().await;
+                if let Err(error) = catalog::update_catalog_stats_batch(&self.paths, &stats) {
+                    tracing::warn!("catalog stats update failed: {error:#}");
+                }
+            }
+            Err(error) => {
+                // Put the counts back so a temporary database failure does not
+                // silently drop download metrics.
+                if let Ok(mut buffer) = self.download_buffer.lock() {
+                    for (theme_id, count) in counts {
+                        *buffer.entry(theme_id).or_insert(0) += count;
+                    }
+                }
+                tracing::warn!("download stats flush failed: {error:#}");
+            }
+        }
+    }
+
+    pub fn theme_stats(&self) -> Arc<HashMap<String, crate::db::ThemeStats>> {
+        self.theme_stats
+            .read()
+            .map(|guard| guard.clone())
+            .unwrap_or_else(|_| Arc::new(HashMap::new()))
+    }
+
+    pub fn reload_theme_stats(&self) {
+        let stats = crate::db::load_theme_stats(&self.paths.db);
+        if let Ok(mut guard) = self.theme_stats.write() {
+            *guard = Arc::new(stats);
+        }
+    }
+
+    /// Cached `meta/*.json` index. Rebuilt when metadata changes or after 30s.
+    pub async fn meta_index(&self) -> Arc<catalog::MetaIndex> {
+        const META_INDEX_TTL: Duration = Duration::from_secs(30);
+        let mut cache = self.meta_index.lock().await;
+        let revision = catalog::meta_revision();
+        if let Some(index) = &cache.index {
+            if cache.revision == revision && cache.built_at.elapsed() < META_INDEX_TTL {
+                return index.clone();
+            }
+        }
+        let paths = self.paths.clone();
+        let index =
+            match tokio::task::spawn_blocking(move || catalog::build_meta_index(&paths)).await {
+                Ok(index) => Arc::new(index),
+                Err(error) => {
+                    tracing::warn!("meta index build failed: {error:#}");
+                    // Do not cache a failed build; retry on the next request.
+                    return Arc::new(catalog::MetaIndex::default());
+                }
+            };
+        cache.index = Some(index.clone());
+        cache.revision = revision;
+        cache.built_at = Instant::now();
+        index
     }
 
     pub fn refresh_withdrawn_assets(&self) {
@@ -189,6 +300,7 @@ pub fn router(state: AppState) -> Router {
         .route("/session", get(session_info))
         .route("/setup", post(setup))
         .route("/status", get(status))
+        .route("/stats", get(stats))
         .route("/themes", get(themes))
         .route("/pending", get(pending))
         .route("/authors", get(authors))
@@ -226,6 +338,8 @@ pub fn router(state: AppState) -> Router {
         .nest("/admin/api", api)
         .nest("/account/api", account_api)
         .route("/submit", post(submit))
+        .route("/health", get(health))
+        .route("/healthz", get(health))
         .route("/themes/{*path}", get(asset))
         .route("/previews/{*path}", get(asset))
         .route("/screenshots/{*path}", get(asset))
@@ -601,6 +715,7 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
         for (name, method, path) in [
             ("管理状态", "GET", "/status"),
             ("主题列表", "GET", "/themes"),
+            ("下载统计", "GET", "/stats"),
             ("待审核列表", "GET", "/pending"),
             ("自动审批作者", "GET", "/authors"),
             ("撤销作者许可", "POST", "/author/revoke"),
@@ -655,6 +770,32 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
     let caddy = system::service_state("caddy").await;
     let sync_timer = system::service_state("sukisu-themes-sync.timer").await;
     let admin_service = system::service_state("sukisu-theme-web.service").await;
+    let (downloads_total, recent_downloads) = crate::db::download_totals(&state.db)
+        .await
+        .unwrap_or((0, 0));
+    let theme_stats = state.theme_stats();
+    let mut ranked = catalog::admin_themes(&state.paths, theme_stats.as_ref()).await;
+    ranked.sort_by(|left, right| {
+        theme_json_number(right, "heat")
+            .cmp(&theme_json_number(left, "heat"))
+            .then_with(|| {
+                theme_json_number(right, "downloads").cmp(&theme_json_number(left, "downloads"))
+            })
+    });
+    let top_themes: Vec<Value> = ranked
+        .into_iter()
+        .take(5)
+        .map(|item| {
+            json!({
+                "id": theme_json_string(&item, "id"),
+                "name": theme_json_string(&item, "name"),
+                "author": theme_json_string(&item, "author"),
+                "previewUrl": theme_json_string(&item, "previewUrl"),
+                "downloads": theme_json_number(&item, "downloads"),
+                "heat": theme_json_number(&item, "heat"),
+            })
+        })
+        .collect();
     Json(json!({
         "tokenSet": !token.is_empty(),
         "tokenHeader": TOKEN_HEADER,
@@ -674,6 +815,11 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
         "storage": storage_value,
         "storageBackend": state.settings.backend.as_str(),
         "stateDir": state.paths.root.to_string_lossy(),
+        "stats": {
+            "downloads": downloads_total,
+            "recentDownloads": recent_downloads,
+            "topThemes": top_themes,
+        },
         "caddy": caddy,
         "syncTimer": sync_timer,
         "adminService": admin_service,
@@ -686,10 +832,264 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
     }))
 }
 
-async fn themes(State(state): State<AppState>) -> Json<Value> {
-    let themes = catalog::admin_themes(&state.paths).await;
-    let generated_at = catalog::read_catalog(&state.paths).and_then(|catalog| catalog.generated_at);
-    Json(json!({"ok": true, "themes": themes, "generatedAt": generated_at}))
+#[derive(Debug, Deserialize, Default)]
+struct ThemesQuery {
+    sort: Option<String>,
+    order: Option<String>,
+    q: Option<String>,
+    tag: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+}
+
+fn theme_json_string<'a>(item: &'a Value, key: &str) -> &'a str {
+    item.get(key).and_then(Value::as_str).unwrap_or("")
+}
+
+fn theme_json_number(item: &Value, key: &str) -> u64 {
+    item.get(key).and_then(Value::as_u64).unwrap_or(0)
+}
+
+fn theme_matches_query(item: &Value, query: &str, tag: Option<&str>) -> bool {
+    if let Some(tag) = tag {
+        let tag = tag.trim().to_lowercase();
+        let has_tag = item
+            .get("tags")
+            .and_then(Value::as_array)
+            .map(|tags| {
+                tags.iter()
+                    .filter_map(Value::as_str)
+                    .any(|value| value.trim().to_lowercase() == tag)
+            })
+            .unwrap_or(false);
+        if !has_tag {
+            return false;
+        }
+    }
+    let needle = query.trim().to_lowercase();
+    if needle.is_empty() {
+        return true;
+    }
+    let mut haystack = format!(
+        "{} {} {} {}",
+        theme_json_string(item, "id"),
+        theme_json_string(item, "name"),
+        theme_json_string(item, "author"),
+        theme_json_string(item, "description"),
+    );
+    if let Some(tags) = item.get("tags").and_then(Value::as_array) {
+        for tag in tags.iter().filter_map(Value::as_str) {
+            haystack.push(' ');
+            haystack.push_str(tag);
+        }
+    }
+    let haystack = haystack.to_lowercase();
+    needle
+        .split_whitespace()
+        .all(|part| haystack.contains(part))
+}
+
+async fn themes(State(state): State<AppState>, Query(query): Query<ThemesQuery>) -> Json<Value> {
+    let theme_stats = state.theme_stats();
+    let mut themes = catalog::admin_themes(&state.paths, theme_stats.as_ref()).await;
+    let generated_at =
+        catalog::read_catalog(&state.paths).and_then(|catalog| catalog.generated_at.clone());
+    themes.retain(|item| {
+        theme_matches_query(item, query.q.as_deref().unwrap_or(""), query.tag.as_deref())
+    });
+    let total = themes.len();
+    let sort = match query
+        .sort
+        .as_deref()
+        .unwrap_or("name")
+        .to_lowercase()
+        .as_str()
+    {
+        "hot" | "heat" => "hot",
+        "downloads" | "download" => "downloads",
+        "updated" | "newest" => "updated",
+        "size" => "size",
+        "id" => "id",
+        "author" => "author",
+        _ => "name",
+    }
+    .to_string();
+    let default_desc = matches!(sort.as_str(), "hot" | "downloads" | "updated" | "size");
+    let descending = query
+        .order
+        .as_deref()
+        .map(|value| value.eq_ignore_ascii_case("desc"))
+        .unwrap_or(default_desc);
+    themes.sort_by(|left, right| {
+        let ordering = match sort.as_str() {
+            "hot" | "heat" => theme_json_number(left, "heat")
+                .cmp(&theme_json_number(right, "heat"))
+                .then_with(|| {
+                    theme_json_number(left, "downloads").cmp(&theme_json_number(right, "downloads"))
+                }),
+            "downloads" | "download" => theme_json_number(left, "downloads")
+                .cmp(&theme_json_number(right, "downloads"))
+                .then_with(|| {
+                    theme_json_number(left, "heat").cmp(&theme_json_number(right, "heat"))
+                }),
+            "updated" | "newest" => {
+                theme_json_string(left, "updatedAt").cmp(theme_json_string(right, "updatedAt"))
+            }
+            "size" => theme_json_number(left, "size").cmp(&theme_json_number(right, "size")),
+            "id" => theme_json_string(left, "id").cmp(theme_json_string(right, "id")),
+            "author" => theme_json_string(left, "author")
+                .to_lowercase()
+                .cmp(&theme_json_string(right, "author").to_lowercase()),
+            _ => theme_json_string(left, "name")
+                .to_lowercase()
+                .cmp(&theme_json_string(right, "name").to_lowercase()),
+        };
+        let ordering = if descending {
+            ordering.reverse()
+        } else {
+            ordering
+        };
+        ordering.then_with(|| theme_json_string(left, "id").cmp(theme_json_string(right, "id")))
+    });
+    let offset = query.offset.unwrap_or(0).min(total);
+    let end = query
+        .limit
+        .map(|value| offset.saturating_add(value.clamp(1, 2000)).min(total))
+        .unwrap_or(total);
+    let limit = end - offset;
+    let themes: Vec<Value> = themes.into_iter().skip(offset).take(limit).collect();
+    Json(json!({
+        "ok": true,
+        "themes": themes,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "sort": sort,
+        "generatedAt": generated_at,
+    }))
+}
+
+async fn stats(State(state): State<AppState>) -> Json<Value> {
+    let theme_stats = state.theme_stats();
+    let mut themes = catalog::admin_themes(&state.paths, theme_stats.as_ref()).await;
+    themes.sort_by(|left, right| {
+        theme_json_number(right, "heat")
+            .cmp(&theme_json_number(left, "heat"))
+            .then_with(|| {
+                theme_json_number(right, "downloads").cmp(&theme_json_number(left, "downloads"))
+            })
+    });
+    let top: Vec<Value> = themes
+        .into_iter()
+        .take(20)
+        .map(|item| {
+            json!({
+                "id": theme_json_string(&item, "id"),
+                "name": theme_json_string(&item, "name"),
+                "author": theme_json_string(&item, "author"),
+                "previewUrl": theme_json_string(&item, "previewUrl"),
+                "downloads": theme_json_number(&item, "downloads"),
+                "heat": theme_json_number(&item, "heat"),
+            })
+        })
+        .collect();
+    let (downloads, recent) = crate::db::download_totals(&state.db)
+        .await
+        .unwrap_or((0, 0));
+    let days = crate::db::download_daily(&state.db, 14)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(day, count)| json!({"day": day, "count": count}))
+        .collect::<Vec<_>>();
+    Json(json!({
+        "ok": true,
+        "heatRule": format!(
+            "downloads + {} x downloads in the last {} days",
+            crate::db::HEAT_RECENT_WEIGHT,
+            crate::db::HEAT_WINDOW_DAYS
+        ),
+        "totals": {
+            "themes": catalog::catalog_themes_count(&state.paths),
+            "downloads": downloads,
+            "recentDownloads": recent,
+        },
+        "topThemes": top,
+        "days": days,
+    }))
+}
+
+/// Public health/monitoring endpoint.
+///
+/// Returns `503` only when the database or state directory is unusable.
+/// A missing catalog is reported as `degraded` because the API can still
+/// rebuild it.
+async fn health(State(state): State<AppState>) -> Response {
+    let db_start = Instant::now();
+    let db_ok = state
+        .db
+        .call(|conn| Ok(conn.query_row("SELECT 1", [], |row| row.get::<_, i64>(0))?))
+        .await
+        .is_ok();
+    let db_latency_ms = db_start.elapsed().as_millis();
+    let (storage_ok, disk_free) = match fs4::available_space(&state.paths.root) {
+        Ok(free) => (true, free),
+        Err(_) => (false, 0),
+    };
+    let catalog = catalog::read_catalog(&state.paths);
+    let catalog_themes = catalog
+        .as_ref()
+        .map(|catalog| catalog.themes.len())
+        .unwrap_or(0);
+    let catalog_generated_at = catalog.and_then(|catalog| catalog.generated_at.clone());
+    let (pending_count, pending_bytes) = catalog::pending_state(&state.paths);
+    let (downloads, recent_downloads) = crate::db::download_totals(&state.db)
+        .await
+        .unwrap_or((0, 0));
+    let status = if !db_ok || !storage_ok {
+        "down"
+    } else if catalog_themes == 0 {
+        "degraded"
+    } else {
+        "ok"
+    };
+    let code = if status == "down" {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        StatusCode::OK
+    };
+    let body = json!({
+        "ok": status != "down",
+        "status": status,
+        "version": env!("CARGO_PKG_VERSION"),
+        "time": crate::util::now_iso(),
+        "uptimeSeconds": state.started.elapsed().as_secs(),
+        "checks": {
+            "database": {
+                "ok": db_ok,
+                "latencyMs": db_latency_ms,
+            },
+            "storage": {
+                "ok": storage_ok,
+                "backend": state.settings.backend.as_str(),
+                "diskFree": disk_free,
+            },
+            "catalog": {
+                "ok": catalog_themes > 0,
+                "themes": catalog_themes,
+                "generatedAt": catalog_generated_at,
+            },
+            "pending": {
+                "count": pending_count,
+                "bytes": pending_bytes,
+            },
+        },
+        "stats": {
+            "downloads": downloads,
+            "recentDownloads": recent_downloads,
+        },
+    });
+    (code, Json(body)).into_response()
 }
 
 async fn pending(State(state): State<AppState>) -> Json<Value> {
@@ -743,28 +1143,32 @@ async fn preview(
     if !image_extension_allowed(&ext) {
         return Err(ApiError::not_found("not found"));
     }
-    let body = if relative.starts_with("pending/") {
+    if relative.starts_with("pending/") {
         let Some(path) = crate::util::safe_join(&state.paths.root, &relative) else {
             return Err(ApiError::not_found("not found"));
         };
-        tokio::fs::read(&path)
+        let body = tokio::fs::read(&path)
             .await
-            .map_err(|_| ApiError::not_found("not found"))?
+            .map_err(|_| ApiError::not_found("not found"))?;
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", crate::util::content_type_for(&relative))
+            .header("Content-Length", body.len().to_string())
+            .header("Cache-Control", "private, no-store")
+            .body(Body::from(body))
+            .map_err(ApiError::internal);
+    }
+    let object = state
+        .store
+        .serve(&relative, None)
+        .await
+        .map_err(|_| ApiError::not_found("not found"))?;
+    let cache_control = if relative.starts_with("avatars/") {
+        "private, max-age=300"
     } else {
-        state
-            .store
-            .read(&relative)
-            .await
-            .map_err(|_| ApiError::not_found("not found"))?
+        "private, max-age=3600"
     };
-    Response::builder()
-        .status(StatusCode::OK)
-        .header("Content-Type", crate::util::content_type_for(&relative))
-        .header("Content-Length", body.len().to_string())
-        .header("Cache-Control", "no-store")
-        .header("X-Content-Type-Options", "nosniff")
-        .body(Body::from(body))
-        .map_err(|error| ApiError::internal(error))
+    serve_object_response(object, cache_control)
 }
 
 async fn asset(
@@ -791,9 +1195,49 @@ async fn asset(
         }
         Err(ServeError::Other(error)) => return Err(ApiError::internal(error)),
     };
-    let body = match object.body {
+    // Count package downloads once per transfer: resumed ranges must not
+    // inflate the counter. The counter is buffered in memory and flushed in
+    // batches, so this stays off the request's I/O path.
+    if let Some(theme_id) = catalog::theme_id_from_package_path(&path) {
+        let counts = range
+            .map(|value| value.trim_start().starts_with("bytes=0-"))
+            .unwrap_or(true);
+        if counts {
+            state.record_theme_download(&theme_id);
+        }
+    }
+    // Packages and images are versioned (the key contains -v<version>), so
+    // clients and Caddy can cache them safely. Author avatars stay short-lived
+    // because they can be replaced in place.
+    // Keep token-protected assets out of shared caches; browsers may still
+    // cache them locally. Versioned keys make the long lifetimes safe.
+    let cache_control = if path.starts_with("themes/") {
+        "private, max-age=31536000, immutable"
+    } else if path.starts_with("previews/") || path.starts_with("screenshots/") {
+        "private, max-age=604800, immutable"
+    } else if path.starts_with("avatars/") {
+        "private, max-age=300"
+    } else {
+        "private, max-age=60"
+    };
+    serve_object_response(object, cache_control)
+}
+
+/// Streams a stored object without buffering the whole file in memory.
+pub(crate) fn serve_object_response(
+    object: crate::storage::ServeObject,
+    cache_control: &str,
+) -> ApiResult<Response> {
+    let crate::storage::ServeObject {
+        body,
+        content_type,
+        content_length,
+        content_range,
+        status,
+    } = object;
+    let body = match body {
         ServeBody::Local(file) => {
-            let stream = ReaderStream::new(file.take(object.content_length));
+            let stream = ReaderStream::new(file.take(content_length));
             Body::from_stream(stream)
         }
         ServeBody::S3(stream) => {
@@ -803,11 +1247,12 @@ async fn asset(
         ServeBody::Remote(response) => Body::from_stream(response.bytes_stream()),
     };
     let mut builder = Response::builder()
-        .status(StatusCode::from_u16(object.status).unwrap_or(StatusCode::OK))
-        .header("Content-Type", object.content_type)
-        .header("Content-Length", object.content_length.to_string())
-        .header("Accept-Ranges", "bytes");
-    if let Some(content_range) = object.content_range {
+        .status(StatusCode::from_u16(status).unwrap_or(StatusCode::OK))
+        .header("Content-Type", content_type)
+        .header("Content-Length", content_length.to_string())
+        .header("Accept-Ranges", "bytes")
+        .header("Cache-Control", cache_control);
+    if let Some(content_range) = content_range {
         builder = builder.header("Content-Range", content_range);
     }
     builder
@@ -838,7 +1283,38 @@ fn embedded_static(relative: &str) -> Option<(&'static [u8], &'static str)> {
     }
 }
 
-async fn static_file(State(state): State<AppState>, uri: Uri) -> ApiResult<Response> {
+fn content_etag(bytes: &[u8]) -> String {
+    format!("\"{}\"", hex::encode(Sha256::digest(bytes)))
+}
+
+fn embedded_etags() -> &'static HashMap<&'static str, String> {
+    static ETAGS: OnceLock<HashMap<&'static str, String>> = OnceLock::new();
+    ETAGS.get_or_init(|| {
+        const FILES: &[&str] = &[
+            "index.html",
+            "login.html",
+            "setup.html",
+            "account.html",
+            "account-auth.html",
+            "logo.svg",
+            "i18n.js",
+            "locales/en.json",
+        ];
+        let mut map = HashMap::new();
+        for file in FILES {
+            if let Some((bytes, _)) = embedded_static(file) {
+                map.insert(*file, content_etag(bytes));
+            }
+        }
+        map
+    })
+}
+
+async fn static_file(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    uri: Uri,
+) -> ApiResult<Response> {
     let path = uri.path();
     tracing::debug!("static request: {path}");
     if path == "/admin/login" || path == "/admin/login.html" {
@@ -888,29 +1364,67 @@ async fn static_file(State(state): State<AppState>, uri: Uri) -> ApiResult<Respo
         let target = state.paths.static_dir.join(&relative);
         if target.starts_with(&state.paths.static_dir) && target.is_file() {
             (
-                tokio::fs::read(&target)
-                    .await
-                    .map_err(|_| ApiError::not_found("not found"))?,
+                Bytes::from(
+                    tokio::fs::read(&target)
+                        .await
+                        .map_err(|_| ApiError::not_found("not found"))?,
+                ),
                 crate::util::content_type_for(&relative),
             )
         } else {
             match embedded_static(&relative) {
-                Some((bytes, content_type)) => (bytes.to_vec(), content_type.to_string()),
+                Some((bytes, content_type)) => {
+                    (Bytes::from_static(bytes), content_type.to_string())
+                }
                 None => return Err(ApiError::not_found("not found")),
             }
         }
     } else {
         match embedded_static(&relative) {
-            Some((bytes, content_type)) => (bytes.to_vec(), content_type.to_string()),
+            Some((bytes, content_type)) => (Bytes::from_static(bytes), content_type.to_string()),
             None => return Err(ApiError::not_found("not found")),
         }
     };
 
+    let etag = if disk_override {
+        content_etag(&body)
+    } else {
+        embedded_etags()
+            .get(relative.as_str())
+            .cloned()
+            .unwrap_or_else(|| content_etag(&body))
+    };
+    let cache_control = if relative.ends_with(".html") {
+        "public, max-age=0, must-revalidate"
+    } else {
+        "public, max-age=300, must-revalidate"
+    };
+    if let Some(value) = headers
+        .get("if-none-match")
+        .and_then(|value| value.to_str().ok())
+    {
+        let matched = value.split(',').any(|tag| {
+            let tag = tag.trim();
+            tag == "*" || tag.trim_start_matches("W/") == etag
+        });
+        if matched {
+            return Response::builder()
+                .status(StatusCode::NOT_MODIFIED)
+                .header("ETag", etag)
+                .header("Cache-Control", cache_control)
+                .header("X-Content-Type-Options", "nosniff")
+                .header("X-Frame-Options", "DENY")
+                .header("Referrer-Policy", "no-referrer")
+                .body(Body::empty())
+                .map_err(ApiError::internal);
+        }
+    }
     Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", content_type)
         .header("Content-Length", body.len().to_string())
-        .header("Cache-Control", "no-store")
+        .header("ETag", etag)
+        .header("Cache-Control", cache_control)
         .header("X-Content-Type-Options", "nosniff")
         .header("X-Frame-Options", "DENY")
         .header("Referrer-Policy", "no-referrer")

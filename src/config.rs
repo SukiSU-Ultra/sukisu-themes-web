@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
@@ -259,6 +260,7 @@ fn set_permissions(path: &Path, mode: u32) -> io::Result<()> {
 }
 
 pub fn write_atomic(path: &Path, data: &[u8], mode: u32) -> io::Result<()> {
+    static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -266,10 +268,20 @@ pub fn write_atomic(path: &Path, data: &[u8], mode: u32) -> io::Result<()> {
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("file");
-    let temp = path.with_file_name(format!(".{}.{}.tmp", file_name, std::process::id()));
+    // Distinct temp names are required: catalog stats flushes, metadata writes
+    // and manual rebuilds can overlap in the same process.
+    let temp = path.with_file_name(format!(
+        ".{}.{}.{}.tmp",
+        file_name,
+        std::process::id(),
+        TEMP_COUNTER.fetch_add(1, Ordering::Relaxed),
+    ));
     fs::write(&temp, data)?;
     set_permissions(&temp, mode)?;
-    fs::rename(&temp, path)?;
+    if let Err(error) = fs::rename(&temp, path) {
+        let _ = fs::remove_file(&temp);
+        return Err(error);
+    }
     Ok(())
 }
 

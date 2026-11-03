@@ -71,6 +71,10 @@ pub struct CatalogEntry {
     pub updated_at: String,
     #[serde(default)]
     pub changelog: String,
+    #[serde(default)]
+    pub downloads: u64,
+    #[serde(default)]
+    pub heat: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]

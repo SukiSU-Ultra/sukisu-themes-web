@@ -1,9 +1,36 @@
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use anyhow::Context;
-use rusqlite::Connection;
+use chrono::{Duration as ChronoDuration, Utc};
+use rusqlite::{params, Connection, OpenFlags};
 use tokio_rusqlite::Connection as AsyncConnection;
+
+/// Per-connection SQLite tuning. WAL allows concurrent readers while a writer
+/// holds the write lock; NORMAL avoids an fsync per transaction.
+const CONNECTION_PRAGMAS: &str = "
+PRAGMA journal_mode=WAL;
+PRAGMA foreign_keys=ON;
+PRAGMA busy_timeout=5000;
+PRAGMA synchronous=NORMAL;
+PRAGMA temp_store=MEMORY;
+PRAGMA cache_size=-8000;
+";
+
+fn db_pool_size() -> usize {
+    std::env::var("THEME_DB_POOL_SIZE")
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .unwrap_or(4)
+        .clamp(1, 32)
+}
+
+/// A recent download is worth more than an old one when ranking by heat.
+pub const HEAT_RECENT_WEIGHT: i64 = 10;
+/// Heat counts package downloads from this many days, including today.
+pub const HEAT_WINDOW_DAYS: i64 = 7;
 
 const SCHEMA_VERSION: i64 = 1;
 
@@ -148,11 +175,26 @@ CREATE TABLE IF NOT EXISTS app_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS theme_stats (
+    theme_id TEXT PRIMARY KEY,
+    downloads INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS theme_download_days (
+    theme_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (theme_id, day)
+);
+CREATE INDEX IF NOT EXISTS theme_download_days_day_idx ON theme_download_days(day);
 "#;
 
 #[derive(Clone)]
 pub struct Database {
-    conn: Arc<AsyncConnection>,
+    conns: Arc<Vec<AsyncConnection>>,
+    next: Arc<AtomicUsize>,
 }
 
 impl Database {
@@ -166,11 +208,25 @@ impl Database {
                 let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
             }
         }
-        let conn = AsyncConnection::open(path)
+        // Each connection owns its worker thread in tokio-rusqlite, so a small
+        // pool lets reads proceed while another request writes.
+        let pool_size = db_pool_size();
+        let mut conns = Vec::with_capacity(pool_size);
+        for _ in 0..pool_size {
+            let conn = AsyncConnection::open(path)
+                .await
+                .with_context(|| format!("无法打开数据库 {}", path.display()))?;
+            conn.call(|conn| {
+                conn.execute_batch(CONNECTION_PRAGMAS)?;
+                Ok(())
+            })
             .await
-            .with_context(|| format!("无法打开数据库 {}", path.display()))?;
+            .with_context(|| format!("无法配置数据库 {}", path.display()))?;
+            conns.push(conn);
+        }
         let db = Self {
-            conn: Arc::new(conn),
+            conns: Arc::new(conns),
+            next: Arc::new(AtomicUsize::new(0)),
         };
         db.initialize().await?;
         #[cfg(unix)]
@@ -183,14 +239,28 @@ impl Database {
 
     async fn initialize(&self) -> anyhow::Result<()> {
         self.call(|conn| {
-            conn.execute_batch(
-                "PRAGMA journal_mode=WAL;\nPRAGMA foreign_keys=ON;\nPRAGMA busy_timeout=5000;",
-            )?;
+            conn.execute_batch(CONNECTION_PRAGMAS)?;
             let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
             if version < 1 {
                 conn.execute_batch(SCHEMA_V1)?;
                 conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
             }
+            // Additive stats tables for databases created before download tracking.
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS theme_stats (
+                    theme_id TEXT PRIMARY KEY,
+                    downloads INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS theme_download_days (
+                    theme_id TEXT NOT NULL,
+                    day TEXT NOT NULL,
+                    count INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (theme_id, day)
+                );
+                CREATE INDEX IF NOT EXISTS theme_download_days_day_idx
+                    ON theme_download_days(day);",
+            )?;
             let has_auto_publish: i64 = conn.query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('authors') WHERE name = 'auto_publish'",
                 [],
@@ -246,11 +316,206 @@ impl Database {
         F: FnOnce(&mut Connection) -> tokio_rusqlite::Result<R> + Send + 'static,
         R: Send + 'static,
     {
-        self.conn
+        let index = self.next.fetch_add(1, Ordering::Relaxed) % self.conns.len();
+        self.conns[index]
             .call(function)
             .await
             .map_err(|error| anyhow::anyhow!("database error: {error}"))
     }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ThemeStats {
+    pub downloads: u64,
+    pub heat: u64,
+}
+
+fn today() -> String {
+    Utc::now().date_naive().format("%Y-%m-%d").to_string()
+}
+
+fn heat_cutoff() -> String {
+    (Utc::now().date_naive() - ChronoDuration::days(HEAT_WINDOW_DAYS - 1))
+        .format("%Y-%m-%d")
+        .to_string()
+}
+
+fn heat_from(downloads: i64, recent: i64) -> u64 {
+    let heat = downloads.max(0) + recent.max(0).saturating_mul(HEAT_RECENT_WEIGHT);
+    heat.max(0) as u64
+}
+
+/// Read per-theme download totals and heat without touching the async pool.
+///
+/// Catalog rebuilds run from synchronous file code, so they open a short
+/// read-only connection instead of plumbing the async database everywhere.
+pub fn load_theme_stats(path: &Path) -> HashMap<String, ThemeStats> {
+    let mut stats = HashMap::new();
+    if !path.exists() {
+        return stats;
+    }
+    let Ok(conn) = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY) else {
+        return stats;
+    };
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+    let cutoff = heat_cutoff();
+    let Ok(mut statement) = conn.prepare(
+        "SELECT s.theme_id, s.downloads,
+                s.downloads + ?2 * COALESCE((
+                    SELECT SUM(d.count) FROM theme_download_days d
+                    WHERE d.theme_id = s.theme_id AND d.day >= ?1
+                ), 0) AS heat
+         FROM theme_stats s",
+    ) else {
+        return stats;
+    };
+    let Ok(rows) = statement.query_map(params![cutoff, HEAT_RECENT_WEIGHT], |row| {
+        let theme_id: String = row.get(0)?;
+        let downloads: i64 = row.get(1)?;
+        let heat: i64 = row.get(2)?;
+        Ok((
+            theme_id,
+            ThemeStats {
+                downloads: downloads.max(0) as u64,
+                heat: heat.max(0) as u64,
+            },
+        ))
+    }) else {
+        return stats;
+    };
+    for row in rows.flatten() {
+        stats.insert(row.0, row.1);
+    }
+    stats
+}
+
+/// Record a batch of package downloads in one SQLite transaction.
+///
+/// The request path only increments an in-memory buffer; this function is
+/// called by the background flusher so high download concurrency does not
+/// translate into one write transaction per package request.
+pub async fn record_theme_downloads(
+    db: &Database,
+    counts: &HashMap<String, u64>,
+) -> anyhow::Result<HashMap<String, ThemeStats>> {
+    if counts.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let counts: Vec<(String, i64)> = counts
+        .iter()
+        .map(|(id, count)| (id.clone(), (*count).min(i64::MAX as u64) as i64))
+        .collect();
+    let day = today();
+    let cutoff = heat_cutoff();
+    let old_day = (Utc::now().date_naive() - ChronoDuration::days(90))
+        .format("%Y-%m-%d")
+        .to_string();
+    let now = crate::util::now_iso();
+    db.call(move |conn| {
+        let transaction = conn.transaction()?;
+        for (theme_id, count) in &counts {
+            transaction.execute(
+                "INSERT INTO theme_stats(theme_id, downloads, updated_at) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(theme_id) DO UPDATE SET
+                     downloads = downloads + ?2,
+                     updated_at = excluded.updated_at",
+                params![theme_id, count, now],
+            )?;
+            transaction.execute(
+                "INSERT INTO theme_download_days(theme_id, day, count) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(theme_id, day) DO UPDATE SET count = count + ?3",
+                params![theme_id, day, count],
+            )?;
+        }
+        // Keep the daily table bounded; heat only reads the last week.
+        transaction.execute(
+            "DELETE FROM theme_download_days WHERE day < ?1",
+            params![old_day],
+        )?;
+        let mut stats = HashMap::with_capacity(counts.len());
+        for (theme_id, _) in &counts {
+            let downloads: i64 = transaction.query_row(
+                "SELECT downloads FROM theme_stats WHERE theme_id = ?1",
+                params![theme_id],
+                |row| row.get(0),
+            )?;
+            let recent: i64 = transaction.query_row(
+                "SELECT COALESCE(SUM(count), 0) FROM theme_download_days
+                 WHERE theme_id = ?1 AND day >= ?2",
+                params![theme_id, cutoff],
+                |row| row.get(0),
+            )?;
+            stats.insert(
+                theme_id.clone(),
+                ThemeStats {
+                    downloads: downloads.max(0) as u64,
+                    heat: heat_from(downloads, recent),
+                },
+            );
+        }
+        transaction.commit()?;
+        Ok(stats)
+    })
+    .await
+    .map_err(|error| anyhow::anyhow!("database error: {error}"))
+}
+
+/// Record one package download and return the theme's updated counters.
+pub async fn record_theme_download(db: &Database, theme_id: &str) -> anyhow::Result<ThemeStats> {
+    let mut counts = HashMap::new();
+    counts.insert(theme_id.to_string(), 1);
+    let mut stats = record_theme_downloads(db, &counts).await?;
+    stats
+        .remove(theme_id)
+        .ok_or_else(|| anyhow::anyhow!("theme stats missing after update"))
+}
+
+/// Return `(all-time downloads, downloads in the recent window)`.
+pub async fn download_totals(db: &Database) -> anyhow::Result<(u64, u64)> {
+    let cutoff = heat_cutoff();
+    db.call(move |conn| {
+        let downloads: i64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(downloads), 0) FROM theme_stats",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        let recent: i64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(count), 0) FROM theme_download_days WHERE day >= ?1",
+                params![cutoff],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        Ok((downloads.max(0) as u64, recent.max(0) as u64))
+    })
+    .await
+    .map_err(|error| anyhow::anyhow!("database error: {error}"))
+}
+
+/// Daily download counts for the monitoring dashboard, oldest first.
+pub async fn download_daily(db: &Database, days: i64) -> anyhow::Result<Vec<(String, u64)>> {
+    let days = days.clamp(1, 90);
+    let start = (Utc::now().date_naive() - ChronoDuration::days(days - 1))
+        .format("%Y-%m-%d")
+        .to_string();
+    db.call(move |conn| {
+        let mut statement = conn.prepare(
+            "SELECT day, SUM(count) FROM theme_download_days
+             WHERE day >= ?1 GROUP BY day ORDER BY day ASC",
+        )?;
+        let mut rows = statement.query(params![start])?;
+        let mut items = Vec::new();
+        while let Some(row) = rows.next()? {
+            let day: String = row.get(0)?;
+            let count: i64 = row.get(1)?;
+            items.push((day, count.max(0) as u64));
+        }
+        Ok(items)
+    })
+    .await
+    .map_err(|error| anyhow::anyhow!("database error: {error}"))
 }
 
 pub fn get_meta(conn: &Connection, key: &str) -> rusqlite::Result<Option<String>> {
@@ -266,4 +531,61 @@ pub fn set_meta(conn: &Connection, key: &str, value: &str) -> rusqlite::Result<(
         [key, value],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn records_downloads_and_computes_heat() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("stats.db");
+        let db = Database::open(&path).await.unwrap();
+        let first = record_theme_download(&db, "11010-01").await.unwrap();
+        assert_eq!(first.downloads, 1);
+        assert_eq!(first.heat, 1 + HEAT_RECENT_WEIGHT as u64);
+        let second = record_theme_download(&db, "11010-01").await.unwrap();
+        assert_eq!(second.downloads, 2);
+        assert_eq!(second.heat, 2 + 2 * HEAT_RECENT_WEIGHT as u64);
+
+        let loaded = load_theme_stats(&path);
+        let stats = loaded.get("11010-01").expect("theme stats");
+        assert_eq!(stats.downloads, 2);
+        assert_eq!(stats.heat, 2 + 2 * HEAT_RECENT_WEIGHT as u64);
+
+        let (total, recent) = download_totals(&db).await.unwrap();
+        assert_eq!(total, 2);
+        assert_eq!(recent, 2);
+        let daily = download_daily(&db, 7).await.unwrap();
+        assert_eq!(daily.len(), 1);
+        assert_eq!(daily[0].1, 2);
+    }
+
+    #[tokio::test]
+    async fn records_downloads_in_batches() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("batch.db");
+        let db = Database::open(&path).await.unwrap();
+        let mut counts = HashMap::new();
+        counts.insert("11010-01".to_string(), 3);
+        counts.insert("11010-02".to_string(), 2);
+        let first = record_theme_downloads(&db, &counts).await.unwrap();
+        assert_eq!(first["11010-01"].downloads, 3);
+        assert_eq!(first["11010-01"].heat, 3 + 3 * HEAT_RECENT_WEIGHT as u64);
+        assert_eq!(first["11010-02"].downloads, 2);
+
+        let second = record_theme_downloads(&db, &counts).await.unwrap();
+        assert_eq!(second["11010-01"].downloads, 6);
+        assert_eq!(second["11010-02"].downloads, 4);
+        let (total, recent) = download_totals(&db).await.unwrap();
+        assert_eq!(total, 10);
+        assert_eq!(recent, 10);
+    }
+
+    #[test]
+    fn missing_stats_database_is_empty() {
+        let directory = tempfile::tempdir().unwrap();
+        assert!(load_theme_stats(&directory.path().join("missing.db")).is_empty());
+    }
 }

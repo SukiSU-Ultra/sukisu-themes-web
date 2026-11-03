@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use axum::extract::{Extension, Multipart, Path, Query, State};
@@ -7,6 +8,7 @@ use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use bytes::Bytes;
+use rand::seq::SliceRandom;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -18,7 +20,10 @@ use crate::config::AVATAR_MAX_EDGE;
 use crate::images;
 use crate::mailer;
 use crate::oauth;
-use crate::util::{author_fingerprint, author_key, content_type_for, random_hex, valid_author_id};
+use crate::util::{
+    author_fingerprint, author_key, content_type_for, quote_query, random_hex, valid_author_id,
+    valid_theme_id,
+};
 
 type ApiResult<T> = Result<T, ApiError>;
 
@@ -65,6 +70,8 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/author/requests/{id}/generate",
             post(generate_reset_author),
         )
+        .route("/discover", get(discover_themes))
+        .route("/themes/{id}/download", get(download_published_theme))
         .route("/my-themes", get(my_themes))
         .route("/my-themes/{id}/download", get(download_my_theme))
         .route("/my-themes/withdraw", post(withdraw_my_theme))
@@ -1401,6 +1408,181 @@ async fn generate_reset_author(
     })))
 }
 
+#[derive(Debug, Deserialize, Default)]
+struct DiscoverQuery {
+    limit: Option<usize>,
+    exclude: Option<String>,
+    author: Option<String>,
+}
+
+/// Theme ids owned by the signed-in account, used to keep "别人的主题"
+/// previews free of the user's own uploads.
+async fn owned_theme_ids(state: &AppState, session: &SessionInfo) -> ApiResult<HashSet<String>> {
+    if session.role == "admin" {
+        return Ok(HashSet::new());
+    }
+    let profile_authors = authors::authors_for_user(&state.db, &session.user_id)
+        .await
+        .map_err(ApiError::internal)?;
+    let hashes: HashSet<String> = profile_authors
+        .into_iter()
+        .map(|author| author.hash)
+        .collect();
+    let index = state.meta_index().await;
+    Ok(index.owned_ids(&hashes, &session.username))
+}
+
+fn discover_theme_json(
+    theme: &crate::models::CatalogEntry,
+    stats: &HashMap<String, crate::db::ThemeStats>,
+) -> Value {
+    let theme_stats = stats.get(&theme.id).copied().unwrap_or_default();
+    let preview_url = if theme.preview_path.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "/account/api/preview?path={}",
+            quote_query(&theme.preview_path)
+        )
+    };
+    let screenshot_urls: Vec<String> = theme
+        .screenshot_paths
+        .iter()
+        .map(|path| format!("/account/api/preview?path={}", quote_query(path)))
+        .collect();
+    let avatar_url = theme
+        .avatar_path
+        .as_deref()
+        .filter(|path| !path.is_empty())
+        .map(|path| format!("/account/api/preview?path={}", quote_query(path)))
+        .unwrap_or_default();
+    json!({
+        "id": theme.id,
+        "version": theme.version,
+        "formatVersion": theme.format_version,
+        "minManagerVersion": theme.min_manager_version,
+        "name": theme.name,
+        "author": theme.author,
+        "description": theme.description,
+        "tags": theme.tags,
+        "adaptive": theme.adaptive || crate::catalog::tags_mark_adaptive(&theme.tags),
+        "license": theme.license,
+        "size": theme.size,
+        "sha256": theme.sha256,
+        "updatedAt": theme.updated_at,
+        "changelog": theme.changelog,
+        "previewPath": theme.preview_path,
+        "avatarPath": theme.avatar_path,
+        "screenshotPaths": theme.screenshot_paths,
+        "previewUrl": preview_url,
+        "avatarUrl": avatar_url,
+        "screenshotUrls": screenshot_urls,
+        "downloads": theme_stats.downloads,
+        "heat": theme_stats.heat,
+        "downloadUrl": format!("/account/api/themes/{}/download", theme.id),
+    })
+}
+
+/// Five-at-a-time discovery cards for the user center. `exclude` lets the
+/// "随便看看" button avoid repeating themes until the pool is exhausted.
+async fn discover_themes(
+    State(state): State<AppState>,
+    Extension(session): Extension<SessionInfo>,
+    Query(query): Query<DiscoverQuery>,
+) -> ApiResult<Json<Value>> {
+    let limit = query.limit.unwrap_or(5).clamp(1, 20);
+    let Some(catalog) = crate::catalog::read_catalog(&state.paths) else {
+        return Ok(Json(json!({
+            "ok": true,
+            "themes": [],
+            "total": 0,
+            "limit": limit,
+            "message": "主题目录尚未生成",
+        })));
+    };
+    let stats = state.theme_stats();
+    let owned = owned_theme_ids(&state, &session).await?;
+    let author_filter = query
+        .author
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let pool: Vec<&crate::models::CatalogEntry> = catalog
+        .themes
+        .iter()
+        .filter(|theme| !owned.contains(&theme.id))
+        .filter(|theme| {
+            author_filter
+                .map(|author| theme.author.trim().eq_ignore_ascii_case(author))
+                .unwrap_or(true)
+        })
+        .collect();
+    let total = pool.len();
+    let excluded: HashSet<String> = query
+        .exclude
+        .as_deref()
+        .unwrap_or("")
+        .split(',')
+        .take(200)
+        .map(str::trim)
+        .filter(|value| valid_theme_id(value))
+        .map(str::to_string)
+        .collect();
+    let mut candidates: Vec<&crate::models::CatalogEntry> = pool
+        .iter()
+        .copied()
+        .filter(|theme| !excluded.contains(&theme.id))
+        .collect();
+    if candidates.len() < limit {
+        // Everything has been seen already; recycle the full pool.
+        candidates = pool;
+    }
+    candidates.shuffle(&mut rand::thread_rng());
+    let themes: Vec<Value> = candidates
+        .into_iter()
+        .take(limit)
+        .map(|theme| discover_theme_json(theme, stats.as_ref()))
+        .collect();
+    Ok(Json(json!({
+        "ok": true,
+        "themes": themes,
+        "total": total,
+        "limit": limit,
+        "author": author_filter,
+    })))
+}
+
+async fn download_published_theme(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Response> {
+    if !valid_theme_id(&id) {
+        return Err(ApiError::bad("无效的主题 ID"));
+    }
+    let index = state.meta_index().await;
+    let Some(meta) = index.theme_by_id(&id) else {
+        return Err(ApiError::not_found("主题不存在"));
+    };
+    if meta.withdrawn_at.is_some() {
+        return Err(ApiError::not_found("主题不存在"));
+    }
+    let object = state
+        .store
+        .serve(&meta.package, None)
+        .await
+        .map_err(|_| ApiError::not_found("主题包不存在"))?;
+    state.record_theme_download(&meta.id);
+    let filename = format!("{}-v{}.sukisu", meta.id, meta.version);
+    let mut response = crate::api::serve_object_response(object, "private, no-store")?;
+    let disposition =
+        axum::http::HeaderValue::from_str(&format!("attachment; filename=\"{filename}\""))
+            .map_err(ApiError::internal)?;
+    response
+        .headers_mut()
+        .insert("content-disposition", disposition);
+    Ok(response)
+}
+
 async fn my_themes(
     State(state): State<AppState>,
     Extension(session): Extension<SessionInfo>,
@@ -1408,61 +1590,46 @@ async fn my_themes(
     let profile_authors = authors::authors_for_user(&state.db, &session.user_id)
         .await
         .map_err(ApiError::internal)?;
-    let hashes: Vec<String> = profile_authors
-        .iter()
-        .map(|author| author.hash.clone())
+    let hashes: HashSet<String> = profile_authors
+        .into_iter()
+        .map(|author| author.hash)
         .collect();
     let username = session.username.trim().to_string();
+    let stats = state.theme_stats();
+    let index = state.meta_index().await;
+    let owned = index.owned_ids(&hashes, &username);
     let mut themes = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&state.paths.meta) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-                continue;
-            }
-            let Some(meta) = crate::catalog::read_meta_file(&path) else {
-                continue;
-            };
-            let owned_by_hash = meta
-                .author_hash
-                .as_deref()
-                .is_some_and(|hash| !hash.is_empty() && hashes.iter().any(|value| value == hash));
-            let owned_legacy = meta
-                .author_hash
-                .as_deref()
-                .map(str::trim)
-                .map(str::is_empty)
-                .unwrap_or(true)
-                && !username.is_empty()
-                && meta.author.trim().eq_ignore_ascii_case(&username);
-            if !owned_by_hash && !owned_legacy {
-                continue;
-            }
-            let withdrawn_at = meta.withdrawn_at.clone();
-            let expires_at = withdrawn_at
-                .as_deref()
-                .and_then(crate::catalog::withdrawal_expires_at);
-            themes.push(json!({
-                "id": meta.id,
-                "version": meta.version,
-                "name": meta.name,
-                "author": meta.author,
-                "description": meta.description,
-                "tags": meta.tags,
-                "adaptive": meta.adaptive || crate::catalog::tags_mark_adaptive(&meta.tags),
-                "license": meta.license,
-                "minManagerVersion": meta.min_manager_version,
-                "changelog": meta.changelog,
-                "sha256": meta.sha256.clone().unwrap_or_default(),
-                "updatedAt": meta.updated_at,
-                "previewPath": meta.preview,
-                "avatarPath": meta.avatar,
-                "screenshotPaths": meta.screenshots,
-                "status": if withdrawn_at.is_some() { "withdrawn" } else { "published" },
-                "withdrawnAt": withdrawn_at,
-                "expiresAt": expires_at,
-            }));
-        }
+    for id in owned {
+        let Some(meta) = index.theme_by_id(&id) else {
+            continue;
+        };
+        let withdrawn_at = meta.withdrawn_at.clone();
+        let expires_at = withdrawn_at
+            .as_deref()
+            .and_then(crate::catalog::withdrawal_expires_at);
+        let theme_stats = stats.get(&meta.id).copied().unwrap_or_default();
+        themes.push(json!({
+            "id": &meta.id,
+            "version": meta.version,
+            "name": &meta.name,
+            "author": &meta.author,
+            "description": &meta.description,
+            "tags": &meta.tags,
+            "adaptive": meta.adaptive || crate::catalog::tags_mark_adaptive(&meta.tags),
+            "license": &meta.license,
+            "minManagerVersion": meta.min_manager_version,
+            "changelog": &meta.changelog,
+            "sha256": meta.sha256.clone().unwrap_or_default(),
+            "updatedAt": &meta.updated_at,
+            "previewPath": &meta.preview,
+            "avatarPath": &meta.avatar,
+            "screenshotPaths": &meta.screenshots,
+            "status": if withdrawn_at.is_some() { "withdrawn" } else { "published" },
+            "withdrawnAt": withdrawn_at,
+            "expiresAt": expires_at,
+            "downloads": theme_stats.downloads,
+            "heat": theme_stats.heat,
+        }));
     }
     themes.sort_by(|left, right| {
         right
@@ -1506,29 +1673,28 @@ async fn download_my_theme(
     if !crate::util::valid_theme_id(&id) {
         return Err(ApiError::bad("无效的主题 ID"));
     }
-    let Some((_, meta)) = crate::catalog::find_theme_meta(&state.paths, &id) else {
+    let index = state.meta_index().await;
+    let Some(meta) = index.theme_by_id(&id) else {
         return Err(ApiError::not_found("主题不存在"));
     };
-    if !theme_owned_by_user(&state, &session, &meta).await? {
+    if !theme_owned_by_user(&state, &session, meta).await? {
         return Err(ApiError::forbidden("无权下载该主题"));
     }
-    let data = state
+    let object = state
         .store
-        .read(&meta.package)
+        .serve(&meta.package, None)
         .await
         .map_err(|_| ApiError::not_found("主题包不存在"))?;
+    state.record_theme_download(&meta.id);
     let filename = format!("{}-v{}.sukisu", meta.id, meta.version);
-    Response::builder()
-        .status(StatusCode::OK)
-        .header("Content-Type", "application/octet-stream")
-        .header(
-            "Content-Disposition",
-            format!("attachment; filename=\"{filename}\""),
-        )
-        .header("Cache-Control", "no-store")
-        .header("Content-Length", data.len().to_string())
-        .body(axum::body::Body::from(data))
-        .map_err(ApiError::internal)
+    let mut response = crate::api::serve_object_response(object, "private, no-store")?;
+    let disposition =
+        axum::http::HeaderValue::from_str(&format!("attachment; filename=\"{filename}\""))
+            .map_err(ApiError::internal)?;
+    response
+        .headers_mut()
+        .insert("content-disposition", disposition);
+    Ok(response)
 }
 
 async fn withdraw_my_theme(
@@ -1829,6 +1995,7 @@ async fn account_preview(
     if path.is_empty() || path.contains("..") || path.contains('\\') {
         return Err(ApiError::bad("无效的预览路径"));
     }
+    let mut cache_control = "private, no-store";
     let allowed = if path.starts_with("avatars/users/") {
         path.starts_with(&format!("avatars/users/{}", session.user_id)) || session.role == "admin"
     } else if let Some(rest) = path.strip_prefix("pending/") {
@@ -1838,90 +2005,61 @@ async fn account_preview(
             .map_err(ApiError::internal)?
             .is_some()
             || session.role == "admin"
+    } else if path.starts_with("avatars/authors/") {
+        // Author avatars are public store assets.
+        cache_control = "private, max-age=300";
+        true
     } else {
-        let profile_authors = authors::authors_for_user(&state.db, &session.user_id)
-            .await
-            .map_err(ApiError::internal)?;
-        let hashes: Vec<String> = profile_authors
-            .iter()
-            .map(|author| author.hash.clone())
-            .collect();
-        let own_author_avatar = path
-            .strip_prefix("avatars/authors/")
-            .and_then(|rest| rest.split('.').next())
-            .is_some_and(|hash| hashes.iter().any(|value| value == hash));
-        let username = session.username.trim().to_string();
-        let meta_dir = state.paths.meta.clone();
-        let path_for_scan = path.clone();
-        let found = tokio::task::spawn_blocking(move || {
-            let mut found = false;
-            if let Ok(entries) = std::fs::read_dir(&meta_dir) {
-                for entry in entries.flatten() {
-                    let meta_path = entry.path();
-                    if meta_path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-                        continue;
-                    }
-                    let Some(meta) = crate::catalog::read_meta_file(&meta_path) else {
-                        continue;
-                    };
-                    let path_matches = meta.preview == path_for_scan
-                        || meta.screenshots.iter().any(|item| item == &path_for_scan)
-                        || meta.avatar.as_deref() == Some(path_for_scan.as_str());
-                    if !path_matches {
-                        continue;
-                    }
-                    let owned = meta.author_hash.as_deref().is_some_and(|hash| {
-                        !hash.is_empty() && hashes.iter().any(|value| value == hash)
-                    });
-                    let legacy = meta
-                        .author_hash
-                        .as_deref()
-                        .map(str::trim)
-                        .map(str::is_empty)
-                        .unwrap_or(true)
-                        && !username.is_empty()
-                        && meta.author.trim().eq_ignore_ascii_case(&username);
-                    if owned || legacy {
-                        found = true;
-                        break;
-                    }
-                }
-            }
-            found
-        })
-        .await
-        .map_err(ApiError::internal)?;
-        found || own_author_avatar || session.role == "admin"
+        // Published preview/screenshot assets are public to signed-in users.
+        // Only withdrawn assets need the more expensive ownership lookup.
+        let index = state.meta_index().await;
+        let published = index
+            .theme_for_asset(&path)
+            .is_some_and(|meta| meta.withdrawn_at.is_none());
+        let owned = if published {
+            false
+        } else if let Some(meta) = index.theme_for_asset(&path) {
+            let profile_authors = authors::authors_for_user(&state.db, &session.user_id)
+                .await
+                .map_err(ApiError::internal)?;
+            let hashes: HashSet<String> = profile_authors
+                .into_iter()
+                .map(|author| author.hash)
+                .collect();
+            index
+                .owned_ids(&hashes, &session.username)
+                .contains(&meta.id)
+        } else {
+            false
+        };
+        if published {
+            cache_control = "private, max-age=3600";
+        }
+        published || owned || session.role == "admin"
     };
     if !allowed {
         return Err(ApiError::forbidden("无权查看该资源"));
     }
-    let (data, content_type) = if path.starts_with("pending/") {
+    if path.starts_with("pending/") {
         let target = crate::util::safe_join(&state.paths.root, &path)
             .ok_or_else(|| ApiError::bad("无效的预览路径"))?;
-        (
-            tokio::fs::read(target)
-                .await
-                .map_err(|_| ApiError::not_found("资源不存在"))?,
-            content_type_for(&path),
-        )
-    } else {
-        (
-            state
-                .store
-                .read(&path)
-                .await
-                .map_err(|_| ApiError::not_found("资源不存在"))?,
-            content_type_for(&path),
-        )
-    };
-    Response::builder()
-        .status(StatusCode::OK)
-        .header("Content-Type", content_type)
-        .header("Cache-Control", "no-store")
-        .header("Content-Length", data.len().to_string())
-        .body(axum::body::Body::from(data))
-        .map_err(ApiError::internal)
+        let data = tokio::fs::read(target)
+            .await
+            .map_err(|_| ApiError::not_found("资源不存在"))?;
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", content_type_for(&path))
+            .header("Cache-Control", "private, no-store")
+            .header("Content-Length", data.len().to_string())
+            .body(axum::body::Body::from(data))
+            .map_err(ApiError::internal);
+    }
+    let object = state
+        .store
+        .serve(&path, None)
+        .await
+        .map_err(|_| ApiError::not_found("资源不存在"))?;
+    crate::api::serve_object_response(object, cache_control)
 }
 
 struct ResolvedAuthor {
