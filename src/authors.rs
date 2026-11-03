@@ -1,13 +1,18 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::PathBuf;
+
+use chrono::{Duration as ChronoDuration, SecondsFormat, Utc};
 
 use anyhow::{Context, Result};
 use rusqlite::{params, OptionalExtension};
 use serde::Serialize;
 use serde_json::json;
 
+use crate::catalog;
 use crate::config::Paths;
 use crate::db::{self, Database};
-use crate::models::AuthorsFile;
+use crate::models::{AuthorsFile, Meta};
 use crate::util::{author_fingerprint, author_key, now_iso, random_hex, valid_author_id};
 
 #[derive(Clone, Debug, Serialize)]
@@ -24,6 +29,7 @@ pub struct Author {
     pub approved_at: Option<String>,
     pub last_used_at: Option<String>,
     pub created_at: String,
+    pub auto_revoke_at: Option<String>,
 }
 
 fn author_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Author> {
@@ -39,10 +45,11 @@ fn author_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Author> {
         approved_at: row.get(5)?,
         last_used_at: row.get(6)?,
         created_at: row.get(7)?,
+        auto_revoke_at: row.get(11)?,
     })
 }
 
-const AUTHOR_COLUMNS: &str = "hash, fingerprint, display_name, user_id, status, approved_at, last_used_at, created_at, auto_publish, code, next_theme_seq";
+const AUTHOR_COLUMNS: &str = "hash, fingerprint, display_name, user_id, status, approved_at, last_used_at, created_at, auto_publish, code, next_theme_seq, auto_revoke_at";
 
 pub async fn author_by_hash(db: &Database, hash: &str) -> Result<Option<Author>> {
     let hash = hash.to_string();
@@ -140,7 +147,8 @@ pub async fn set_author_status(
         conn.execute(
             "UPDATE authors
              SET status = ?2, approved_at = COALESCE(?3, approved_at),
-                 approved_by = COALESCE(?4, approved_by), updated_at = ?5
+                 approved_by = COALESCE(?4, approved_by), updated_at = ?5,
+                 auto_revoke_at = CASE WHEN ?2 = 'active' THEN auto_revoke_at ELSE NULL END
              WHERE hash = ?1",
             params![hash, status, approved_at, actor, now],
         )?;
@@ -292,6 +300,120 @@ pub async fn set_auto_publish(db: &Database, hash: &str, enabled: bool) -> Resul
     .await
 }
 
+pub const AUTHOR_GRACE_DAYS: i64 = 10;
+
+pub fn author_grace_deadline(days: i64) -> String {
+    (Utc::now() + ChronoDuration::days(days)).to_rfc3339_opts(SecondsFormat::Secs, true)
+}
+
+pub async fn set_auto_revoke_at(db: &Database, hash: &str, at: Option<&str>) -> Result<()> {
+    let hash = hash.to_string();
+    let at = at.map(str::to_string);
+    let now = now_iso();
+    db.call(move |conn| {
+        conn.execute(
+            "UPDATE authors SET auto_revoke_at = ?2, updated_at = ?3 WHERE hash = ?1",
+            params![hash, at, now],
+        )?;
+        Ok(())
+    })
+    .await
+}
+
+/// Hashes that a single account may no longer manage: retired licenses left
+/// behind by a reset, plus any license still tied to a pending author request.
+pub async fn locked_author_hashes(db: &Database, user_id: &str) -> Result<HashSet<String>> {
+    let user_id = user_id.to_string();
+    db.call(move |conn| {
+        let mut locked = HashSet::new();
+        let mut statement = conn.prepare(
+            "SELECT old_hash FROM author_reset_history WHERE user_id = ?1
+             UNION
+             SELECT author_hash FROM author_requests
+             WHERE user_id = ?1 AND status = 'pending' AND author_hash IS NOT NULL",
+        )?;
+        let mut rows = statement.query([user_id])?;
+        while let Some(row) = rows.next()? {
+            locked.insert(row.get::<_, String>(0)?);
+        }
+        Ok(locked)
+    })
+    .await
+}
+
+/// Start (or cancel) the first-license grace period based on whether the
+/// license already has a published theme.
+pub async fn schedule_grace_if_needed(db: &Database, paths: &Paths, hash: &str) -> Result<()> {
+    if has_published_theme(paths, hash) {
+        set_auto_revoke_at(db, hash, None).await
+    } else {
+        let deadline = author_grace_deadline(AUTHOR_GRACE_DAYS);
+        set_auto_revoke_at(db, hash, Some(&deadline)).await
+    }
+}
+
+/// Any published theme under this license counts as an approved work.
+pub fn has_published_theme(paths: &Paths, hash: &str) -> bool {
+    let Ok(entries) = fs::read_dir(&paths.meta) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(meta) = catalog::read_meta_file(&path) else {
+            continue;
+        };
+        if meta.author_hash.as_deref() == Some(hash) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Revoke active licenses whose 10-day grace period expired without an
+/// approved theme. Authors with any published theme keep their license.
+pub async fn revoke_inactive_authors(db: &Database, paths: &Paths) -> Result<usize> {
+    let now = now_iso();
+    let candidates: Vec<(String, Option<String>)> = db
+        .call(move |conn| {
+            let mut statement = conn.prepare(
+                "SELECT hash, display_name FROM authors
+                 WHERE status = 'active' AND auto_revoke_at IS NOT NULL
+                   AND auto_revoke_at <= ?1
+                 LIMIT 500",
+            )?;
+            let mut rows = statement.query(params![now])?;
+            let mut items = Vec::new();
+            while let Some(row) = rows.next()? {
+                items.push((row.get(0)?, row.get(1)?));
+            }
+            Ok(items)
+        })
+        .await?;
+    let mut revoked = 0;
+    for (hash, name) in candidates {
+        if has_published_theme(paths, &hash) {
+            let _ = set_auto_revoke_at(db, &hash, None).await;
+            continue;
+        }
+        set_author_status(db, &hash, "revoked", Some("system")).await?;
+        let _ = set_auto_publish(db, &hash, false).await;
+        let _ = crate::accounts::audit(
+            db,
+            Some("system"),
+            "author.auto_revoke",
+            Some("author"),
+            Some(&hash),
+            name.as_deref(),
+        )
+        .await;
+        revoked += 1;
+    }
+    Ok(revoked)
+}
+
 pub async fn touch_author(db: &Database, hash: &str) -> Result<()> {
     let hash = hash.to_string();
     let now = now_iso();
@@ -324,7 +446,7 @@ pub async fn list_authors(db: &Database) -> Result<Vec<serde_json::Value>> {
         let mut statement = conn.prepare(
             "SELECT a.hash, a.fingerprint, a.display_name, a.user_id, a.status,
                     a.approved_at, a.last_used_at, u.username, u.display_name,
-                    a.code, a.next_theme_seq
+                    a.code, a.next_theme_seq, a.auto_revoke_at, u.role, u.is_super_admin
              FROM authors a LEFT JOIN users u ON u.id = a.user_id
              ORDER BY CASE a.status
                  WHEN 'pending' THEN 0 WHEN 'active' THEN 1 ELSE 2 END,
@@ -346,11 +468,97 @@ pub async fn list_authors(db: &Database) -> Result<Vec<serde_json::Value>> {
                 "userDisplayName": row.get::<_, Option<String>>(8)?,
                 "code": row.get::<_, Option<String>>(9)?,
                 "nextThemeSeq": row.get::<_, i64>(10)?,
+                "autoRevokeAt": row.get::<_, Option<String>>(11)?,
+                "ownerRole": row.get::<_, Option<String>>(12)?,
+                "ownerSuperAdmin": row.get::<_, Option<i64>>(13)?.unwrap_or(0) != 0,
             }));
         }
         Ok(items)
     })
     .await
+}
+
+pub const AUTHOR_FEATURES: &[&str] = &["upload", "comment", "auto_publish"];
+
+fn normalize_features(features: &HashSet<String>) -> String {
+    AUTHOR_FEATURES
+        .iter()
+        .filter(|feature| features.contains(**feature))
+        .copied()
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+pub async fn restrictions_for(db: &Database, hash: &str) -> Result<HashSet<String>> {
+    let hash = hash.to_string();
+    db.call(move |conn| {
+        let value: Option<String> = conn
+            .query_row(
+                "SELECT features FROM author_restrictions WHERE author_hash = ?1",
+                params![hash],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(value
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .collect())
+    })
+    .await
+}
+
+pub async fn all_restrictions(db: &Database) -> Result<HashMap<String, HashSet<String>>> {
+    db.call(move |conn| {
+        let mut statement =
+            conn.prepare("SELECT author_hash, features FROM author_restrictions")?;
+        let mut rows = statement.query([])?;
+        let mut items = HashMap::new();
+        while let Some(row) = rows.next()? {
+            let hash: String = row.get(0)?;
+            let features: String = row.get(1)?;
+            let values: HashSet<String> = features
+                .split(',')
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .collect();
+            items.insert(hash, values);
+        }
+        Ok(items)
+    })
+    .await
+}
+
+pub async fn set_restrictions(
+    db: &Database,
+    hash: &str,
+    features: &HashSet<String>,
+    actor: &str,
+) -> Result<()> {
+    let hash = hash.to_string();
+    let value = normalize_features(features);
+    let actor = actor.to_string();
+    let now = now_iso();
+    db.call(move |conn| {
+        conn.execute(
+            "INSERT INTO author_restrictions(author_hash, features, updated_at, updated_by)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(author_hash) DO UPDATE SET
+                 features = excluded.features,
+                 updated_at = excluded.updated_at,
+                 updated_by = excluded.updated_by",
+            params![hash, value, now, actor],
+        )?;
+        Ok(())
+    })
+    .await
+}
+
+pub async fn has_restriction(db: &Database, hash: &str, feature: &str) -> Result<bool> {
+    Ok(restrictions_for(db, hash).await?.contains(feature))
 }
 
 pub async fn count_pending_author_requests(db: &Database) -> Result<i64> {
@@ -414,6 +622,89 @@ pub async fn author_requests(
         Ok(items)
     })
     .await
+}
+
+pub async fn has_pending_request(db: &Database, user_id: &str) -> Result<bool> {
+    Ok(!author_requests(db, Some("pending"), Some(user_id))
+        .await?
+        .is_empty())
+}
+
+/// Re-point the user's most recently updated published theme at a newly
+/// approved author license. This keeps the latest work on the new license
+/// while older themes stay with their original author hash.
+pub async fn bind_latest_theme(
+    db: &Database,
+    paths: &Paths,
+    user_id: &str,
+    new_hash: &str,
+    display_name: Option<&str>,
+) -> Result<Option<String>> {
+    let Some(user) = crate::accounts::user_by_id(db, user_id).await? else {
+        return Ok(None);
+    };
+    let mut hashes: HashSet<String> = authors_for_user(db, user_id)
+        .await?
+        .into_iter()
+        .map(|author| author.hash)
+        .collect();
+    hashes.insert(new_hash.to_string());
+    let Ok(entries) = fs::read_dir(&paths.meta) else {
+        return Ok(None);
+    };
+    let mut best: Option<(String, PathBuf, Meta)> = None;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(meta) = catalog::read_meta_file(&path) else {
+            continue;
+        };
+        if meta.withdrawn_at.is_some() {
+            continue;
+        }
+        let owned = match meta
+            .author_hash
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            Some(hash) => hashes.contains(hash),
+            None => {
+                !meta.author.trim().is_empty()
+                    && meta
+                        .author
+                        .trim()
+                        .eq_ignore_ascii_case(user.username.trim())
+            }
+        };
+        if !owned {
+            continue;
+        }
+        let stamp = meta.updated_at.clone();
+        if best
+            .as_ref()
+            .map(|(current, _, _)| stamp >= *current)
+            .unwrap_or(true)
+        {
+            best = Some((stamp, path, meta));
+        }
+    }
+    let Some((_, path, mut meta)) = best else {
+        return Ok(None);
+    };
+    if meta.author_hash.as_deref() == Some(new_hash) {
+        return Ok(Some(meta.id));
+    }
+    meta.author_hash = Some(new_hash.to_string());
+    if let Some(name) = display_name
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        meta.author = name.to_string();
+    }
+    catalog::write_meta(&path, &meta)?;
+    Ok(Some(meta.id))
 }
 
 pub async fn create_author_request(
@@ -681,5 +972,203 @@ mod tests {
         let loaded = author_by_hash(&db, &author1.hash).await.unwrap().unwrap();
         assert_eq!(loaded.code.as_deref(), Some("11010"));
         assert_eq!(loaded.next_theme_seq, 3);
+    }
+
+    async fn seed_user(db: &Database, id: &str, username: &str) {
+        let id = id.to_string();
+        let username = username.to_string();
+        db.call(move |conn| {
+            conn.execute(
+                "INSERT INTO users(id, username, display_name, role, status, email_verified,
+                                   created_at, updated_at)
+                 VALUES (?1, ?2, ?2, 'user', 'active', 1, '2026-01-01T00:00:00Z',
+                         '2026-01-01T00:00:00Z')",
+                params![id, username],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+    }
+
+    fn test_paths(root: &std::path::Path) -> Paths {
+        Paths {
+            root: root.to_path_buf(),
+            meta: root.join("meta"),
+            pending: root.join("pending"),
+            uploads: root.join("uploads"),
+            catalog: root.join("catalog.json"),
+            static_dir: root.join("static"),
+            authors_file: root.join("authors.json"),
+            token_env: root.join("token.env"),
+            admin_env: root.join("admin.env"),
+            admin_password_file: root.join("admin-password"),
+            admin_config: root.join("config.env"),
+            storage_env: root.join("storage.env"),
+            account_env: root.join("account.env"),
+            network_env: root.join("network.env"),
+            sources_file: root.join("sources.json"),
+            caddyfile: root.join("Caddyfile"),
+            db: root.join("account.db"),
+        }
+    }
+
+    fn write_test_meta(
+        paths: &Paths,
+        filename: &str,
+        id: &str,
+        author_hash: &str,
+        updated_at: &str,
+        withdrawn_at: Option<&str>,
+    ) {
+        let mut meta = Meta::default();
+        meta.id = id.to_string();
+        meta.author = "alice".to_string();
+        meta.author_hash = Some(author_hash.to_string());
+        meta.updated_at = updated_at.to_string();
+        meta.withdrawn_at = withdrawn_at.map(str::to_string);
+        catalog::write_meta(&paths.meta.join(filename), &meta).unwrap();
+    }
+
+    #[tokio::test]
+    async fn detects_pending_author_requests() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("pending.db"))
+            .await
+            .unwrap();
+        seed_user(&db, "u1", "alice").await;
+        let hash = author_key("cccccccccccccccc");
+        create_author(
+            &db,
+            &hash,
+            &author_fingerprint(&hash),
+            "alice",
+            Some("u1"),
+            "pending",
+        )
+        .await
+        .unwrap();
+        let id = create_author_request(&db, "u1", "new", Some(&hash), "alice", None)
+            .await
+            .unwrap();
+        assert!(has_pending_request(&db, "u1").await.unwrap());
+        review_author_request(&db, &id, "approved", "admin", None, None)
+            .await
+            .unwrap();
+        assert!(!has_pending_request(&db, "u1").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn binds_latest_published_theme_to_new_license() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("bind.db")).await.unwrap();
+        seed_user(&db, "u1", "alice").await;
+        let paths = test_paths(dir.path());
+        std::fs::create_dir_all(&paths.meta).unwrap();
+
+        let old_hash = author_key("aaaaaaaaaaaaaaaa");
+        create_author(
+            &db,
+            &old_hash,
+            &author_fingerprint(&old_hash),
+            "alice",
+            Some("u1"),
+            "active",
+        )
+        .await
+        .unwrap();
+        write_test_meta(
+            &paths,
+            "11010-01.json",
+            "11010-01",
+            &old_hash,
+            "2026-01-01T00:00:00Z",
+            None,
+        );
+        write_test_meta(
+            &paths,
+            "11010-02.json",
+            "11010-02",
+            &old_hash,
+            "2026-03-01T00:00:00Z",
+            None,
+        );
+        write_test_meta(
+            &paths,
+            "11010-03.json",
+            "11010-03",
+            &old_hash,
+            "2026-04-01T00:00:00Z",
+            Some("2026-04-02T00:00:00Z"),
+        );
+
+        let new_hash = author_key("bbbbbbbbbbbbbbbb");
+        let bound = bind_latest_theme(&db, &paths, "u1", &new_hash, Some("Alice New"))
+            .await
+            .unwrap();
+        assert_eq!(bound.as_deref(), Some("11010-02"));
+
+        let latest = catalog::read_meta_file(&paths.meta.join("11010-02.json")).unwrap();
+        assert_eq!(latest.author_hash.as_deref(), Some(new_hash.as_str()));
+        assert_eq!(latest.author, "Alice New");
+        let older = catalog::read_meta_file(&paths.meta.join("11010-01.json")).unwrap();
+        assert_eq!(older.author_hash.as_deref(), Some(old_hash.as_str()));
+        let withdrawn = catalog::read_meta_file(&paths.meta.join("11010-03.json")).unwrap();
+        assert_eq!(withdrawn.author_hash.as_deref(), Some(old_hash.as_str()));
+    }
+
+    #[tokio::test]
+    async fn revokes_expired_licenses_without_a_theme() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("revoke.db")).await.unwrap();
+        seed_user(&db, "u1", "alice").await;
+        let paths = test_paths(dir.path());
+        std::fs::create_dir_all(&paths.meta).unwrap();
+
+        let stale_hash = author_key("dddddddddddddddd");
+        create_author(
+            &db,
+            &stale_hash,
+            &author_fingerprint(&stale_hash),
+            "stale",
+            Some("u1"),
+            "active",
+        )
+        .await
+        .unwrap();
+        set_auto_revoke_at(&db, &stale_hash, Some("2000-01-01T00:00:00Z"))
+            .await
+            .unwrap();
+
+        let active_hash = author_key("eeeeeeeeeeeeeeee");
+        create_author(
+            &db,
+            &active_hash,
+            &author_fingerprint(&active_hash),
+            "active",
+            Some("u1"),
+            "active",
+        )
+        .await
+        .unwrap();
+        set_auto_revoke_at(&db, &active_hash, Some("2000-01-01T00:00:00Z"))
+            .await
+            .unwrap();
+        write_test_meta(
+            &paths,
+            "11010-01.json",
+            "11010-01",
+            &active_hash,
+            "2026-01-01T00:00:00Z",
+            None,
+        );
+
+        assert_eq!(revoke_inactive_authors(&db, &paths).await.unwrap(), 1);
+        let stale = author_by_hash(&db, &stale_hash).await.unwrap().unwrap();
+        assert_eq!(stale.status, "revoked");
+        assert_eq!(stale.auto_revoke_at, None);
+        let active = author_by_hash(&db, &active_hash).await.unwrap().unwrap();
+        assert_eq!(active.status, "active");
+        assert_eq!(active.auto_revoke_at, None);
     }
 }

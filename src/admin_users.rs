@@ -38,6 +38,39 @@ pub fn router() -> Router<AppState> {
         .route("/theme-id/next", get(next_theme_id))
 }
 
+async fn ensure_super_admin_target_allowed(
+    state: &AppState,
+    actor: &SessionInfo,
+    target_id: &str,
+) -> ApiResult<()> {
+    let target = accounts::user_by_id(&state.db, target_id)
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::not_found("用户不存在"))?;
+    if target.is_super_admin
+        && !accounts::is_super_admin(&state.db, &actor.user_id)
+            .await
+            .map_err(ApiError::internal)?
+    {
+        return Err(ApiError::forbidden("只有超级管理员可以操作超级管理员账号"));
+    }
+    Ok(())
+}
+
+async fn author_avatar_url(state: &AppState, author: &authors::Author) -> Option<String> {
+    let key = crate::catalog::author_avatar_key(
+        &state.store,
+        &state.paths,
+        &author.hash,
+        author.display_name.as_deref(),
+    )
+    .await?;
+    Some(format!(
+        "/admin/api/preview?path={}",
+        crate::util::quote_query(&key)
+    ))
+}
+
 fn user_json(user: &User) -> Value {
     json!({
         "id": user.id,
@@ -46,6 +79,7 @@ fn user_json(user: &User) -> Value {
         "email": user.email,
         "avatar": user.avatar,
         "role": user.role,
+        "isSuperAdmin": user.is_super_admin,
         "status": user.status,
         "emailVerified": user.email_verified,
         "rejectionReason": user.rejection_reason,
@@ -98,6 +132,9 @@ async fn users(
                     object.insert("authorName".to_string(), json!(author.display_name));
                     object.insert("authorStatus".to_string(), json!(author.status));
                     object.insert("authorHash".to_string(), json!(author.hash));
+                    if let Some(url) = author_avatar_url(&state, author).await {
+                        object.insert("authorAvatarUrl".to_string(), json!(url));
+                    }
                 }
             }
         }
@@ -133,6 +170,16 @@ async fn user_detail(
     let author_requests = authors::author_requests(&state.db, None, Some(&id))
         .await
         .map_err(ApiError::internal)?;
+    let mut author_values = Vec::with_capacity(profile_authors.len());
+    for author in &profile_authors {
+        let mut value = serde_json::to_value(author).unwrap_or_default();
+        if let Some(url) = author_avatar_url(&state, author).await {
+            if let Some(object) = value.as_object_mut() {
+                object.insert("avatarUrl".to_string(), json!(url));
+            }
+        }
+        author_values.push(value);
+    }
     let hashes: Vec<String> = profile_authors
         .iter()
         .map(|author| author.hash.clone())
@@ -159,7 +206,7 @@ async fn user_detail(
     Ok(Json(json!({
         "ok": true,
         "user": user_json(&user),
-        "authors": profile_authors,
+        "authors": author_values,
         "submissions": submissions,
         "authorRequests": author_requests,
         "themeCount": theme_count,
@@ -220,6 +267,7 @@ async fn user_reject(
         .await
         .map_err(ApiError::internal)?
         .ok_or_else(|| ApiError::not_found("用户不存在"))?;
+    ensure_super_admin_target_allowed(&state, &actor, &id).await?;
     accounts::set_status(
         &state.db,
         &id,
@@ -264,6 +312,7 @@ async fn user_disable(
     if id == actor.user_id {
         return Err(ApiError::bad("不能禁用当前登录账号"));
     }
+    ensure_super_admin_target_allowed(&state, &actor, &id).await?;
     accounts::set_status(&state.db, &id, "disabled", None, Some(&actor.user_id))
         .await
         .map_err(ApiError::internal)?;
@@ -354,6 +403,7 @@ async fn user_reset_password(
             "邮件服务尚未配置，无法发送重置邮件",
         ));
     }
+    ensure_super_admin_target_allowed(&state, &actor, &id).await?;
     let user = accounts::user_by_id(&state.db, &id)
         .await
         .map_err(ApiError::internal)?
@@ -404,6 +454,19 @@ async fn user_role(
     }
     if id == actor.user_id && role != "admin" {
         return Err(ApiError::bad("不能取消自己的管理员角色"));
+    }
+    let target = accounts::user_by_id(&state.db, &id)
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::not_found("用户不存在"))?;
+    let actor_super = accounts::is_super_admin(&state.db, &actor.user_id)
+        .await
+        .map_err(ApiError::internal)?;
+    if target.is_super_admin && !actor_super {
+        return Err(ApiError::forbidden("只有超级管理员可以修改超级管理员"));
+    }
+    if target.is_super_admin && role != "admin" {
+        return Err(ApiError::bad("不能取消超级管理员的管理员角色"));
     }
     accounts::set_role(&state.db, &id, &role)
         .await
@@ -470,9 +533,49 @@ async fn user_author_reset(
     Extension(actor): Extension<SessionInfo>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
+    let target = accounts::user_by_id(&state.db, &id)
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::not_found("用户不存在"))?;
+    let actor_super = accounts::is_super_admin(&state.db, &actor.user_id)
+        .await
+        .map_err(ApiError::internal)?;
+    if target.is_super_admin && !actor_super {
+        return Err(ApiError::forbidden(
+            "只有超级管理员可以重置超级管理员的作者许可",
+        ));
+    }
     let (raw_id, author) = authors::reset_author(&state.db, &id, &actor.user_id)
         .await
         .map_err(ApiError::internal)?;
+    if let Ok(Some(theme_id)) = authors::bind_latest_theme(
+        &state.db,
+        &state.paths,
+        &id,
+        &author.hash,
+        author.display_name.as_deref(),
+    )
+    .await
+    {
+        if let Err(error) = crate::catalog::rebuild_catalog(&state.store, &state.paths).await {
+            tracing::warn!("author theme rebind catalog rebuild failed: {error:#}");
+        }
+        state.refresh_withdrawn_assets();
+        let _ = accounts::audit(
+            &state.db,
+            Some(&actor.user_id),
+            "author.bind_latest_theme",
+            Some("theme"),
+            Some(&theme_id),
+            Some(&author.hash),
+        )
+        .await;
+    }
+    if let Err(error) =
+        authors::schedule_grace_if_needed(&state.db, &state.paths, &author.hash).await
+    {
+        tracing::warn!("author grace scheduling failed: {error:#}");
+    }
     accounts::audit(
         &state.db,
         Some(&actor.user_id),
@@ -505,9 +608,28 @@ async fn author_requests(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty() && *value != "all");
-    let requests = authors::author_requests(&state.db, status, None)
+    let mut requests = authors::author_requests(&state.db, status, None)
         .await
         .map_err(ApiError::internal)?;
+    for request in &mut requests {
+        let Some(hash) = request.get("authorHash").and_then(Value::as_str) else {
+            continue;
+        };
+        let name = request.get("displayName").and_then(Value::as_str);
+        if let Some(key) =
+            crate::catalog::author_avatar_key(&state.store, &state.paths, hash, name).await
+        {
+            if let Some(object) = request.as_object_mut() {
+                object.insert(
+                    "avatarUrl".to_string(),
+                    json!(format!(
+                        "/admin/api/preview?path={}",
+                        crate::util::quote_query(&key)
+                    )),
+                );
+            }
+        }
+    }
     Ok(Json(json!({"ok": true, "requests": requests})))
 }
 
@@ -540,6 +662,40 @@ async fn author_request_approve(
             .map_err(ApiError::internal)?;
         if request.kind == "new" {
             let _ = authors::set_auto_publish(&state.db, hash, false).await;
+            match authors::bind_latest_theme(
+                &state.db,
+                &state.paths,
+                &request.user_id,
+                hash,
+                request.display_name.as_deref(),
+            )
+            .await
+            {
+                Ok(Some(theme_id)) => {
+                    if let Err(error) =
+                        crate::catalog::rebuild_catalog(&state.store, &state.paths).await
+                    {
+                        tracing::warn!("author theme rebind catalog rebuild failed: {error:#}");
+                    }
+                    state.refresh_withdrawn_assets();
+                    let _ = accounts::audit(
+                        &state.db,
+                        Some(&actor.user_id),
+                        "author.bind_latest_theme",
+                        Some("theme"),
+                        Some(&theme_id),
+                        Some(hash),
+                    )
+                    .await;
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    tracing::warn!("author theme rebind failed: {error:#}");
+                }
+            }
+        }
+        if let Err(error) = authors::schedule_grace_if_needed(&state.db, &state.paths, hash).await {
+            tracing::warn!("author grace scheduling failed: {error:#}");
         }
     }
     authors::review_author_request(&state.db, &id, "approved", &actor.user_id, None, None)
@@ -632,17 +788,25 @@ async fn author_request_reject(
 #[derive(Deserialize)]
 struct AuditQuery {
     limit: Option<i64>,
+    offset: Option<i64>,
 }
 
 async fn audit(
     State(state): State<AppState>,
     Query(query): Query<AuditQuery>,
 ) -> ApiResult<Json<Value>> {
-    let limit = query.limit.unwrap_or(100).clamp(1, 500);
-    let log = accounts::audit_log(&state.db, limit)
+    let limit = query.limit.unwrap_or(20).clamp(1, 200);
+    let offset = query.offset.unwrap_or(0).max(0);
+    let (log, total) = accounts::audit_log(&state.db, limit, offset)
         .await
         .map_err(ApiError::internal)?;
-    Ok(Json(json!({"ok": true, "items": log})))
+    Ok(Json(json!({
+        "ok": true,
+        "items": log,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+    })))
 }
 
 #[derive(Deserialize)]

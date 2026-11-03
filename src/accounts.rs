@@ -15,7 +15,7 @@ pub const WEB_SESSION_TTL_SECS: u64 = 12 * 60 * 60;
 pub const ANDROID_SESSION_TTL_SECS: u64 = 30 * 24 * 60 * 60;
 
 const USER_COLUMNS: &str = "id, username, display_name, email, avatar, role, status, \
-    email_verified, rejection_reason, created_at, updated_at, approved_at, last_login_at";
+    email_verified, rejection_reason, created_at, updated_at, approved_at, last_login_at, is_super_admin";
 
 #[derive(Clone, Debug, Serialize)]
 pub struct User {
@@ -31,6 +31,7 @@ pub struct User {
     pub created_at: String,
     pub approved_at: Option<String>,
     pub last_login_at: Option<String>,
+    pub is_super_admin: bool,
 }
 
 impl User {
@@ -48,6 +49,7 @@ impl User {
             created_at: row.get(9)?,
             approved_at: row.get(11)?,
             last_login_at: row.get(12)?,
+            is_super_admin: row.get::<_, i64>(13)? != 0,
         })
     }
 
@@ -496,6 +498,74 @@ pub async fn admin_count(db: &Database) -> Result<i64> {
     .await
 }
 
+pub async fn is_super_admin(db: &Database, user_id: &str) -> Result<bool> {
+    let user_id = user_id.to_string();
+    db.call(move |conn| {
+        Ok(conn
+            .query_row(
+                "SELECT is_super_admin FROM users WHERE id = ?1",
+                params![user_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?
+            .unwrap_or(0)
+            != 0)
+    })
+    .await
+}
+
+pub async fn mark_super_admin(db: &Database, user_id: &str) -> Result<()> {
+    let user_id = user_id.to_string();
+    db.call(move |conn| {
+        conn.execute(
+            "UPDATE users SET is_super_admin = CASE WHEN id = ?1 THEN 1 ELSE 0 END",
+            params![user_id],
+        )?;
+        Ok(())
+    })
+    .await
+}
+
+/// Older databases predate the super-admin flag. Mark the configured admin
+/// (or the earliest admin) once so promoted admins remain distinguishable.
+pub async fn ensure_super_admin(db: &Database, paths: &Paths) -> Result<bool> {
+    let has_super: i64 = db
+        .call(|conn| {
+            Ok(conn.query_row(
+                "SELECT COUNT(*) FROM users WHERE is_super_admin = 1",
+                [],
+                |row| row.get(0),
+            )?)
+        })
+        .await?;
+    if has_super > 0 {
+        return Ok(false);
+    }
+    let configured = crate::auth::configured_username(paths);
+    let target = match user_by_login(db, &configured).await? {
+        Some(user) if user.role == "admin" => Some(user.id),
+        _ => {
+            db.call(|conn| {
+                Ok(conn
+                    .query_row(
+                        "SELECT id FROM users WHERE role = 'admin'
+                         ORDER BY created_at ASC, id ASC LIMIT 1",
+                        [],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .optional()?)
+            })
+            .await?
+        }
+    };
+    if let Some(id) = target {
+        mark_super_admin(db, &id).await?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
 pub async fn ensure_admin_seed(db: &Database, paths: &Paths) -> Result<bool> {
     if admin_count(db).await? > 0 {
         return Ok(false);
@@ -513,7 +583,7 @@ pub async fn ensure_admin_seed(db: &Database, paths: &Paths) -> Result<bool> {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(crate::auth::admin_username);
-    create_user(
+    let user = create_user(
         db,
         NewUser {
             username: &username,
@@ -526,6 +596,7 @@ pub async fn ensure_admin_seed(db: &Database, paths: &Paths) -> Result<bool> {
         },
     )
     .await?;
+    mark_super_admin(db, &user.id).await?;
     Ok(true)
 }
 
@@ -884,14 +955,19 @@ pub async fn user_submissions(db: &Database, user_id: &str) -> Result<Vec<serde_
     .await
 }
 
-pub async fn audit_log(db: &Database, limit: i64) -> Result<Vec<serde_json::Value>> {
+pub async fn audit_log(
+    db: &Database,
+    limit: i64,
+    offset: i64,
+) -> Result<(Vec<serde_json::Value>, i64)> {
     db.call(move |conn| {
+        let total: i64 = conn.query_row("SELECT COUNT(*) FROM audit_log", [], |row| row.get(0))?;
         let mut statement = conn.prepare(
             "SELECT a.id, a.actor_id, u.username, a.action, a.target_type, a.target_id, a.detail, a.created_at
              FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id
-             ORDER BY a.id DESC LIMIT ?1",
+             ORDER BY a.id DESC LIMIT ?1 OFFSET ?2",
         )?;
-        let mut rows = statement.query([limit])?;
+        let mut rows = statement.query(rusqlite::params![limit, offset])?;
         let mut items = Vec::new();
         while let Some(row) = rows.next()? {
             items.push(serde_json::json!({
@@ -905,7 +981,7 @@ pub async fn audit_log(db: &Database, limit: i64) -> Result<Vec<serde_json::Valu
                 "createdAt": row.get::<_, String>(7)?,
             }));
         }
-        Ok(items)
+        Ok((items, total))
     })
     .await
 }

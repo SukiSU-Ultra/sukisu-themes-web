@@ -1134,7 +1134,8 @@ input:-webkit-autofill:focus {
       const authorAvatar = activeAuthor.avatarPath
         ? '<img class="avatar" src="' + escapeHtml(assetUrl(activeAuthor.avatarPath)) + '" alt="">'
         : '<div class="avatar">' + escapeHtml((activeAuthor.displayName || 'A').slice(0, 1).toUpperCase()) + '</div>';
-      current.innerHTML = '<div class="author-card">' + authorAvatar + '<div><b>' + escapeHtml(activeAuthor.displayName || '未命名作者') + '</b><span>' + (activeAuthor.code ? '编号 ' + escapeHtml(activeAuthor.code) + ' · ' : '') + escapeHtml(activeAuthor.fingerprint || activeAuthor.hash || '') + '</span></div><span class="pill ' + statusClass(activeAuthor.status) + '">' + statusText(activeAuthor.status) + '</span></div>';
+      const grace = activeAuthor.autoRevokeAt ? ' · 自动撤销：' + escapeHtml(formatTime(activeAuthor.autoRevokeAt)) : '';
+      current.innerHTML = '<div class="author-card">' + authorAvatar + '<div><b>' + escapeHtml(activeAuthor.displayName || '未命名作者') + '</b><span>' + (activeAuthor.code ? '编号 ' + escapeHtml(activeAuthor.code) + ' · ' : '') + escapeHtml(activeAuthor.fingerprint || activeAuthor.hash || '') + grace + '</span></div><span class="pill ' + statusClass(activeAuthor.status) + '">' + statusText(activeAuthor.status) + '</span></div>';
     }
     if (revealedAuthorId) {
       const box = document.createElement('div');
@@ -1147,6 +1148,17 @@ input:-webkit-autofill:focus {
     }
     const list = $('authorRequests');
     const requests = authorRequests;
+    const pendingRequest = requests.some(item => item.status === 'pending');
+    ['showBind', 'showNew', 'requestReset'].forEach(id => {
+      const button = $(id);
+      if (button) button.disabled = pendingRequest;
+    });
+    if (pendingRequest) {
+      const notice = document.createElement('div');
+      notice.className = 'notice';
+      notice.textContent = '你还有待审核的作者申请，请等待审核完成后再提交新的申请。';
+      current.prepend(notice);
+    }
     if (!requests.length) {
       list.innerHTML = '<div class="empty">还没有作者申请记录</div>';
       return;

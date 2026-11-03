@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT,
     avatar TEXT,
     role TEXT NOT NULL DEFAULT 'user',
+    is_super_admin INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'email_pending',
     email_verified INTEGER NOT NULL DEFAULT 0,
     rejection_reason TEXT,
@@ -309,8 +310,25 @@ impl Database {
                     PRIMARY KEY (comment_id, user_id)
                 );
                 CREATE INDEX IF NOT EXISTS theme_comment_mentions_user_idx
-                    ON theme_comment_mentions(user_id);",
+                    ON theme_comment_mentions(user_id);
+                CREATE TABLE IF NOT EXISTS author_restrictions (
+                    author_hash TEXT PRIMARY KEY,
+                    features TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL,
+                    updated_by TEXT
+                );",
             )?;
+            let has_super_admin: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'is_super_admin'",
+                [],
+                |row| row.get(0),
+            )?;
+            if has_super_admin == 0 {
+                conn.execute(
+                    "ALTER TABLE users ADD COLUMN is_super_admin INTEGER NOT NULL DEFAULT 0",
+                    [],
+                )?;
+            }
             let has_auto_publish: i64 = conn.query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('authors') WHERE name = 'auto_publish'",
                 [],
@@ -340,6 +358,14 @@ impl Database {
                     "ALTER TABLE authors ADD COLUMN next_theme_seq INTEGER NOT NULL DEFAULT 1",
                     [],
                 )?;
+            }
+            let has_auto_revoke: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('authors') WHERE name = 'auto_revoke_at'",
+                [],
+                |row| row.get(0),
+            )?;
+            if has_auto_revoke == 0 {
+                conn.execute("ALTER TABLE authors ADD COLUMN auto_revoke_at TEXT", [])?;
             }
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS authors_code_idx ON authors(code) WHERE code IS NOT NULL",

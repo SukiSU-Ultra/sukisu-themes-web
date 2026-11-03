@@ -879,6 +879,19 @@ pub async fn account_create(
     if !crate::account_api::rate_allowed(&state, &format!("comment:{}", session.user_id), 30, 60) {
         return Err(ApiError::too_many("留言过于频繁，请稍后再试"));
     }
+    if session.role != "admin" {
+        if let Some(author) = authors::active_author_for_user(&state.db, &session.user_id)
+            .await
+            .map_err(ApiError::internal)?
+        {
+            if authors::has_restriction(&state.db, &author.hash, "comment")
+                .await
+                .map_err(ApiError::internal)?
+            {
+                return Err(ApiError::forbidden("该作者身份已被限制评论"));
+            }
+        }
+    }
     let value = json_body(body).await?;
     let body: CreateCommentBody =
         serde_json::from_value(value).map_err(|_| ApiError::bad("评论参数无效"))?;

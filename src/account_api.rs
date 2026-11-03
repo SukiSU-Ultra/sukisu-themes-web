@@ -1248,6 +1248,12 @@ async fn create_author_request(
     if !valid_display_name(&display_name) {
         return Err(ApiError::bad("作者名称需要 1-40 个字符"));
     }
+    if authors::has_pending_request(&state.db, &session.user_id)
+        .await
+        .map_err(ApiError::internal)?
+    {
+        return Err(ApiError::conflict("你还有待审核的作者申请，请等待审核完成"));
+    }
     let existing = authors::authors_for_user(&state.db, &session.user_id)
         .await
         .map_err(ApiError::internal)?;
@@ -1256,15 +1262,6 @@ async fn create_author_request(
             .iter()
             .find(|author| author.status == "active")
             .ok_or_else(|| ApiError::bad("当前没有可重置的作者身份"))?;
-        let pending = authors::author_requests(&state.db, Some("pending"), Some(&session.user_id))
-            .await
-            .map_err(ApiError::internal)?;
-        if pending
-            .iter()
-            .any(|item| item.get("kind").and_then(|v| v.as_str()) == Some("reset"))
-        {
-            return Err(ApiError::conflict("已有待处理的重置申请"));
-        }
         let id = authors::create_author_request(
             &state.db,
             &session.user_id,
@@ -1420,6 +1417,34 @@ async fn generate_reset_author(
     let (raw_id, author) = authors::reset_author(&state.db, &session.user_id, &session.user_id)
         .await
         .map_err(ApiError::internal)?;
+    if let Ok(Some(theme_id)) = authors::bind_latest_theme(
+        &state.db,
+        &state.paths,
+        &session.user_id,
+        &author.hash,
+        author.display_name.as_deref(),
+    )
+    .await
+    {
+        if let Err(error) = crate::catalog::rebuild_catalog(&state.store, &state.paths).await {
+            tracing::warn!("author theme rebind catalog rebuild failed: {error:#}");
+        }
+        state.refresh_withdrawn_assets();
+        let _ = accounts::audit(
+            &state.db,
+            Some(&session.user_id),
+            "author.bind_latest_theme",
+            Some("theme"),
+            Some(&theme_id),
+            Some(&author.hash),
+        )
+        .await;
+    }
+    if let Err(error) =
+        authors::schedule_grace_if_needed(&state.db, &state.paths, &author.hash).await
+    {
+        tracing::warn!("author grace scheduling failed: {error:#}");
+    }
     authors::review_author_request(
         &state.db,
         &id,
@@ -2182,6 +2207,12 @@ async fn resolve_account_author(
             }
             let requires_review = author.user_id.is_none() || author.status != "active";
             if author.user_id.is_none() {
+                if authors::has_pending_request(&state.db, &session.user_id)
+                    .await
+                    .map_err(ApiError::internal)?
+                {
+                    return Err(ApiError::conflict("你还有待审核的作者申请，请等待审核完成"));
+                }
                 ensure_author_request(state, &session.user_id, "bind", &hash, &display_name)
                     .await?;
             }
@@ -2191,6 +2222,12 @@ async fn resolve_account_author(
                 generated_id: None,
                 requires_review,
             });
+        }
+        if authors::has_pending_request(&state.db, &session.user_id)
+            .await
+            .map_err(ApiError::internal)?
+        {
+            return Err(ApiError::conflict("你还有待审核的作者申请，请等待审核完成"));
         }
         let author = authors::create_author(
             &state.db,
@@ -2234,6 +2271,12 @@ async fn resolve_account_author(
             requires_review: true,
         });
     }
+    if authors::has_pending_request(&state.db, &session.user_id)
+        .await
+        .map_err(ApiError::internal)?
+    {
+        return Err(ApiError::conflict("你还有待审核的作者申请，请等待审核完成"));
+    }
     let raw_id = random_hex(24);
     let hash = author_key(&raw_id);
     let author = authors::create_author(
@@ -2261,6 +2304,12 @@ async fn next_theme_id(
 ) -> ApiResult<Json<Value>> {
     require_active(&session)?;
     let resolved = resolve_account_author(&state, &session, None, &session.display_name).await?;
+    if authors::has_restriction(&state.db, &resolved.author.hash, "upload")
+        .await
+        .map_err(ApiError::internal)?
+    {
+        return Err(ApiError::forbidden("该作者身份已被限制投稿"));
+    }
     let id = authors::peek_next_theme_id(&state.db, &resolved.author.hash)
         .await
         .map_err(ApiError::internal)?
@@ -2304,6 +2353,12 @@ async fn submit_theme(
     let requested_id = form.id.trim().to_string();
     let resolved =
         resolve_account_author(&state, &session, author_id.as_deref(), &author_name).await?;
+    if authors::has_restriction(&state.db, &resolved.author.hash, "upload")
+        .await
+        .map_err(ApiError::internal)?
+    {
+        return Err(ApiError::forbidden("该作者身份已被限制投稿"));
+    }
     crate::uploads::reuse_author_avatar(
         &state.store,
         &state.paths,
@@ -2384,7 +2439,10 @@ async fn submit_theme(
     }
     let auto_publish = !resolved.requires_review
         && resolved.author.status == "active"
-        && resolved.author.auto_publish;
+        && resolved.author.auto_publish
+        && !authors::has_restriction(&state.db, &resolved.author.hash, "auto_publish")
+            .await
+            .map_err(ApiError::internal)?;
     if auto_publish {
         let themes = crate::uploads::publish_theme(
             &state.store,

@@ -317,6 +317,8 @@ pub fn router(state: AppState) -> Router {
         .route("/reject", post(reject))
         .route("/author/revoke", post(author_revoke))
         .route("/author/delete", post(author_delete))
+        .route("/author/batch", post(author_batch))
+        .route("/author/restrictions", post(author_restrictions_save))
         .route("/sync", post(sync_catalog))
         .route("/test-catalog", post(test_catalog))
         .route("/reload", post(reload_caddy))
@@ -611,11 +613,18 @@ async fn session_info(State(state): State<AppState>, headers: HeaderMap) -> Json
         .ok()
         .flatten()
         .unwrap_or_else(|| auth::configured_username(&state.paths));
+    let is_super_admin = match &session {
+        Some(session) => crate::accounts::is_super_admin(&state.db, &session.user_id)
+            .await
+            .unwrap_or(false),
+        None => false,
+    };
     Json(json!({
         "ok": true,
         "authenticated": session.is_some(),
         "username": session.as_ref().map(|session| session.username.clone()),
         "role": session.as_ref().map(|session| session.role.clone()),
+        "isSuperAdmin": is_super_admin,
         "adminUsername": admin_username,
         "setupRequired": !auth::admin_configured(&state.db, &state.paths).await,
     }))
@@ -1116,12 +1125,76 @@ async fn pending(State(state): State<AppState>) -> Json<Value> {
     Json(json!({"ok": true, "submissions": submissions, "count": count}))
 }
 
-async fn authors(State(state): State<AppState>) -> Json<Value> {
-    let authors = crate::authors::list_authors(&state.db)
+async fn authors(
+    State(state): State<AppState>,
+    Extension(actor): Extension<crate::accounts::SessionInfo>,
+) -> Json<Value> {
+    let actor_super = crate::accounts::is_super_admin(&state.db, &actor.user_id)
+        .await
+        .unwrap_or(false);
+    let restrictions = crate::authors::all_restrictions(&state.db)
         .await
         .unwrap_or_default();
+    let mut authors = crate::authors::list_authors(&state.db)
+        .await
+        .unwrap_or_default();
+    let mut locked_by_user: std::collections::HashMap<String, HashSet<String>> =
+        std::collections::HashMap::new();
+    for author in &mut authors {
+        let Some(hash) = author.get("hash").and_then(Value::as_str) else {
+            continue;
+        };
+        let name = author.get("name").and_then(Value::as_str);
+        let owner_role = author
+            .get("ownerRole")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let base_allowed = actor_super || owner_role == "user";
+        // A reset (or a pending request) gives the account a new license; the
+        // stale ones are handled from the user detail's reset button instead.
+        let mut locked = false;
+        if let Some(owner_id) = author.get("userId").and_then(Value::as_str) {
+            if !locked_by_user.contains_key(owner_id) {
+                let hashes = crate::authors::locked_author_hashes(&state.db, owner_id)
+                    .await
+                    .unwrap_or_default();
+                locked_by_user.insert(owner_id.to_string(), hashes);
+            }
+            locked = locked_by_user
+                .get(owner_id)
+                .map(|hashes| hashes.contains(hash))
+                .unwrap_or(false);
+        }
+        let can_restrict = base_allowed && !locked;
+        let features = restrictions
+            .get(hash)
+            .map(|items| json!(items))
+            .unwrap_or_else(|| json!([]));
+        if let Some(key) =
+            crate::catalog::author_avatar_key(&state.store, &state.paths, hash, name).await
+        {
+            if let Some(object) = author.as_object_mut() {
+                object.insert(
+                    "avatarUrl".to_string(),
+                    json!(format!(
+                        "/admin/api/preview?path={}",
+                        crate::util::quote_query(&key)
+                    )),
+                );
+            }
+        }
+        if let Some(object) = author.as_object_mut() {
+            object.insert("restrictions".to_string(), features);
+            object.insert("canRestrict".to_string(), json!(can_restrict));
+        }
+    }
     let count = authors.len();
-    Json(json!({"ok": true, "authors": authors, "count": count}))
+    Json(json!({
+        "ok": true,
+        "authors": authors,
+        "count": count,
+        "isSuperAdmin": actor_super,
+    }))
 }
 
 #[derive(Deserialize)]
@@ -2048,7 +2121,32 @@ async fn set_password(
     .into_response())
 }
 
-async fn author_revoke(State(state): State<AppState>, body: Bytes) -> ApiResult<Response> {
+async fn actor_can_manage_author(
+    state: &AppState,
+    actor: &crate::accounts::SessionInfo,
+    author: &crate::authors::Author,
+) -> ApiResult<bool> {
+    if crate::accounts::is_super_admin(&state.db, &actor.user_id)
+        .await
+        .map_err(ApiError::internal)?
+    {
+        return Ok(true);
+    }
+    let Some(owner_id) = author.user_id.as_deref() else {
+        return Ok(false);
+    };
+    Ok(crate::accounts::user_by_id(&state.db, owner_id)
+        .await
+        .map_err(ApiError::internal)?
+        .map(|owner| owner.role == "user")
+        .unwrap_or(false))
+}
+
+async fn author_revoke(
+    State(state): State<AppState>,
+    Extension(actor): Extension<crate::accounts::SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Response> {
     let value = json_body(body).await?;
     let hash = value
         .get("hash")
@@ -2059,14 +2157,16 @@ async fn author_revoke(State(state): State<AppState>, body: Bytes) -> ApiResult<
     if !valid_author_hash(&hash) {
         return Err(ApiError::bad("invalid author hash"));
     }
-    if crate::authors::author_by_hash(&state.db, &hash)
+    let Some(author) = crate::authors::author_by_hash(&state.db, &hash)
         .await
         .map_err(ApiError::internal)?
-        .is_none()
-    {
+    else {
         return Err(ApiError::not_found("author not found"));
+    };
+    if !actor_can_manage_author(&state, &actor, &author).await? {
+        return Err(ApiError::forbidden("无权修改该作者许可"));
     }
-    crate::authors::set_author_status(&state.db, &hash, "revoked", None)
+    crate::authors::set_author_status(&state.db, &hash, "revoked", Some(&actor.user_id))
         .await
         .map_err(ApiError::internal)?;
     crate::accounts::audit(
@@ -2103,6 +2203,9 @@ async fn author_delete(
     else {
         return Err(ApiError::not_found("author not found"));
     };
+    if !actor_can_manage_author(&state, &actor, &author).await? {
+        return Err(ApiError::forbidden("无权删除该作者许可"));
+    }
     if author.status != "revoked" && author.status != "retired" {
         return Err(ApiError::bad("请先撤销作者许可，再删除许可记录"));
     }
@@ -2120,6 +2223,194 @@ async fn author_delete(
     .await
     .ok();
     Ok(Json(json!({"ok": true, "message": "作者许可已删除"})).into_response())
+}
+
+async fn author_batch(
+    State(state): State<AppState>,
+    Extension(actor): Extension<crate::accounts::SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Response> {
+    let value = json_body(body).await?;
+    let action = value
+        .get("action")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if !matches!(action.as_str(), "revoke" | "disable" | "delete") {
+        return Err(ApiError::bad("invalid batch action"));
+    }
+    let mut seen = HashSet::new();
+    let hashes: Vec<String> = value
+        .get("hashes")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .map(|item| item.trim().to_ascii_lowercase())
+                .filter(|hash| valid_author_hash(hash))
+                .filter(|hash| seen.insert(hash.clone()))
+                .take(200)
+                .collect()
+        })
+        .unwrap_or_default();
+    if hashes.is_empty() {
+        return Err(ApiError::bad("请选择至少一个作者"));
+    }
+    let actor_super = crate::accounts::is_super_admin(&state.db, &actor.user_id)
+        .await
+        .map_err(ApiError::internal)?;
+    let mut updated = 0usize;
+    let mut skipped = 0usize;
+    let mut missing = 0usize;
+    for hash in &hashes {
+        let Some(author) = crate::authors::author_by_hash(&state.db, hash)
+            .await
+            .map_err(ApiError::internal)?
+        else {
+            missing += 1;
+            continue;
+        };
+        if !actor_super {
+            let allowed = match author.user_id.as_deref() {
+                Some(owner_id) => crate::accounts::user_by_id(&state.db, owner_id)
+                    .await
+                    .map_err(ApiError::internal)?
+                    .map(|owner| owner.role == "user")
+                    .unwrap_or(false),
+                None => false,
+            };
+            if !allowed {
+                skipped += 1;
+                continue;
+            }
+        }
+        match action.as_str() {
+            "revoke" => {
+                crate::authors::set_author_status(&state.db, hash, "revoked", Some(&actor.user_id))
+                    .await
+                    .map_err(ApiError::internal)?;
+                let _ = crate::authors::set_auto_publish(&state.db, hash, false).await;
+                updated += 1;
+            }
+            "disable" => {
+                crate::authors::set_author_status(&state.db, hash, "retired", Some(&actor.user_id))
+                    .await
+                    .map_err(ApiError::internal)?;
+                let _ = crate::authors::set_auto_publish(&state.db, hash, false).await;
+                updated += 1;
+            }
+            "delete" => {
+                if author.status == "revoked" || author.status == "retired" {
+                    crate::authors::delete_author(&state.db, hash)
+                        .await
+                        .map_err(ApiError::internal)?;
+                    updated += 1;
+                } else {
+                    skipped += 1;
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+    let detail =
+        format!("action={action}; updated={updated}; skipped={skipped}; missing={missing}");
+    crate::accounts::audit(
+        &state.db,
+        Some(&actor.user_id),
+        "author.batch",
+        Some("author"),
+        None,
+        Some(&detail),
+    )
+    .await
+    .ok();
+    Ok(Json(json!({
+        "ok": true,
+        "action": action,
+        "updated": updated,
+        "skipped": skipped,
+        "missing": missing,
+    }))
+    .into_response())
+}
+
+async fn author_restrictions_save(
+    State(state): State<AppState>,
+    Extension(actor): Extension<crate::accounts::SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Response> {
+    let value = json_body(body).await?;
+    let hash = value
+        .get("hash")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if !valid_author_hash(&hash) {
+        return Err(ApiError::bad("invalid author hash"));
+    }
+    let author = crate::authors::author_by_hash(&state.db, &hash)
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::not_found("author not found"))?;
+    let actor_super = crate::accounts::is_super_admin(&state.db, &actor.user_id)
+        .await
+        .map_err(ApiError::internal)?;
+    if !actor_super {
+        let Some(owner_id) = author.user_id.as_deref() else {
+            return Err(ApiError::forbidden(
+                "只有超级管理员可以修改未绑定账号的作者许可",
+            ));
+        };
+        let owner = crate::accounts::user_by_id(&state.db, owner_id)
+            .await
+            .map_err(ApiError::internal)?
+            .ok_or_else(|| ApiError::not_found("作者所属账号不存在"))?;
+        if owner.role != "user" {
+            return Err(ApiError::forbidden(
+                "普通管理员不能修改管理员账号的作者许可",
+            ));
+        }
+    }
+    let mut features = HashSet::new();
+    if let Some(items) = value.get("features").and_then(|value| value.as_array()) {
+        for item in items {
+            let Some(feature) = item.as_str().map(str::trim) else {
+                continue;
+            };
+            if crate::authors::AUTHOR_FEATURES.contains(&feature) {
+                features.insert(feature.to_string());
+            }
+        }
+    }
+    crate::authors::set_restrictions(&state.db, &hash, &features, &actor.user_id)
+        .await
+        .map_err(ApiError::internal)?;
+    let detail = crate::authors::AUTHOR_FEATURES
+        .iter()
+        .filter(|feature| features.contains(**feature))
+        .copied()
+        .collect::<Vec<_>>()
+        .join(",");
+    crate::accounts::audit(
+        &state.db,
+        Some(&actor.user_id),
+        "author.restrictions",
+        Some("author"),
+        Some(&hash),
+        Some(&detail),
+    )
+    .await
+    .ok();
+    Ok(Json(json!({
+        "ok": true,
+        "hash": hash,
+        "features": features,
+        "isSuperAdmin": actor_super,
+    }))
+    .into_response())
 }
 
 async fn storage_get(State(state): State<AppState>) -> Json<Value> {

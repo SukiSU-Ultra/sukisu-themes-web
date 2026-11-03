@@ -52,8 +52,14 @@ async fn main() -> anyhow::Result<()> {
     if let Err(error) = accounts::ensure_admin_seed(&state.db, &state.paths).await {
         tracing::warn!("admin seed warning: {error:#}");
     }
+    if let Err(error) = accounts::ensure_super_admin(&state.db, &state.paths).await {
+        tracing::warn!("super admin seed warning: {error:#}");
+    }
     if let Err(error) = authors::import_legacy_authors(&state.db, &state.paths).await {
         tracing::warn!("author import warning: {error:#}");
+    }
+    if let Err(error) = authors::revoke_inactive_authors(&state.db, &state.paths).await {
+        tracing::warn!("author auto-revoke warning: {error:#}");
     }
     let flush_state = state.clone();
     tokio::spawn(async move {
@@ -80,6 +86,11 @@ async fn main() -> anyhow::Result<()> {
             }
             if let Err(error) = comments::purge_expired(&cleanup_state.db).await {
                 tracing::warn!("comment cleanup warning: {error:#}");
+            }
+            if let Err(error) =
+                authors::revoke_inactive_authors(&cleanup_state.db, &cleanup_state.paths).await
+            {
+                tracing::warn!("author auto-revoke warning: {error:#}");
             }
             cleanup_state.reload_theme_stats();
             tokio::time::sleep(std::time::Duration::from_secs(3600)).await;

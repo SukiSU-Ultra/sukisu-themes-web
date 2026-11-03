@@ -684,6 +684,20 @@ input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 9px; b
 
 .author-card { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 9px; padding: 13px 16px; border: 1px solid var(--line); border-radius: 15px; background: var(--panel); }
 .author-card b { display: block; margin-bottom: 3px; }
+.author-batch { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+.author-batch label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.author-batch button { height: 32px; padding: 0 11px; font-size: 11.5px; }
+.author-batch .danger { color: var(--bad); border-color: rgba(251, 113, 133, .3); }
+.author-card .author-avatar { width: 34px; height: 34px; font-size: 13px; }
+.author-card .author-avatar.fallback { display: grid; place-items: center; background: var(--gradient); color: #fff; font-weight: 800; }
+.author-check { display: flex; align-items: center; padding-right: 4px; }
+.author-check input { width: 16px; height: 16px; }
+.audit-details > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; list-style: none; font-size: 14px; font-weight: 650; }
+.audit-details > summary::-webkit-details-marker { display: none; }
+.audit-details[open] > summary { margin-bottom: 8px; }
+.restriction-option { display: flex; align-items: center; gap: 8px; margin: 10px 0; color: var(--muted); font-size: 13px; }
+.restriction-option input { width: 18px; height: 18px; }
+.author-meta .pill { margin-top: 4px; }
 .author-fp { flex: 1; min-width: 180px; color: var(--code-text); font-family: var(--font-mono); font-size: 12px; word-break: break-all; }
 .author-meta { display: flex; flex-wrap: wrap; gap: 10px; color: var(--faint); font-size: 11px; }
 .author-actions button { height: 30px; color: var(--bad); background: rgba(251, 113, 133, .08); border-color: rgba(251, 113, 133, .26); font-size: 11.5px; }
@@ -1480,11 +1494,16 @@ input:-webkit-autofill:focus {
         <div class="section-head"><div><h3 id="userDetailName">用户详情</h3><p id="userDetailMeta">–</p></div><button id="closeUserDetail">关闭</button></div>
         <div id="userDetailBody"></div>
       </div>
-      <div class="card" style="margin-top:14px">
-        <h4>管理员操作日志</h4>
+      <details class="card audit-details" id="auditDetails" style="margin-top:14px">
+        <summary><span>管理员操作日志</span><span class="pill" id="auditPill">展开</span></summary>
         <p class="hint">最近的审核、禁用、作者绑定和重置操作。</p>
         <div class="list" id="auditList"></div>
-      </div>
+        <div class="comment-pager">
+          <span class="comment-retention" id="auditPageInfo"></span>
+          <button class="small" id="auditPrev" type="button">上一页</button>
+          <button class="small" id="auditNext" type="button">下一页</button>
+        </div>
+      </details>
     </section>
 
     <section id="pending" class="page">
@@ -1501,6 +1520,13 @@ input:-webkit-autofill:focus {
 
     <section id="authors" class="page">
       <div class="section-head"><div><h3>自动审批作者</h3><p>首次投稿审核通过后，作者 ID 会获得许可；以后使用同一 ID 投稿将自动发布。</p></div><span class="pill" id="authorsPill">0 位</span></div>
+      <div class="author-batch" id="authorBatchBar">
+        <label><input type="checkbox" id="authorSelectAll"> 全选</label>
+        <span class="comment-retention" id="authorSelectedCount">已选 0 位</span>
+        <button type="button" data-author-batch="revoke">批量撤销</button>
+        <button type="button" data-author-batch="disable">批量停用</button>
+        <button type="button" class="danger" data-author-batch="delete">批量删除</button>
+      </div>
       <div id="authorsList"></div>
       <div class="empty" id="authorsEmpty"><b>还没有自动审批作者</b>批准第一篇投稿后，作者 ID 会出现在这里。</div>
     </section>
@@ -2019,6 +2045,21 @@ input:-webkit-autofill:focus {
   </div>
   <div class="theme-detail-body" id="themeDetailBody"></div>
 </dialog>
+<dialog class="theme-detail-dialog" id="authorRestrictionsDialog">
+  <div class="theme-detail-head">
+    <h3 id="authorRestrictionsTitle">功能限制</h3>
+    <button class="btn small" id="authorRestrictionsClose" type="button">关闭</button>
+  </div>
+  <div class="theme-detail-body">
+    <p class="hint" id="authorRestrictionsHint">限制只影响普通作者，不影响管理员账号。</p>
+    <label class="restriction-option"><input type="checkbox" data-author-feature="upload"> 禁止投稿/上传主题</label>
+    <label class="restriction-option"><input type="checkbox" data-author-feature="comment"> 禁止评论与回复</label>
+    <label class="restriction-option"><input type="checkbox" data-author-feature="auto_publish"> 禁止自动发布</label>
+    <div class="row" style="margin-top:14px">
+      <button class="primary" id="authorRestrictionsSave" type="button">保存限制</button>
+    </div>
+  </div>
+</dialog>
 
 <script>
 const BASE_PATH = location.pathname.startsWith('/admin') ? '/admin/' : '/';
@@ -2242,6 +2283,7 @@ function copyText(text, message = '已复制') {
 }
 
 let sessionUser = 'admin';
+let sessionIsSuperAdmin = false;
 
 function setUser(name) {
   sessionUser = (name || 'admin').trim() || 'admin';
@@ -2304,6 +2346,7 @@ async function loadSession() {
       return false;
     }
     try { sessionStorage.removeItem(AUTH_REDIRECT_KEY); } catch (_) {}
+    sessionIsSuperAdmin = data.isSuperAdmin === true;
     setUser(data.username || 'admin');
     void loadSelfAvatar(data.username || 'admin');
     return true;
@@ -3091,37 +3134,198 @@ function renderPendingList() {
 }
 
 let authorItems = [];
+let selectedAuthorHashes = new Set();
+let restrictionAuthorHash = null;
 
 function renderAuthors(authors) {
   authorItems = authors || [];
+  const byHash = new Map(authorItems.map(author => [author.hash, author]));
+  selectedAuthorHashes = new Set(
+    [...selectedAuthorHashes].filter(hash => byHash.get(hash)?.canRestrict !== false),
+  );
   populateUploadAuthors();
   populateImportAuthors();
   const list = $('authorsList');
   list.innerHTML = '';
   $('authorsPill').textContent = authorItems.length + ' 位';
   $('authorsEmpty').style.display = authorItems.length ? 'none' : 'block';
+  const restrictionLabels = {
+    upload: '禁止投稿',
+    comment: '禁止评论',
+    auto_publish: '禁止自动发布',
+  };
   authorItems.forEach(author => {
     const card = document.createElement('div');
     card.className = 'author-card';
-    const removable = author.status === 'revoked' || author.status === 'retired';
-    const actionHtml = removable
-      ? `<span class="pill bad">${author.status === 'retired' ? '已停用' : '已撤销'}</span><button class="reject delete-author">删除</button>`
-      : '<button class="revoke">撤销许可</button>';
+    const manageable = author.canRestrict !== false;
+    const removable = manageable && (author.status === 'revoked' || author.status === 'retired');
+    let actionHtml;
+    if (!manageable) {
+      actionHtml = '<span class="pill warn">受保护</span><button class="restrict-author">用户详情</button>';
+    } else if (removable) {
+      actionHtml = `<span class="pill bad">${author.status === 'retired' ? '已停用' : '已撤销'}</span><button class="reject delete-author">删除</button><button class="restrict-author">功能限制</button>`;
+    } else {
+      actionHtml = '<button class="revoke">撤销许可</button><button class="restrict-author">功能限制</button>';
+    }
+    const checked = manageable && selectedAuthorHashes.has(author.hash);
+    const initial = String(author.name || 'A').trim().slice(0, 1).toUpperCase() || 'A';
+    const avatar = author.avatarUrl
+      ? `<img class="author-avatar" src="${escapeHtml(author.avatarUrl)}" alt="">`
+      : `<span class="author-avatar fallback">${escapeHtml(initial)}</span>`;
+    const revokeAt = author.autoRevokeAt
+      ? `<span>自动撤销：${escapeHtml(formatTime(author.autoRevokeAt))}</span>`
+      : '';
+    const restrictionHtml = (author.restrictions || [])
+      .map(feature => `<span class="pill warn">${escapeHtml(restrictionLabels[feature] || feature)}</span>`)
+      .join('');
     card.innerHTML = `
+      <label class="author-check"><input type="checkbox" class="author-select" ${checked ? 'checked' : ''} ${manageable ? '' : 'disabled'}></label>
+      ${avatar}
       <span class="author-fp">${escapeHtml(author.fingerprint || author.hash)}</span>
       <span class="author-meta">
         <b>${escapeHtml(author.name || '未命名作者')}</b>
         <span>${author.code ? '编号 ' + escapeHtml(author.code) + ' · ' : ''}${author.username ? '@' + escapeHtml(author.username) : '未绑定账号'} · ${escapeHtml(author.status || 'active')}</span>
         <span>批准：${formatTime(author.approvedAt)} · 最近：${formatTime(author.lastUsedAt)}</span>
+        ${revokeAt}
+        ${restrictionHtml}
       </span>
       <span class="author-actions">${actionHtml}</span>`;
+    const checkbox = card.querySelector('.author-select');
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) selectedAuthorHashes.add(author.hash);
+      else selectedAuthorHashes.delete(author.hash);
+      updateAuthorBatchBar();
+    });
     const revoke = card.querySelector('.revoke');
     if (revoke) revoke.addEventListener('click', () => revokeAuthor(author.hash, author.fingerprint));
     const remove = card.querySelector('.delete-author');
     if (remove) remove.addEventListener('click', () => deleteAuthor(author.hash, author.fingerprint));
+    const restrict = card.querySelector('.restrict-author');
+    if (restrict) restrict.addEventListener('click', () => openAuthorRestrictions(author));
     list.appendChild(card);
   });
+  updateAuthorBatchBar();
 }
+
+function updateAuthorBatchBar() {
+  const manageable = authorItems.filter(author => author.canRestrict !== false);
+  const count = [...selectedAuthorHashes].filter(hash =>
+    manageable.some(author => author.hash === hash),
+  ).length;
+  const label = $('authorSelectedCount');
+  if (label) label.textContent = `已选 ${count} 位`;
+  const selectAll = $('authorSelectAll');
+  if (selectAll) {
+    selectAll.checked = manageable.length > 0 && count === manageable.length;
+    selectAll.indeterminate = count > 0 && count < manageable.length;
+    selectAll.disabled = manageable.length === 0;
+  }
+  document.querySelectorAll('[data-author-batch]').forEach(button => {
+    const action = button.dataset.authorBatch;
+    const usable = action === 'delete'
+      ? [...selectedAuthorHashes].some(hash => {
+        const status = authorItems.find(author => author.hash === hash)?.status;
+        return status === 'revoked' || status === 'retired';
+      })
+      : count > 0;
+    button.disabled = !usable;
+  });
+}
+
+$('authorSelectAll').addEventListener('change', event => {
+  const checked = event.target.checked;
+  authorItems.filter(author => author.canRestrict !== false).forEach(author => {
+    if (checked) selectedAuthorHashes.add(author.hash);
+    else selectedAuthorHashes.delete(author.hash);
+  });
+  document.querySelectorAll('.author-select').forEach(input => {
+    if (!input.disabled) input.checked = checked;
+  });
+  updateAuthorBatchBar();
+});
+
+const authorBatchLabels = {
+  revoke: { verb: '撤销自动审批许可', done: '已撤销' },
+  disable: { verb: '停用作者许可', done: '已停用' },
+  delete: { verb: '永久删除许可记录（已发布主题会保留）', done: '已删除' },
+};
+
+document.querySelectorAll('[data-author-batch]').forEach(button => {
+  button.addEventListener('click', () => runAuthorBatch(button.dataset.authorBatch));
+});
+
+async function runAuthorBatch(action) {
+  const labels = authorBatchLabels[action];
+  if (!labels) return;
+  const hashes = [...selectedAuthorHashes].filter(hash =>
+    authorItems.some(author => author.hash === hash && author.canRestrict !== false),
+  );
+  if (!hashes.length) {
+    toast('请先选择至少一个作者', 'bad');
+    return;
+  }
+  if (!confirm(`确定对选中的 ${hashes.length} 位作者${labels.verb}？`)) return;
+  try {
+    const data = await api('/author/batch', {
+      method: 'POST',
+      body: JSON.stringify({ action, hashes }),
+    });
+    const parts = [`${labels.done} ${data.updated ?? 0} 位`];
+    if (data.skipped) parts.push(`跳过 ${data.skipped} 位`);
+    if (data.missing) parts.push(`未找到 ${data.missing} 位`);
+    toast(parts.join('，'), data.updated ? 'ok' : 'bad');
+    if (action !== 'disable') selectedAuthorHashes.clear();
+    await loadAuthors();
+    if (action === 'delete' && data.updated) await refresh(true);
+  } catch (error) {
+    toast('批量操作失败：' + error.message, 'bad');
+  }
+}
+
+function openAuthorRestrictions(author) {
+  if (author.canRestrict === false) {
+    toast('该作者许可受保护，普通管理员不能修改', 'bad');
+    return;
+  }
+  restrictionAuthorHash = author.hash;
+  $('authorRestrictionsTitle').textContent = '功能限制 · ' + (author.name || author.fingerprint || '');
+  const active = new Set(author.restrictions || []);
+  document.querySelectorAll('[data-author-feature]').forEach(input => {
+    input.checked = active.has(input.dataset.authorFeature);
+  });
+  $('authorRestrictionsDialog').showModal();
+}
+
+async function saveAuthorRestrictions() {
+  if (!restrictionAuthorHash) return;
+  const features = [...document.querySelectorAll('[data-author-feature]')]
+    .filter(input => input.checked)
+    .map(input => input.dataset.authorFeature);
+  try {
+    await api('/author/restrictions', {
+      method: 'POST',
+      body: JSON.stringify({ hash: restrictionAuthorHash, features }),
+    });
+    toast('功能限制已更新');
+    $('authorRestrictionsDialog').close();
+    restrictionAuthorHash = null;
+    await loadAuthors();
+  } catch (error) {
+    toast(error.message, 'bad');
+  }
+}
+
+$('authorRestrictionsClose').addEventListener('click', () => {
+  $('authorRestrictionsDialog').close();
+  restrictionAuthorHash = null;
+});
+$('authorRestrictionsSave').addEventListener('click', saveAuthorRestrictions);
+$('authorRestrictionsDialog').addEventListener('click', event => {
+  if (event.target === $('authorRestrictionsDialog')) {
+    $('authorRestrictionsDialog').close();
+    restrictionAuthorHash = null;
+  }
+});
 
 async function loadAuthors() {
   try {
@@ -3410,16 +3614,21 @@ function renderUsers(users) {
     const card = document.createElement('div');
     card.className = 'pending-card user-card';
     const authorText = user.authorName ? `${user.authorName} · ${user.authorStatus || ''}` : '未绑定作者';
+    const superTarget = user.isSuperAdmin === true;
+    const superPill = superTarget ? ' <span class="pill warn">超级管理员</span>' : '';
+    const authorAvatar = user.authorAvatarUrl
+      ? `<img class="author-avatar" src="${escapeHtml(user.authorAvatarUrl)}" alt="">`
+      : '';
     card.innerHTML = `
       <div class="pending-body">
         <div class="section-head" style="margin:0 0 8px">
-          <div><h4 style="margin:0">${escapeHtml(user.displayName || user.username)} ${userPill(user.status)}</h4>
+          <div><h4 style="margin:0">${escapeHtml(user.displayName || user.username)} ${userPill(user.status)}${superPill}</h4>
           <p class="hint" style="margin:4px 0 0">@${escapeHtml(user.username)}${user.email ? ' · ' + escapeHtml(user.email) : ''}</p></div>
           <span class="pill">${escapeHtml(user.role === 'admin' ? '管理员' : '普通用户')}</span>
         </div>
         <div class="meta">
           <div class="kv"><span>邮箱验证</span><b>${user.emailVerified ? '已完成' : '未完成'}</b></div>
-          <div class="kv"><span>作者身份</span><b>${escapeHtml(authorText)}</b></div>
+          <div class="kv"><span>作者身份</span><b>${authorAvatar}${escapeHtml(authorText)}</b></div>
           <div class="kv"><span>注册时间</span><b>${escapeHtml(formatTime(user.createdAt))}</b></div>
         </div>
         <div class="row" style="margin-top:12px"></div>
@@ -3438,8 +3647,10 @@ function renderUsers(users) {
       add('拒绝', 'reject', 'danger');
     }
     if (user.status === 'active') {
-      add('禁用', 'disable', 'danger');
-      add('重置密码', 'reset-password');
+      if (!superTarget || sessionIsSuperAdmin) {
+        add('禁用', 'disable', 'danger');
+        add('重置密码', 'reset-password');
+      }
     }
     if (user.status === 'disabled' || user.status === 'rejected') {
       add('启用', 'enable');
@@ -3501,16 +3712,24 @@ async function loadUserDetail(id) {
     $('userDetail').classList.remove('hidden');
     $('userDetailName').textContent = user.displayName || user.username;
     $('userDetailMeta').innerHTML = `<span>@${escapeHtml(user.username)}</span> · <span>${escapeHtml(user.email || '无邮箱')}</span> · <span>${escapeHtml(userStatusText(user.status))}</span>`;
-    const authorsHtml = (data.authors || []).map(author => `
+    const authorsHtml = (data.authors || []).map(author => {
+      const initial = String(author.displayName || 'A').trim().slice(0, 1).toUpperCase() || 'A';
+      const avatar = author.avatarUrl
+        ? `<img class="author-avatar" src="${escapeHtml(author.avatarUrl)}" alt="">`
+        : `<span class="author-avatar fallback">${escapeHtml(initial)}</span>`;
+      return `
       <div class="author-card">
-        <div class="avatar">${escapeHtml((author.displayName || 'A').slice(0, 1).toUpperCase())}</div>
+        ${avatar}
         <div><b>${escapeHtml(author.displayName || '未命名作者')}</b><span class="author-fp">${escapeHtml(author.fingerprint || author.hash)}</span></div>
         <span class="pill ${userTone(author.status)}">${escapeHtml(({ active: '已启用', pending: '待审核', retired: '已停用', revoked: '已撤销' })[author.status] || author.status)}</span>
-      </div>`).join('') || '<div class="empty">未绑定作者身份</div>';
+      </div>`;
+    }).join('') || '<div class="empty">未绑定作者身份</div>';
     const submissions = (data.submissions || []).slice(0, 12).map(item => `
       <div class="item"><div class="item-head"><b>${escapeHtml(item.name || item.id)}</b><span class="pill ${userTone(item.status)}">${escapeHtml(item.status)}</span></div>
       <div class="item-meta">v${escapeHtml(String(item.version || 1))} · ${escapeHtml(formatTime(item.submittedAt))}${item.rejectReason ? ' · ' + escapeHtml(item.rejectReason) : ''}</div></div>`).join('') || '<div class="empty">没有投稿记录</div>';
     const canDelete = user.role !== 'admin' && (user.status === 'disabled' || user.status === 'rejected');
+    const superTarget = user.isSuperAdmin === true;
+    const superLocked = superTarget && !sessionIsSuperAdmin;
     $('userDetailBody').innerHTML = `
       <div class="meta">
         <div class="kv"><span>用户 ID</span><b class="author-fp">${escapeHtml(user.id)}</b></div>
@@ -3520,24 +3739,25 @@ async function loadUserDetail(id) {
         <div class="kv"><span>注册时间</span><b>${escapeHtml(formatTime(user.createdAt))}</b></div>
       </div>
       <div class="row" style="margin:14px 0">
+        ${superLocked ? '<span class="pill warn">超级管理员账号受保护，普通管理员不能修改</span>' : ''}
         <button id="detailApprove">通过审核</button>
-        <button id="detailDisable">禁用账号</button>
+        ${superLocked ? '' : '<button id="detailDisable">禁用账号</button>'}
         <button id="detailEnable">启用账号</button>
-        <button id="detailResetPassword">重置密码</button>
-        <button id="detailResetAuthor">重置作者 ID</button>
-        <button id="detailBindAuthor">绑定作者</button>
-        <button id="detailRole">${user.role === 'admin' ? '取消管理员' : '设为管理员'}</button>
+        ${superLocked ? '' : '<button id="detailResetPassword">重置密码</button>'}
+        ${superLocked ? '' : '<button id="detailResetAuthor">重置作者 ID</button>'}
+        ${superLocked ? '' : '<button id="detailBindAuthor">绑定作者</button>'}
+        ${superLocked ? '' : `<button id="detailRole">${user.role === 'admin' ? '取消管理员' : '设为管理员'}</button>`}
         ${canDelete ? '<button id="detailDelete" class="reject">删除账号</button>' : ''}
       </div>
       <div style="margin-bottom:16px"><h4>作者身份</h4>${authorsHtml}</div>
       <div><h4>最近投稿</h4>${submissions}</div>`;
     $('detailApprove').addEventListener('click', () => detailAction('approve'));
-    $('detailDisable').addEventListener('click', () => detailAction('disable'));
-    $('detailEnable').addEventListener('click', () => detailAction('enable'));
-    $('detailResetPassword').addEventListener('click', () => detailAction('reset-password'));
-    $('detailResetAuthor').addEventListener('click', () => resetAuthor(id));
-    $('detailBindAuthor').addEventListener('click', () => bindAuthor(id));
-    $('detailRole').addEventListener('click', () => setRole(id, user.role === 'admin' ? 'user' : 'admin'));
+    $('detailDisable')?.addEventListener('click', () => detailAction('disable'));
+    $('detailEnable')?.addEventListener('click', () => detailAction('enable'));
+    $('detailResetPassword')?.addEventListener('click', () => detailAction('reset-password'));
+    $('detailResetAuthor')?.addEventListener('click', () => resetAuthor(id));
+    $('detailBindAuthor')?.addEventListener('click', () => bindAuthor(id));
+    $('detailRole')?.addEventListener('click', () => setRole(id, user.role === 'admin' ? 'user' : 'admin'));
     if (canDelete) {
       $('detailDelete').addEventListener('click', () => deleteUser(user));
     }
@@ -3604,9 +3824,13 @@ function renderAuthorRequests(requests) {
     const card = document.createElement('div');
     card.className = 'pending-card user-card';
     const kind = ({ bind: '绑定已有作者', new: '新增作者', reset: '重置作者 ID' })[item.kind] || item.kind;
+    const initial = String(item.displayName || item.userDisplayName || 'A').trim().slice(0, 1).toUpperCase() || 'A';
+    const avatar = item.avatarUrl
+      ? `<img class="author-avatar" src="${escapeHtml(item.avatarUrl)}" alt="">`
+      : `<span class="author-avatar fallback">${escapeHtml(initial)}</span>`;
     card.innerHTML = `<div class="pending-body">
       <div class="section-head" style="margin:0 0 8px"><div><h4 style="margin:0">${escapeHtml(kind)}</h4>
-      <p class="hint" style="margin:4px 0 0">${escapeHtml(item.userDisplayName || item.username)} · @${escapeHtml(item.username)}</p></div>${userPill(item.status)}</div>
+      <p class="hint" style="margin:4px 0 0">${avatar} ${escapeHtml(item.userDisplayName || item.username)} · @${escapeHtml(item.username)}</p></div>${userPill(item.status)}</div>
       <div class="meta">
         <div class="kv"><span>作者名称</span><b>${escapeHtml(item.displayName || '–')}</b></div>
         <div class="kv"><span>作者 hash</span><b class="author-fp">${escapeHtml(item.authorHash || '–')}</b></div>
@@ -3640,15 +3864,37 @@ async function reviewAuthorRequest(id, action) {
   } catch (error) { toast(error.message, 'bad'); }
 }
 
-async function loadAudit() {
+let auditOffset = 0;
+let auditTotal = 0;
+const AUDIT_PAGE_SIZE = 20;
+
+async function loadAudit(offset = auditOffset) {
+  const details = $('auditDetails');
+  if (!details || !details.open) return;
+  auditOffset = Math.max(0, offset);
   try {
-    const data = await api('/audit?limit=50');
+    const data = await api(`/audit?limit=${AUDIT_PAGE_SIZE}&offset=${auditOffset}`);
     const items = data.items || [];
+    auditTotal = Number(data.total) || 0;
     $('auditList').innerHTML = items.length ? items.map(item => `
       <div class="item"><div class="item-head"><b>${escapeHtml(item.action)}</b><span class="pill">${escapeHtml(item.actor || 'system')}</span></div>
       <div class="item-meta">${escapeHtml(item.targetType || '')} ${escapeHtml(item.targetId || '')} · ${escapeHtml(formatTime(item.createdAt))}${item.detail ? '<br>' + escapeHtml(item.detail) : ''}</div></div>`).join('') : '<div class="empty">还没有操作记录</div>';
+    const start = auditTotal ? auditOffset + 1 : 0;
+    const end = auditOffset + items.length;
+    $('auditPageInfo').textContent = `第 ${start}–${end} 条 / 共 ${auditTotal} 条`;
+    $('auditPrev').disabled = auditOffset <= 0;
+    $('auditNext').disabled = auditOffset + items.length >= auditTotal;
+    $('auditPill').textContent = '折叠';
   } catch (_) {}
 }
+
+$('auditDetails').addEventListener('toggle', () => {
+  const details = $('auditDetails');
+  $('auditPill').textContent = details.open ? '折叠' : '展开';
+  if (details.open) loadAudit(0);
+});
+$('auditPrev').addEventListener('click', () => loadAudit(Math.max(0, auditOffset - AUDIT_PAGE_SIZE)));
+$('auditNext').addEventListener('click', () => loadAudit(auditOffset + AUDIT_PAGE_SIZE));
 
 async function loadUsers() {
   try {
