@@ -13,6 +13,8 @@ alwaysApply: true
   - Output: `target/aarch64-unknown-linux-musl/release/sukisu-theme-web`
 - Service: `sukisu-theme-web.service`; binary `/opt/sukisu-theme-web/sukisu-theme-web-rs`; listens on `127.0.0.1:8090`.
 - `THEME_STATIC_DIR` is not set. All HTML/CSS/JS/locales/logo are embedded in the binary; rebuild and replace the binary for every static change.
+- Storage locations: `/etc/sukisu-theme-web/sources.json` (`THEME_SOURCES_FILE`), mode 0600. Types: local/NAS mount and OpenList/AList. Sources can be read-only import or writable overflow locations with per-location quota/priority. Primary storage is always first; existing themes stay at their original location (`storageId`/`_loc` key prefix). Back up this file with the config.
+- AList must already have the cloud drive/share mounted; never implement share-link scraping or rate-limit bypass.
 - Caddy: `/etc/caddy/Caddyfile`. Keep the `@ui_assets path /i18n.js /locales/*` → `reverse_proxy 127.0.0.1:8090` route before the token gate or language assets return 401. Add any new root-level public asset to `@ui_assets`; pages use `/admin/logo.svg` and `/account/logo.svg`.
 - Backups: `/root/sukisu-deploy-backup/<timestamp>` and `/root/caddy-deploy-backup/Caddyfile.<timestamp>`.
 - Read `docs/DEPLOYMENT.md` for commands, verification, rollback, and troubleshooting.

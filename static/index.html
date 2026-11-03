@@ -1206,6 +1206,22 @@ input:-webkit-autofill:focus {
 
 .brand .logo img { object-fit: contain; background: #fff; border-radius: 10px; }
 
+.source-card { display: flex; flex-direction: column; gap: 9px; padding: 13px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+.source-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.source-head b { font-size: 13px; }
+.source-path { color: var(--faint); font-size: 11.5px; word-break: break-all; }
+.source-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+.import-entry { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.import-entry:last-child { border-bottom: 0; }
+.import-entry .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+.import-entry .meta { color: var(--faint); font-size: 11px; flex: none; }
+.import-entry select { width: 132px; height: 32px; padding: 0 8px; font-size: 11.5px; }
+.import-entry button { height: 30px; padding: 0 10px; font-size: 11.5px; }
+.import-selected { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 11px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel-2); font-size: 11.5px; color: var(--muted); }
+.import-selected b { color: var(--text); font-weight: 650; }
+.import-selected .pill { padding: 4px 8px; }
+@media (max-width: 700px) { .import-entry { flex-wrap: wrap; } .import-entry select { width: 100%; } }
+
 </style>
 </head>
 <body>
@@ -1230,6 +1246,7 @@ input:-webkit-autofill:focus {
       <a href="#upload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>上传主题</a>
       <div class="nav-label">系统</div>
       <a href="#storage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/><path d="M4.5 11.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg>存储</a>
+      <a href="#locations"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h3l2 2h6A2.5 2.5 0 0 1 20 9.5v7A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Z"/><path d="M8 12h8M8 15h5"/></svg>存储位置</a>
       <a href="#api"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 9 4 12l4 3M16 9l4 3-4 3M13 5l-2 14"/></svg>API 接口</a>
       <a href="#network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.4 3.6 5.3 3.6 8.5s-1.2 6.1-3.6 8.5c-2.4-2.4-3.6-5.3-3.6-8.5S9.6 5.9 12 3.5Z"/></svg>网络</a>
       <a href="#auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="m4 7 8 6 8-6"/></svg>认证</a>
@@ -1554,6 +1571,74 @@ input:-webkit-autofill:focus {
       </div>
     </section>
 
+    <section id="locations" class="page">
+      <div class="section-head"><div><h3>存储位置</h3><p>主存储负责上传和发布；NAS、OpenList/AList 作为只读来源，浏览后把主题导入主存储。</p></div><span class="pill" id="locationsPill">–</span></div>
+      <div class="stats">
+        <div class="stat"><div class="label">主存储</div><div class="value" id="locationsPrimary">–</div><div class="sub" id="locationsPrimarySub">–</div></div>
+        <div class="stat"><div class="label">导入来源</div><div class="value" id="locationsCount">–</div><div class="sub">NAS / OpenList / AList</div></div>
+        <div class="stat"><div class="label">可用来源</div><div class="value" id="locationsOk">–</div><div class="sub">最近一次测试成功</div></div>
+        <div class="stat"><div class="label">异常来源</div><div class="value" id="locationsError">–</div><div class="sub">需要检查配置</div></div>
+      </div>
+
+      <div class="card">
+        <div class="section-head"><div><h4>导入来源</h4><p class="hint">只读来源不会被写入。AList/OpenList 需要先在对方后台挂载云盘或分享目录；NAS 请先在系统挂载 SMB/NFS。</p></div><button class="primary" id="addSourceBtn">添加来源</button></div>
+        <div class="list" id="sourcesList"></div>
+        <div class="empty" id="sourcesEmpty">还没有导入来源</div>
+      </div>
+
+      <div class="card hidden" id="sourceFormCard" style="margin-top:14px">
+        <div class="section-head"><div><h3 id="sourceFormTitle">添加来源</h3><p class="hint">来源只读，不会在这里写入或删除文件。</p></div><button id="closeSourceForm">关闭</button></div>
+        <div class="form-grid">
+          <div><label for="sourceType">类型</label><select id="sourceType"><option value="local">本地 / NAS 目录</option><option value="alist">OpenList / AList</option></select></div>
+          <div><label for="sourceName">名称</label><input id="sourceName" placeholder="例如 NAS 主题库" maxlength="64"></div>
+          <div class="full" id="sourceLocalFields"><label for="sourceLocalPath">本地目录</label><input id="sourceLocalPath" placeholder="/mnt/nas/themes" spellcheck="false"><div class="field-hint">NAS 请先在系统挂载 SMB/NFS，再填写挂载路径。</div></div>
+          <div class="full hidden" id="sourceAlistFields">
+            <div class="form-grid">
+              <div class="full"><label for="sourceAlistUrl">OpenList / AList 地址</label><input id="sourceAlistUrl" placeholder="https://alist.example.com" spellcheck="false"></div>
+              <div><label for="sourceAlistToken">API Token</label><input id="sourceAlistToken" type="password" autocomplete="new-password" placeholder="留空保持现有"><div class="field-hint">在 AList/OpenList 后台生成。</div></div>
+              <div><label for="sourceAlistRoot">根目录</label><input id="sourceAlistRoot" value="/" placeholder="/" spellcheck="false"></div>
+            </div>
+          </div>
+          <div><label class="check"><input id="sourceEnabled" type="checkbox" checked> 启用</label></div>
+          <div><label class="check"><input id="sourceWritable" type="checkbox"> 可写（作为溢出存储）</label><div class="field-hint">可写位置会把 themes / previews / screenshots / avatars 写到该根目录下。</div></div>
+          <div><label for="sourceQuotaMb">配额（MB）</label><input id="sourceQuotaMb" type="number" min="0" max="10485760" step="64" value="0"><div class="field-hint">0 = 不限制；本地还会检查磁盘剩余</div></div>
+          <div><label for="sourcePriority">优先级</label><input id="sourcePriority" type="number" value="0"><div class="field-hint">数字越小越先写入，主存储始终优先</div></div>
+          <div><label class="check"><input id="sourceClearToken" type="checkbox"> 清除已保存的 Token</label></div>
+        </div>
+        <div class="row"><button class="primary" id="saveSourceBtn">保存来源</button><button id="testSourceBtn">测试连接</button><button id="cancelSourceBtn">取消</button><span class="field-hint" id="sourceFormHint" style="margin:0"></span></div>
+      </div>
+
+      <div class="card" style="margin-top:14px">
+        <div class="section-head"><div><h4>从存储位置导入</h4><p class="hint">选择来源和目录，挑主题包、预览图后填写元数据。导入会复制到主存储并直接发布。</p></div><span class="pill" id="importPill">–</span></div>
+        <div class="form-grid">
+          <div><label for="importSource">来源</label><select id="importSource"><option value="">选择来源</option></select></div>
+          <div><label for="importPath">当前目录</label><input id="importPath" value="/" spellcheck="false"></div>
+        </div>
+        <div class="row"><button id="importBrowseBtn">浏览</button><button id="importUpBtn">上一级</button><button id="importDetectBtn">自动识别</button><span class="field-hint" id="importHint" style="margin:0">先选择来源</span></div>
+        <div class="list" id="importEntries"></div>
+        <div class="empty" id="importEmpty">选择来源后浏览目录</div>
+        <div class="meta" id="importSelection" style="margin-top:12px"></div>
+
+        <div class="form-grid" style="margin-top:12px">
+          <div><label for="importId">主题 ID</label><input id="importId" placeholder="留空自动分配" spellcheck="false"></div>
+          <div><label for="importVersion">版本号</label><input id="importVersion" type="number" min="1" value="1"></div>
+          <div><label for="importName">名称</label><input id="importName" placeholder="主题名称"></div>
+          <div><label for="importAuthor">作者名称</label><input id="importAuthor" placeholder="作者名称"></div>
+          <div><label for="importAuthorHash">作者许可（可选）</label><select id="importAuthorHash"><option value="">不绑定作者</option></select></div>
+          <div><label for="importTags">标签</label><input id="importTags" placeholder="light, pink, cute"></div>
+          <div><label for="importLicense">许可证</label><select id="importLicense"><option value="CC-BY-4.0">CC-BY-4.0</option><option value="CC-BY-SA-4.0">CC-BY-SA-4.0</option><option value="CC-BY-NC-4.0">CC-BY-NC-4.0</option><option value="CC-BY-NC-SA-4.0">CC-BY-NC-SA-4.0</option><option value="CC0-1.0">CC0-1.0</option><option value="MIT">MIT</option><option value="Apache-2.0">Apache-2.0</option><option value="GPL-3.0">GPL-3.0</option><option value="All Rights Reserved">All Rights Reserved</option><option value="">未指定</option></select></div>
+          <div><label for="importMin">最低管理器版本</label><input id="importMin" type="number" min="0" value="0"><div class="field-hint">默认使用当前管理器版本，可手动修改</div></div>
+          <div class="full"><label for="importDescription">描述</label><textarea id="importDescription" placeholder="主题说明，支持 Markdown"></textarea></div>
+          <div class="full"><label for="importChangelog">更新说明</label><textarea id="importChangelog" placeholder="本次更新内容，支持 Markdown"></textarea></div>
+        </div>
+        <div class="upload-progress hidden" id="importProgress">
+          <div class="upload-progress-head"><span id="importProgressText">准备导入…</span><span id="importProgressPercent">0%</span></div>
+          <div class="progress-track"><i id="importProgressBar"></i></div>
+        </div>
+        <div class="row"><button class="primary" id="importBtn">导入并发布</button><span class="field-hint" id="importJobHint" style="margin:0"></span></div>
+      </div>
+    </section>
+
     <section id="api" class="page">
       <div class="section-head"><div><h3>API 接口</h3><p>客户端和后台实际使用的端点，可直接复制。</p></div></div>
       <div class="card">
@@ -1738,6 +1823,16 @@ input:-webkit-autofill:focus {
           </div>
           <div class="storage-bar"><i id="settingsStorageBar"></i></div>
           <div class="row"><a class="pill" href="#storage" style="text-decoration:none">打开存储设置</a></div>
+        </div>
+        <div class="card">
+          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h3l2 2h6A2.5 2.5 0 0 1 20 9.5v7A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Z"/><path d="M8 12h8M8 15h5"/></svg>存储位置</h4>
+          <p class="hint">主存储之外，还可以配置 NAS、OpenList/AList 只读来源并导入主题。</p>
+          <div class="meta">
+            <div class="kv"><span>导入来源</span><b id="settingsLocationsCount">–</b></div>
+            <div class="kv"><span>可用 / 异常</span><b id="settingsLocationsState">–</b></div>
+            <div class="kv"><span>主存储</span><b id="settingsLocationsPrimary">–</b></div>
+          </div>
+          <div class="row"><a class="pill" href="#locations" style="text-decoration:none">管理存储位置</a></div>
         </div>
         <div class="card">
           <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M19.1 4.9l-1.6 1.6M6.5 17.5l-1.6 1.6"/></svg>外观</h4>
@@ -2468,6 +2563,7 @@ let authorItems = [];
 function renderAuthors(authors) {
   authorItems = authors || [];
   populateUploadAuthors();
+  populateImportAuthors();
   const list = $('authorsList');
   list.innerHTML = '';
   $('authorsPill').textContent = authorItems.length + ' 位';
@@ -3484,6 +3580,587 @@ $('storageRootApply').addEventListener('click', async () => {
   }
 });
 
+let storageSources = [];
+let editingSourceId = '';
+let importPath = '/';
+let importEntries = [];
+let importSelection = { package: null, preview: null, avatar: null, screenshots: [] };
+let importJobTimer = null;
+let importBusy = false;
+
+function setText(id, value) {
+  const el = $(id);
+  if (el) el.textContent = value;
+}
+
+function sourceLabel(source) {
+  return source.type === 'alist' ? 'AList' : '本地';
+}
+
+function sourceTypeText(source) {
+  if (source.type === 'alist') return 'AList';
+  return window.SukisuI18n ? SukisuI18n.t('本地') : '本地';
+}
+
+function sourceStatus(source) {
+  if (source.status === 'ok') return { label: '可用', tone: 'ok' };
+  if (source.status === 'error') return { label: '异常', tone: 'bad' };
+  return { label: '未测试', tone: 'warn' };
+}
+
+function sourceLocation(source) {
+  if (source.type === 'alist') {
+    return (source.alist?.url || '') + (source.alist?.root || '');
+  }
+  return source.local?.path || '';
+}
+
+function sourcePayload(source) {
+  return {
+    id: source?.id || '',
+    name: source?.name || '',
+    type: source?.type || 'local',
+    enabled: source?.enabled !== false,
+    writable: source?.writable === true,
+    quotaMb: Math.round((source?.quotaBytes || 0) / (1024 * 1024)),
+    priority: source?.priority || 0,
+    local: { path: source?.local?.path || '' },
+    alist: {
+      url: source?.alist?.url || '',
+      token: '',
+      root: source?.alist?.root || '/',
+    },
+    clearToken: false,
+  };
+}
+
+async function loadLocations() {
+  try {
+    const [storage, data] = await Promise.all([api('/storage'), api('/storage/sources')]);
+    const usage = storage.usage || {};
+    const primary = storage.backend === 's3' ? 'S3 对象存储' : '本地磁盘';
+    const sources = data.sources || [];
+    const ok = sources.filter(source => source.status === 'ok').length;
+    const errors = sources.filter(source => source.status === 'error').length;
+    storageSources = sources;
+    setText('locationsPrimary', primary);
+    setText('locationsPrimarySub', formatStorage(usage.used) + ' / ' + formatStorage(usage.limit));
+    setText('locationsCount', String(sources.length));
+    setText('locationsOk', String(ok));
+    setText('locationsError', String(errors));
+    setText('locationsPill', sources.length + ' 个来源');
+    setText('settingsLocationsCount', String(sources.length));
+    setText('settingsLocationsState', ok + ' / ' + errors);
+    setText('settingsLocationsPrimary', primary);
+    renderSources();
+    populateImportSources();
+    populateImportAuthors();
+    if (currentPage === 'locations' && $('importSource').value) {
+      await browseImport($('importPath').value || '/');
+    }
+  } catch (error) {
+    setText('locationsPill', '加载失败');
+    const empty = $('sourcesEmpty');
+    if (empty) {
+      empty.style.display = 'block';
+      empty.textContent = '来源列表加载失败：' + error.message;
+    }
+  }
+}
+
+function renderSources() {
+  const list = $('sourcesList');
+  if (!list) return;
+  list.innerHTML = '';
+  $('sourcesEmpty').style.display = storageSources.length ? 'none' : 'block';
+  storageSources.forEach(source => {
+    const status = sourceStatus(source);
+    const used = Number(source.usedBytes || 0);
+    const quota = Number(source.quotaBytes || 0);
+    const card = document.createElement('div');
+    card.className = 'source-card';
+    card.innerHTML = `
+      <div class="source-head">
+        <b>${escapeHtml(source.name)}</b>
+        <span class="pill">${escapeHtml(sourceLabel(source))}</span>
+        <span class="pill ${status.tone}">${escapeHtml(status.label)}</span>
+        ${source.writable ? '<span class="pill ok">可写</span>' : ''}
+        ${source.enabled ? '' : '<span class="pill bad">已禁用</span>'}
+      </div>
+      <div class="source-path">${escapeHtml(sourceLocation(source))}</div>
+      ${source.writable ? `<div class="source-path">已用 ${formatStorage(used)} / ${quota ? formatStorage(quota) : '不限'} · 优先级 ${Number(source.priority || 0)}</div>` : ''}
+      ${source.lastError ? `<div class="field-hint" style="color:var(--bad)">${escapeHtml(source.lastError)}</div>` : ''}
+      <div class="source-actions">
+        <button class="primary" data-act="import">浏览导入</button>
+        <button data-act="test">测试</button>
+        <button data-act="edit">编辑</button>
+        <button class="reject" data-act="delete">删除</button>
+      </div>`;
+    card.querySelector('[data-act="import"]').addEventListener('click', () => {
+      $('importSource').value = source.id;
+      importPath = source.type === 'alist' ? (source.alist?.root || '/') : '/';
+      $('importPath').value = importPath;
+      $('locations').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      browseImport(importPath);
+    });
+    card.querySelector('[data-act="test"]').addEventListener('click', () => testSource(source));
+    card.querySelector('[data-act="edit"]').addEventListener('click', () => showSourceForm(source));
+    card.querySelector('[data-act="delete"]').addEventListener('click', () => deleteSource(source));
+    list.appendChild(card);
+  });
+}
+
+function showSourceForm(source) {
+  editingSourceId = source?.id || '';
+  $('sourceFormTitle').textContent = source ? '编辑来源' : '添加来源';
+  $('sourceType').value = source?.type || 'local';
+  $('sourceName').value = source?.name || '';
+  $('sourceEnabled').checked = source?.enabled !== false;
+  $('sourceWritable').checked = source?.writable === true;
+  $('sourceQuotaMb').value = Math.round((source?.quotaBytes || 0) / (1024 * 1024));
+  $('sourcePriority').value = source?.priority ?? 0;
+  $('sourceLocalPath').value = source?.local?.path || '';
+  $('sourceAlistUrl').value = source?.alist?.url || '';
+  $('sourceAlistRoot').value = source?.alist?.root || '/';
+  $('sourceAlistToken').value = '';
+  $('sourceAlistToken').placeholder = source?.alist?.hasToken ? '已保存，留空保持现有' : 'API Token';
+  $('sourceClearToken').checked = false;
+  $('sourceFormHint').textContent = '';
+  updateSourceTypeFields();
+  $('sourceFormCard').classList.remove('hidden');
+  $('sourceFormCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function hideSourceForm() {
+  editingSourceId = '';
+  $('sourceFormCard').classList.add('hidden');
+}
+
+function updateSourceTypeFields() {
+  const type = $('sourceType').value;
+  $('sourceLocalFields').classList.toggle('hidden', type !== 'local');
+  $('sourceAlistFields').classList.toggle('hidden', type !== 'alist');
+}
+
+function formSourcePayload() {
+  return {
+    id: editingSourceId,
+    name: $('sourceName').value.trim(),
+    type: $('sourceType').value,
+    enabled: $('sourceEnabled').checked,
+    writable: $('sourceWritable').checked,
+    quotaMb: Number($('sourceQuotaMb').value) || 0,
+    priority: Number($('sourcePriority').value) || 0,
+    local: { path: $('sourceLocalPath').value.trim() },
+    alist: {
+      url: $('sourceAlistUrl').value.trim(),
+      token: $('sourceAlistToken').value.trim(),
+      root: $('sourceAlistRoot').value.trim() || '/',
+    },
+    clearToken: $('sourceClearToken').checked,
+  };
+}
+
+async function saveSource() {
+  try {
+    const data = await api('/storage/sources/save', {
+      method: 'POST',
+      body: JSON.stringify(formSourcePayload()),
+    });
+    toast(data.message || '来源已保存');
+    hideSourceForm();
+    await loadLocations();
+  } catch (error) {
+    toast('保存来源失败：' + error.message, 'bad');
+  }
+}
+
+async function testSource(source) {
+  try {
+    const data = await api('/storage/sources/test', {
+      method: 'POST',
+      body: JSON.stringify(sourcePayload(source)),
+    });
+    toast(data.message || '连接成功');
+    await loadLocations();
+  } catch (error) {
+    toast('测试失败：' + error.message, 'bad');
+    await loadLocations();
+  }
+}
+
+async function testSourceForm() {
+  try {
+    const data = await api('/storage/sources/test', {
+      method: 'POST',
+      body: JSON.stringify(formSourcePayload()),
+    });
+    toast(data.message || '连接成功');
+  } catch (error) {
+    toast('测试失败：' + error.message, 'bad');
+  }
+}
+
+async function deleteSource(source) {
+  const message = '删除来源 ' + source.name + '？已导入的主题不受影响。';
+  if (!confirm(window.SukisuI18n ? SukisuI18n.t(message) : message)) return;
+  try {
+    const data = await api('/storage/sources/delete', {
+      method: 'POST',
+      body: JSON.stringify({ id: source.id }),
+    });
+    toast(data.message || '来源已删除');
+    if ($('importSource').value === source.id) {
+      $('importSource').value = '';
+      importEntries = [];
+      importSelection = { package: null, preview: null, avatar: null, screenshots: [] };
+      renderImportEntries();
+      renderImportSelection();
+    }
+    await loadLocations();
+  } catch (error) {
+    toast('删除失败：' + error.message, 'bad');
+  }
+}
+
+function populateImportSources() {
+  const select = $('importSource');
+  if (!select) return;
+  const current = select.value;
+  const enabled = storageSources.filter(source => source.enabled);
+  select.innerHTML = '<option value="">选择来源</option>';
+  enabled.forEach(source => {
+    const option = document.createElement('option');
+    option.value = source.id;
+    option.textContent = source.name + ' · ' + sourceTypeText(source);
+    select.appendChild(option);
+  });
+  let selected = enabled.find(source => source.id === current);
+  if (!selected && enabled.length) {
+    selected = enabled[0];
+    select.value = selected.id;
+  } else if (selected) {
+    select.value = selected.id;
+  }
+  if (selected) {
+    const root = selected.type === 'alist' ? (selected.alist?.root || '/') : '/';
+    const inRoot = root === '/' || importPath === root || importPath.startsWith(root + '/');
+    if (!importPath || !inRoot) {
+      importPath = root;
+      $('importPath').value = importPath;
+    }
+  }
+  $('importHint').textContent = enabled.length ? '选择来源后浏览目录' : '还没有启用的来源';
+}
+
+function populateImportAuthors() {
+  const select = $('importAuthorHash');
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = '<option value="">不绑定作者</option>';
+  authorItems.forEach(author => {
+    const option = document.createElement('option');
+    option.value = author.hash;
+    const name = author.name || author.displayName || author.username || author.fingerprint || author.hash.slice(0, 8);
+    option.textContent = name + (author.code ? ' · ' + author.code : '');
+    option.dataset.name = author.displayName || author.name || '';
+    select.appendChild(option);
+  });
+  if (current && authorItems.some(author => author.hash === current)) select.value = current;
+}
+
+function currentImportSource() {
+  const id = $('importSource').value;
+  return storageSources.find(source => source.id === id) || null;
+}
+
+async function browseImport(path) {
+  const source = currentImportSource();
+  if (!source) {
+    toast('请先选择来源', 'bad');
+    return;
+  }
+  const target = path || $('importPath').value.trim() || '/';
+  try {
+    const data = await api('/storage/sources/browse', {
+      method: 'POST',
+      body: JSON.stringify({ sourceId: source.id, path: target }),
+    });
+    importPath = data.path || target;
+    $('importPath').value = importPath;
+    importEntries = data.entries || [];
+    $('importHint').textContent = importEntries.length + ' 项';
+    renderImportEntries();
+  } catch (error) {
+    importEntries = [];
+    renderImportEntries();
+    $('importHint').textContent = '目录读取失败';
+    toast('浏览失败：' + error.message, 'bad');
+  }
+}
+
+function importRole(path) {
+  if (importSelection.package?.path === path) return 'package';
+  if (importSelection.preview?.path === path) return 'preview';
+  if (importSelection.avatar?.path === path) return 'avatar';
+  if (importSelection.screenshots.some(item => item.path === path)) return 'screenshot';
+  return 'ignore';
+}
+
+function renderImportEntries() {
+  const list = $('importEntries');
+  if (!list) return;
+  list.innerHTML = '';
+  $('importEmpty').style.display = importEntries.length ? 'none' : 'block';
+  importEntries.forEach(entry => {
+    const row = document.createElement('div');
+    row.className = 'import-entry';
+    const size = entry.isDir ? '' : formatStorage(entry.size);
+    if (entry.isDir) {
+      row.innerHTML = `<span class="name">📁 ${escapeHtml(entry.name)}</span><span class="meta"></span><button>进入</button>`;
+      row.querySelector('button').addEventListener('click', () => browseImport(entry.path));
+    } else {
+      row.innerHTML = `<span class="name">${escapeHtml(entry.name)}</span><span class="meta">${escapeHtml(size)}</span><select class="import-role">
+        <option value="ignore">忽略</option>
+        <option value="package">主题包</option>
+        <option value="preview">预览图</option>
+        <option value="avatar">作者头像</option>
+        <option value="screenshot">截图</option>
+      </select>`;
+      const select = row.querySelector('select');
+      select.value = importRole(entry.path);
+      select.addEventListener('change', () => setImportRole(entry, select.value));
+    }
+    list.appendChild(row);
+  });
+}
+
+function setImportRole(entry, role) {
+  const path = entry.path;
+  if (role === 'screenshot' && importSelection.screenshots.length >= 6) {
+    toast('最多导入 6 张截图', 'bad');
+    renderImportEntries();
+    return;
+  }
+  if (importSelection.package?.path === path) importSelection.package = null;
+  if (importSelection.preview?.path === path) importSelection.preview = null;
+  if (importSelection.avatar?.path === path) importSelection.avatar = null;
+  importSelection.screenshots = importSelection.screenshots.filter(item => item.path !== path);
+  if (role === 'package') importSelection.package = entry;
+  if (role === 'preview') importSelection.preview = entry;
+  if (role === 'avatar') importSelection.avatar = entry;
+  if (role === 'screenshot') importSelection.screenshots.push(entry);
+  if (role === 'package') {
+    const match = entry.name.match(/^(.+)-v(\d+)\.sukisu$/i);
+    if (match) {
+      $('importId').value = match[1];
+      $('importVersion').value = match[2];
+    }
+  }
+  renderImportEntries();
+  renderImportSelection();
+}
+
+function renderImportSelection() {
+  const box = $('importSelection');
+  if (!box) return;
+  const items = [];
+  if (importSelection.package) items.push(['主题包', importSelection.package, 'package']);
+  if (importSelection.preview) items.push(['预览图', importSelection.preview, 'preview']);
+  if (importSelection.avatar) items.push(['作者头像', importSelection.avatar, 'avatar']);
+  importSelection.screenshots.forEach(item => items.push(['截图', item, 'screenshot']));
+  if (!items.length) {
+    box.innerHTML = '<span class="field-hint" style="margin:0">还没有选择文件</span>';
+    setText('importPill', '0 项已选');
+    return;
+  }
+  box.innerHTML = items.map(([label, item, role]) => `
+    <div class="import-selected">
+      <b>${label}</b>
+      <span>${escapeHtml(item.name)}</span>
+      <button class="mini" data-role="${role}" data-path="${escapeHtml(item.path)}">移除</button>
+    </div>`).join('');
+  box.querySelectorAll('[data-role]').forEach(button => {
+    button.addEventListener('click', () => {
+      const role = button.dataset.role;
+      const path = button.dataset.path;
+      if (role === 'screenshot') {
+        importSelection.screenshots = importSelection.screenshots.filter(item => item.path !== path);
+      } else {
+        importSelection[role] = null;
+      }
+      renderImportEntries();
+      renderImportSelection();
+    });
+  });
+  setText('importPill', items.length + ' 项已选');
+}
+
+function detectImportFiles() {
+  importSelection = { package: null, preview: null, avatar: null, screenshots: [] };
+  importEntries.filter(entry => !entry.isDir).forEach(entry => {
+    const name = entry.name.toLowerCase();
+    if (name.endsWith('.sukisu') && !importSelection.package) {
+      importSelection.package = entry;
+    } else if (name.startsWith('preview') && !importSelection.preview) {
+      importSelection.preview = entry;
+    } else if (name.startsWith('avatar') && !importSelection.avatar) {
+      importSelection.avatar = entry;
+    } else if (name.startsWith('screenshot') && importSelection.screenshots.length < 6) {
+      importSelection.screenshots.push(entry);
+    }
+  });
+  if (importSelection.package) {
+    const match = importSelection.package.name.match(/^(.+)-v(\d+)\.sukisu$/i);
+    if (match) {
+      $('importId').value = match[1];
+      $('importVersion').value = match[2];
+    }
+  }
+  renderImportEntries();
+  renderImportSelection();
+  if (!importSelection.package || !importSelection.preview) {
+    toast('当前目录没有识别到完整的主题包和预览图', 'bad');
+  }
+}
+
+function importGoUp() {
+  if (importPath === '/' || !importPath) return;
+  const source = currentImportSource();
+  const root = source?.type === 'alist' ? (source.alist?.root || '/') : '/';
+  if (importPath === root) return;
+  const parent = importPath.replace(/\/[^/]+$/, '') || '/';
+  browseImport(parent);
+}
+
+function renderImportJob(job) {
+  $('importProgress').classList.remove('hidden');
+  const total = Number(job.total || 0);
+  const progress = Number(job.progress || 0);
+  const percent = total > 0 ? Math.min(100, progress / total * 100) : (job.running ? 0 : 100);
+  $('importProgressBar').style.width = percent + '%';
+  $('importProgressPercent').textContent = Math.round(percent) + '%';
+  let text = job.message || '导入中…';
+  if (total > 0) text += ` · ${formatStorage(progress)} / ${formatStorage(total)}`;
+  if (job.error) text = '导入失败：' + job.error;
+  $('importProgressText').textContent = text;
+  $('importJobHint').textContent = job.running ? '导入进行中，请勿关闭页面' : '';
+}
+
+function pollImportJob() {
+  clearTimeout(importJobTimer);
+  importJobTimer = setTimeout(async () => {
+    try {
+      const job = await api('/storage/job');
+      if (job.kind !== 'import') {
+        setImportBusy(false);
+        return;
+      }
+      renderImportJob(job);
+      if (job.running) {
+        pollImportJob();
+        return;
+      }
+      setImportBusy(false);
+      if (job.error) {
+        toast('导入失败：' + job.error, 'bad');
+        return;
+      }
+      toast(job.message || '导入完成');
+      importSelection = { package: null, preview: null, avatar: null, screenshots: [] };
+      renderImportSelection();
+      renderImportEntries();
+      await loadLocations();
+      await refresh(true);
+    } catch (_) {
+      importJobTimer = setTimeout(pollImportJob, 1500);
+    }
+  }, 1000);
+}
+
+function setImportBusy(busy) {
+  importBusy = busy;
+  $('importBtn').disabled = busy;
+  $('importBtn').textContent = busy ? '导入中…' : '导入并发布';
+}
+
+async function submitImport() {
+  if (importBusy) return;
+  const source = currentImportSource();
+  if (!source) return toast('请先选择来源', 'bad');
+  if (!importSelection.package) return toast('请选择主题包', 'bad');
+  if (!importSelection.preview) return toast('请选择预览图', 'bad');
+  if (!$('importName').value.trim()) return toast('请填写主题名称', 'bad');
+  if (!$('importId').value.trim() && !$('importAuthorHash').value) {
+    return toast('主题 ID 留空时需要选择作者', 'bad');
+  }
+  setImportBusy(true);
+  $('importProgress').classList.remove('hidden');
+  $('importProgressBar').style.width = '0%';
+  $('importProgressPercent').textContent = '0%';
+  $('importProgressText').textContent = '准备导入…';
+  try {
+    const data = await api('/storage/sources/import', {
+      method: 'POST',
+      body: JSON.stringify({
+        sourceId: source.id,
+        packagePath: importSelection.package.path,
+        previewPath: importSelection.preview.path,
+        avatarPath: importSelection.avatar?.path || '',
+        screenshotPaths: importSelection.screenshots.map(item => item.path),
+        id: $('importId').value.trim(),
+        version: $('importVersion').value.trim() || '1',
+        name: $('importName').value.trim(),
+        author: $('importAuthor').value.trim(),
+        authorHash: $('importAuthorHash').value,
+        tags: $('importTags').value.trim(),
+        license: $('importLicense').value,
+        minManagerVersion: $('importMin').value.trim() || '0',
+        description: $('importDescription').value.trim(),
+        changelog: $('importChangelog').value.trim(),
+      }),
+    });
+    renderImportJob({ ...data, running: true });
+    pollImportJob();
+  } catch (error) {
+    setImportBusy(false);
+    $('importProgressText').textContent = '导入失败';
+    toast('导入失败：' + error.message, 'bad');
+  }
+}
+
+$('addSourceBtn').addEventListener('click', () => showSourceForm(null));
+$('closeSourceForm').addEventListener('click', hideSourceForm);
+$('cancelSourceBtn').addEventListener('click', hideSourceForm);
+$('sourceType').addEventListener('change', updateSourceTypeFields);
+$('saveSourceBtn').addEventListener('click', saveSource);
+$('testSourceBtn').addEventListener('click', testSourceForm);
+$('importSource').addEventListener('change', () => {
+  const source = currentImportSource();
+  importPath = source?.type === 'alist' ? (source.alist?.root || '/') : '/';
+  $('importPath').value = importPath;
+  if (source) browseImport(importPath);
+});
+$('importBrowseBtn').addEventListener('click', () => browseImport($('importPath').value));
+$('importPath').addEventListener('keydown', event => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    browseImport($('importPath').value);
+  }
+});
+$('importUpBtn').addEventListener('click', importGoUp);
+$('importDetectBtn').addEventListener('click', detectImportFiles);
+$('importBtn').addEventListener('click', submitImport);
+$('importAuthorHash').addEventListener('change', () => {
+  const option = $('importAuthorHash').selectedOptions[0];
+  if (option?.dataset.name && !$('importAuthor').value.trim()) {
+    $('importAuthor').value = option.dataset.name;
+  }
+});
+document.addEventListener('sukisu:languagechange', () => {
+  if (storageSources.length) populateImportSources();
+});
+
 async function refresh(silent = false) {
   const btn = $('refreshBtn');
   if (!silent) btn.classList.add('spin');
@@ -3510,6 +4187,7 @@ const PAGE_LABELS = {
   themes: 'Theme preview',
   upload: 'Upload theme',
   storage: 'Storage',
+  locations: 'Storage locations',
   api: 'API endpoints',
   network: 'Network',
   auth: 'Auth',
@@ -3525,6 +4203,7 @@ const PAGE_TITLES = {
   themes: '主题预览',
   upload: '上传主题',
   storage: '存储与配额',
+  locations: '存储位置',
   api: 'API 接口',
   network: '网络配置',
   auth: '认证设置',
@@ -3540,6 +4219,7 @@ const PAGE_LEADS = {
   themes: '浏览已发布主题，检查预览图、截图和下载信息。',
   upload: '从主题包或当前设备预设创建投稿，并在发布前校验内容。',
   storage: '切换本地磁盘或 S3 兼容存储，查看用量并迁移现有资源。',
+  locations: '管理 NAS、OpenList/AList 只读来源，浏览目录并把主题导入主存储。',
   api: '查看客户端接入所需的目录、资源和鉴权接口。',
   network: '配置管理服务监听地址、端口、公开域名和访问地址。',
   auth: '配置邮箱验证、SMTP 和 GitHub OAuth。',
@@ -3566,6 +4246,7 @@ function showPage(id, smooth = false) {
   const lead = $('pageLead');
   if (lead && PAGE_LEADS[page]) lead.textContent = PAGE_LEADS[page];
   if (page === 'storage') loadStorage();
+  if (page === 'locations' || page === 'settings') loadLocations();
   if (page === 'users') loadUsers();
   if (page === 'network') loadNetwork();
   if (page === 'auth') loadAuthSettings();

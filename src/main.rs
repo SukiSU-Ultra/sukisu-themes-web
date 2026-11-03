@@ -19,6 +19,8 @@ mod network_api;
 mod oauth;
 mod package;
 mod resumable;
+mod sources;
+mod sources_api;
 mod storage;
 mod system;
 mod uploads;

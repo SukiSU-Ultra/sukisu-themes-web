@@ -13,6 +13,13 @@
   - Binary: `/opt/sukisu-theme-web/sukisu-theme-web-rs`
   - Listens on `127.0.0.1:8090`
   - `THEME_STATIC_DIR` is not set; HTML/CSS/JS/locales/logo are embedded in the binary. Any static change requires a rebuild and binary replacement.
+- Storage locations: `/etc/sukisu-theme-web/sources.json` (`THEME_SOURCES_FILE` override), mode 0600.
+  - Types: `local` (including OS-mounted NAS) and `alist` (OpenList/AList v3-compatible API, read/write).
+  - Sources default to read-only import; set `writable` to use them as overflow locations. Each writable location has `quotaBytes` and `priority`.
+  - Primary storage is always first. When full, new themes go to the next enabled writable location; existing themes stay at their original location and are resolved by `storageId`/`_loc` key prefix.
+  - Import copies the `.sukisu` package, preview, optional avatar/screenshots into the selected primary/overflow location and publishes through the existing upload pipeline.
+  - AList must already have the cloud drive/share mounted; do not implement share-link scraping or rate-limit bypass.
+  - Back up `sources.json` together with the storage config; it contains the AList token.
 - Caddy: `/etc/caddy/Caddyfile`
   - Keep `@ui_assets path /i18n.js /locales/*` + `handle @ui_assets` before the token gate, otherwise language assets return 401.
   - Root `/logo.svg` is still token-protected; pages use `/admin/logo.svg` or `/account/logo.svg`. Add any new public asset to `@ui_assets`.
@@ -26,3 +33,4 @@
 - UI languages: Chinese (source in HTML) + English (`static/locales/en.json`); switcher picks the browser language on first visit and stores the choice in `localStorage.sukisu-lang`.
 - Native file-input labels (`选择文件` / `未选择任何文件`) come from the browser and are intentionally not translated.
 - Mention syntax supports Unicode usernames (e.g. `樱檩殇雪@coolapk`) across GitHub, Gitee, Bilibili, Coolapk, Telegram, Weibo, Xiaohongshu, XDA, YouTube, Afdian, X, Zhihu, Threads, Douyin.
+- Storage locations: primary local/S3 is the first write target; writable NAS/OpenList/AList sources are overflow targets. Existing themes stay on their original location; `Meta.storageId` and `_loc` key segments resolve them.

@@ -110,6 +110,8 @@ pub struct Meta {
     pub sha256: Option<String>,
     #[serde(rename = "authorHash", default)]
     pub author_hash: Option<String>,
+    #[serde(rename = "storageId", default, skip_serializing_if = "Option::is_none")]
+    pub storage_id: Option<String>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }

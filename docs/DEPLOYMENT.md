@@ -10,10 +10,39 @@
 | 链路 | Lucky TLS → Caddy `127.0.0.1:8080` → app `127.0.0.1:8090` |
 | systemd | `sukisu-theme-web.service` |
 | 二进制 | `/opt/sukisu-theme-web/sukisu-theme-web-rs` |
+| 导入来源 | `/etc/sukisu-theme-web/sources.json`（`THEME_SOURCES_FILE`） |
 | Caddyfile | `/etc/caddy/Caddyfile` |
 | 密钥 | `~/.ssh/id_ed25519`（有口令） |
 
 `THEME_STATIC_DIR` 未设置，`index.html`、`account.html`、`i18n.js`、`locales/en.json`、`logo.svg` 等全部通过 `include_str!` / `include_bytes!` 打进二进制。改静态文件也必须重新构建并替换二进制。
+
+## 存储位置与导入
+
+主存储（`storage.env`）始终是第一个写入位置；`sources.json` 保存额外的导入/可写位置：
+
+```json
+{
+  "version": 1,
+  "sources": [
+    { "id": "src_...", "name": "NAS", "type": "local", "enabled": true,
+      "writable": true, "quotaBytes": 1073741824, "priority": 1,
+      "local": { "path": "/mnt/nas/sukisu-themes" } },
+    { "id": "src_...", "name": "OpenList", "type": "alist", "enabled": true,
+      "writable": false, "quotaBytes": 0, "priority": 0,
+      "alist": { "url": "https://alist.example.com", "token": "...", "root": "/sukisu-themes" } }
+  ]
+}
+```
+
+- 主存储达到配额或本地磁盘剩余阈值后，新主题按 `priority` 写入下一个可写来源；旧主题保留原位置，继续从原位置服务。
+- 每个可写来源有独立 `quotaBytes`（0 = 不限制）；本地来源还会检查磁盘剩余。主存储配额仍在「存储」页设置。
+- `local`：NAS 必须先由系统挂载 SMB/NFS；作为可写位置时，`path` 是存储根，应用会在其下创建 `themes/`、`previews/`、`screenshots/`、`avatars/`。
+- `alist`：OpenList/AList v3 兼容 API，支持列表、上传、建目录、删除和下载（含 Range）。云盘分享必须先挂载/保存到 AList/OpenList，应用不解析分享链接、不绕过限速。
+- `Meta.storageId` 记录主题所在位置，资源 key 带 `themes/_loc/<sourceId>/...`、`previews/_loc/...` 等；删除/撤回/预览/下载按 key 解析。
+- 管理后台「存储位置」页可以添加/编辑/测试/删除来源，浏览目录并选择 `.sukisu`、预览图、可选头像/截图；导入同样参与溢出选路。
+- 位置中仍有主题时，删除来源或修改类型/路径会被拒绝；先迁移/删除主题。
+- `sources.json` 权限应为 `0600`，包含 AList Token；备份配置目录时一并备份。
+- 导入任务与存储迁移共用单任务队列；进行中时不要同时上传或迁移。
 
 ## 构建
 

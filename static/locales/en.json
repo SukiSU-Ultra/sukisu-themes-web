@@ -643,7 +643,7 @@
     "初始化控制台": "Set up the console",
     "初始化你的": "Set up your",
     "创建第一个管理员账户，选择存储位置并设置主题资源配额。": "Create the first administrator account, choose a storage location, and set a quota for theme assets.",
-    "存储位置": "Storage location",
+    "存储位置": "Storage locations",
     "管理员密码": "Administrator password",
     "管理员账户": "Administrator account",
     "可以选择常用位置，或直接输入自定义绝对路径。目录需要可写；迁移完成并重启服务后生效。": "Choose a common location or enter a custom absolute path. The directory must be writable; changes take effect after the migration completes and the service restarts.",
@@ -1015,9 +1015,123 @@
     "邮箱验证": "Email verification",
     "角色": "Role",
     "没有投稿记录": "No submissions yet",
-    "已撤回 · 即将删除": "Withdrawn · Will be deleted soon"
+    "已撤回 · 即将删除": "Withdrawn · Will be deleted soon",
+    "主存储负责上传和发布；NAS、OpenList/AList 作为只读来源，浏览后把主题导入主存储。": "Primary storage handles uploads and publishing. NAS, OpenList, and AList are read-only sources; browse them and import themes into primary storage.",
+    "主存储": "Primary storage",
+    "导入来源": "Import sources",
+    "可用来源": "Available sources",
+    "最近一次测试成功": "Last test succeeded",
+    "异常来源": "Sources with errors",
+    "需要检查配置": "Check the configuration",
+    "只读来源不会被写入。AList/OpenList 需要先在对方后台挂载云盘或分享目录；NAS 请先在系统挂载 SMB/NFS。": "Read-only sources are never written to. Mount the cloud drive or shared folder in AList/OpenList first; for NAS, mount SMB/NFS on the host first.",
+    "添加来源": "Add source",
+    "还没有导入来源": "No import sources yet",
+    "来源只读，不会在这里写入或删除文件。": "Sources are read-only; files are not written or deleted here.",
+    "类型": "Type",
+    "本地 / NAS 目录": "Local / NAS directory",
+    "例如 NAS 主题库": "e.g. NAS theme library",
+    "本地目录": "Local directory",
+    "NAS 请先在系统挂载 SMB/NFS，再填写挂载路径。": "Mount SMB/NFS on the host first, then enter the mount path.",
+    "OpenList / AList 地址": "OpenList / AList URL",
+    "在 AList/OpenList 后台生成。": "Generate it in the AList/OpenList admin panel.",
+    "根目录": "Root path",
+    "清除已保存的 Token": "Clear saved token",
+    "保存来源": "Save source",
+    "从存储位置导入": "Import from storage location",
+    "选择来源和目录，挑主题包、预览图后填写元数据。导入会复制到主存储并直接发布。": "Choose a source and directory, select the theme package and preview image, then fill in the metadata. Importing copies the files to primary storage and publishes immediately.",
+    "来源": "Source",
+    "选择来源": "Select a source",
+    "当前目录": "Current directory",
+    "浏览": "Browse",
+    "上一级": "Up",
+    "自动识别": "Auto-detect",
+    "先选择来源": "Select a source first",
+    "选择来源后浏览目录": "Select a source, then browse a directory",
+    "主题 ID": "Theme ID",
+    "留空自动分配": "Leave blank to assign automatically",
+    "作者许可（可选）": "Author license (optional)",
+    "不绑定作者": "Do not bind an author",
+    "准备导入…": "Preparing import…",
+    "导入并发布": "Import and publish",
+    "主存储之外，还可以配置 NAS、OpenList/AList 只读来源并导入主题。": "Besides primary storage, configure read-only NAS and OpenList/AList sources and import themes.",
+    "可用 / 异常": "Available / errors",
+    "管理存储位置": "Manage storage locations",
+    "异常": "Error",
+    "未测试": "Untested",
+    "测试": "Test",
+    "编辑": "Edit",
+    "浏览导入": "Browse and import",
+    "来源已保存": "Source saved",
+    "来源已删除": "Source deleted",
+    "保存来源失败：": "Failed to save source: ",
+    "还没有启用的来源": "No enabled sources yet",
+    "目录读取失败": "Failed to read the directory",
+    "浏览失败：": "Failed to browse: ",
+    "忽略": "Ignore",
+    "主题包": "Theme package",
+    "作者头像": "Author avatar",
+    "截图": "Screenshot",
+    "还没有选择文件": "No files selected yet",
+    "当前目录没有识别到完整的主题包和预览图": "No complete theme package and preview image were detected in this directory.",
+    "导入中…": "Importing…",
+    "导入失败：": "Import failed: ",
+    "导入进行中，请勿关闭页面": "Import in progress; do not close this page.",
+    "导入完成": "Import complete",
+    "导入失败": "Import failed",
+    "请先选择来源": "Select a source first",
+    "主题 ID 留空时需要选择作者": "Select an author when leaving the theme ID blank",
+    "正在下载主题文件": "Downloading theme files",
+    "正在校验并发布主题": "Validating and publishing the theme",
+    "编辑来源": "Edit source",
+    "管理 NAS、OpenList/AList 只读来源，浏览目录并把主题导入主存储。": "Manage read-only NAS and OpenList/AList sources, browse directories, and import themes into primary storage.",
+    "来源名称需要 1-64 个字符": "Source name must be 1-64 characters",
+    "本地目录不能为空": "Local directory is required",
+    "本地目录必须是绝对路径": "Local directory must be an absolute path",
+    "不支持的来源类型": "Unsupported source type",
+    "AList 地址不能为空": "AList URL is required",
+    "AList 地址无效": "Invalid AList URL",
+    "AList 地址必须是 http(s)": "AList URL must use http(s)",
+    "AList 地址缺少主机名": "AList URL is missing a host",
+    "AList 地址不能包含查询参数或片段": "AList URL must not include a query or fragment",
+    "路径必须以 / 开头": "Path must start with /",
+    "路径不能包含 ..": "Path must not contain ..",
+    "路径不在来源根目录内": "Path is outside the source root",
+    "路径无效": "Invalid path",
+    "路径越界": "Path escapes the source root",
+    "不是目录": "Not a directory",
+    "该来源已禁用": "This source is disabled",
+    "请填写作者名称": "Enter the author name",
+    "来源名称已存在": "Source name already exists",
+    "来源配置文件路径无效": "Invalid source config path",
+    "AList 返回数据为空": "AList returned no data",
+    "来源不存在": "Source not found",
+    "可写（作为溢出存储）": "Writable (overflow storage)",
+    "0 = 不限制；本地还会检查磁盘剩余": "0 = unlimited; local locations also check free disk space",
+    "优先级": "Priority",
+    "数字越小越先写入，主存储始终优先": "Lower numbers are written first; primary storage always comes first",
+    "可写": "Writable",
+    "不限": "Unlimited",
+    "该存储位置已有主题，不能修改类型/路径或关闭可写；请先迁移或清空": "This storage location contains themes. Change its type/path or disable writability only after migrating or clearing them.",
+    "该存储位置仍有主题，请先迁移或删除主题后再删除来源": "This storage location still contains themes. Migrate or delete those themes before deleting the source.",
+    "存储位置不存在": "Storage location not found",
+    "存储配额不足，请清理空间或调整存储位置配额": "Not enough storage quota. Free space or adjust the location quota.",
+    "来源配额超出范围": "Source quota is out of range",
+    "AList 没有返回下载地址": "AList did not return a download URL",
+    "AList 根目录无效": "Invalid AList root directory",
+    "进入": "Open",
+    "移除": "Remove",
+    "来源配额不能低于该位置当前已用大小": "The source quota cannot be lower than the current usage of this location.",
+    "可写位置会把 themes / previews / screenshots / avatars 写到该根目录下。": "A writable location stores themes / previews / screenshots / avatars under this root."
   },
   "patterns": [
+    [
+      "^(.+)，当前共 ([0-9]+) 个主题 · (.+)$",
+      "$1 · $2 {{p:$2|theme|themes}} total · $3"
+    ],
+    [
+      "^(.+)，当前共 ([0-9]+) 个主题$",
+      "$1 · $2 {{p:$2|theme|themes}} total"
+    ],
     [
       "^\\((\\d+)\\) SukiSU 主题镜像控制台$",
       "($1) SukiSU Theme Mirror Console"
@@ -1131,16 +1245,8 @@
       "Retained until $1"
     ],
     [
-      "^已批准，当前共 (\\d+) 个主题$",
-      "Approved. $1 {{p:$1|theme|themes}} total."
-    ],
-    [
       "^已删除，剩余 (\\d+) 个主题$",
       "Deleted. $1 {{p:$1|theme|themes}} remaining."
-    ],
-    [
-      "^主题已上传：(.*)，当前共 (\\d+) 个主题$",
-      "Theme uploaded: $1. $2 {{p:$2|theme|themes}} total."
     ],
     [
       "^目录接口正常，主题数：(\\d+)$",
@@ -1289,6 +1395,150 @@
     [
       "^管理员账号已创建，但存储目录未应用：(.*)。请进入控制台后在「存储」页面修改。$",
       "Administrator account created, but the storage directory was not applied: {{t:$1}}. Change it on the Storage page in the console."
+    ],
+    [
+      "^([0-9]+) 个来源$",
+      "$1 {{p:$1|source|sources}}"
+    ],
+    [
+      "^([0-9]+) 项已选$",
+      "$1 {{p:$1|item|items}} selected"
+    ],
+    [
+      "^([0-9]+) 项$",
+      "$1 {{p:$1|item|items}}"
+    ],
+    [
+      "^删除来源 (.*)？已导入的主题不受影响。$",
+      "Delete source $1? Imported themes are not affected."
+    ],
+    [
+      "^保存来源失败：(.*)$",
+      "Failed to save source: $1"
+    ],
+    [
+      "^浏览失败：(.*)$",
+      "Failed to browse: $1"
+    ],
+    [
+      "^导入失败：(.*)$",
+      "Import failed: $1"
+    ],
+    [
+      "^来源列表加载失败：(.*)$",
+      "Failed to load sources: $1"
+    ],
+    [
+      "^本地目录可读，共 ([0-9]+) 项$",
+      "Local directory readable: $1 {{p:$1|item|items}}"
+    ],
+    [
+      "^AList 连接成功，共 ([0-9]+) 项$",
+      "AList connected: $1 {{p:$1|item|items}}"
+    ],
+    [
+      "^无法读取本地目录：(.*)$",
+      "Cannot read local directory: $1"
+    ],
+    [
+      "^本地路径不是目录：(.*)$",
+      "Local path is not a directory: $1"
+    ],
+    [
+      "^本地目录不可读：(.*)$",
+      "Local directory is not readable: $1"
+    ],
+    [
+      "^目录不存在：(.*)$",
+      "Directory not found: $1"
+    ],
+    [
+      "^不是文件：(.*)$",
+      "Not a file: $1"
+    ],
+    [
+      "^文件超过大小限制：(.*)$",
+      "File exceeds the size limit: $1"
+    ],
+    [
+      "^不支持的图片格式：(.*)$",
+      "Unsupported image format: $1"
+    ],
+    [
+      "^AList 没有返回下载地址：(.*)$",
+      "AList did not return a download URL: $1"
+    ],
+    [
+      "^下载失败：(.*)$",
+      "Download failed: $1"
+    ],
+    [
+      "^读取下载内容失败：(.*)$",
+      "Failed to read the download: $1"
+    ],
+    [
+      "^无法连接 AList：(.*)$",
+      "Cannot connect to AList: $1"
+    ],
+    [
+      "^AList 返回格式错误（HTTP (.*)）$",
+      "AList returned an invalid response (HTTP $1)"
+    ],
+    [
+      "^AList 请求失败（HTTP (.*)）$",
+      "AList request failed (HTTP $1)"
+    ],
+    [
+      "^最多只能添加 ([0-9]+) 个来源$",
+      "You can add at most $1 sources"
+    ],
+    [
+      "^最多导入 ([0-9]+) 张截图$",
+      "Import at most $1 screenshots"
+    ],
+    [
+      "^无法创建目录 (.*)$",
+      "Cannot create directory $1"
+    ],
+    [
+      "^无法写入 (.*)$",
+      "Cannot write $1"
+    ],
+    [
+      "^无法保存 (.*)$",
+      "Cannot save $1"
+    ],
+    [
+      "^来源配置格式错误：(.*)$",
+      "Invalid source configuration: $1"
+    ],
+    [
+      "^导入参数格式错误：(.*)$",
+      "Invalid import parameters: $1"
+    ],
+    [
+      "^对象存储读取失败：HTTP (.*)$",
+      "Object storage read failed: HTTP $1"
+    ],
+    [
+      "^对象存储写入失败：(.*)$",
+      "Object storage write failed: $1"
+    ],
+    [
+      "^对象存储删除失败$",
+      "Object storage delete failed"
+    ],
+    [
+      "^对象存储列表失败$",
+      "Object storage list failed"
+    ],
+    [
+      "^存储位置不存在$",
+      "Storage location not found"
+    ],
+    [
+      "^已用 (.*) / (.*) · 优先级 (.*)$",
+      "Used $1 / $2 · Priority $3"
     ]
   ]
 }

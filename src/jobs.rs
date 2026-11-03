@@ -63,6 +63,12 @@ impl JobProgress {
         }
     }
 
+    pub fn add_progress(&self, bytes: u64) {
+        if let Ok(mut state) = self.state.lock() {
+            state.progress = state.progress.saturating_add(bytes);
+        }
+    }
+
     pub fn set_message(&self, message: &str) {
         if let Ok(mut state) = self.state.lock() {
             state.message = message.to_string();

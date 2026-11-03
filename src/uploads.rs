@@ -8,9 +8,8 @@ use serde_json::json;
 
 use crate::catalog;
 use crate::config::{
-    Paths, StorageSettings, AVATAR_MAX_EDGE, DISK_RESERVE_BYTES, IMAGE_EXTENSIONS,
-    MAX_IMAGE_INPUT_BYTES, MAX_PACKAGE_BYTES, MAX_SCREENSHOTS, PREVIEW_MAX_EDGE,
-    SCREENSHOT_MAX_EDGE,
+    Paths, StorageSettings, AVATAR_MAX_EDGE, IMAGE_EXTENSIONS, MAX_IMAGE_INPUT_BYTES,
+    MAX_PACKAGE_BYTES, MAX_SCREENSHOTS, PREVIEW_MAX_EDGE, SCREENSHOT_MAX_EDGE,
 };
 use crate::images;
 use crate::models::{FilePart, Meta, PackageInfo, PendingMeta, UploadForm};
@@ -516,12 +515,12 @@ pub fn load_pending_upload(
 
 pub async fn publish_theme(
     store: &AssetStore,
-    settings: &StorageSettings,
+    _settings: &StorageSettings,
     paths: &Paths,
     limit_bytes: u64,
     prepared: PreparedUpload,
     author_hash: Option<String>,
-    reclaim_bytes: u64,
+    _reclaim_bytes: u64,
     old_meta: Option<(PathBuf, Meta)>,
 ) -> Result<Vec<crate::models::CatalogEntry>, PublishError> {
     let old_meta = match old_meta {
@@ -529,9 +528,13 @@ pub async fn publish_theme(
         None => catalog::find_theme_meta(paths, &prepared.id),
     };
     let stem = format!("{}-v{}", prepared.id, prepared.version);
-    let keys = AssetKeys::new(&stem, &prepared);
+    let new_size = prepared.new_size();
+    let location = store
+        .choose_location(new_size, paths, limit_bytes)
+        .await
+        .map_err(|error| PublishError::Bad(error.to_string()))?;
+    let keys = AssetKeys::new_at(&stem, &prepared, location.as_deref());
 
-    let mut old_size = 0u64;
     let mut old_keys: HashSet<String> = HashSet::new();
     let mut keep_old_avatar: Option<String> = None;
     if let Some((_, old)) = &old_meta {
@@ -541,7 +544,6 @@ pub async fn publish_theme(
                 _ => &old.preview,
             };
             if !relative.is_empty() && store.exists(relative).await {
-                old_size += store.size(relative).await;
                 old_keys.insert(relative.clone());
             }
         }
@@ -550,53 +552,28 @@ pub async fn publish_theme(
                 if prepared.avatar.is_none() {
                     keep_old_avatar = Some(avatar.clone());
                 } else {
-                    old_size += store.size(avatar).await;
                     old_keys.insert(avatar.clone());
                 }
             }
         }
         for relative in &old.screenshots {
             if store.exists(relative).await {
-                old_size += store.size(relative).await;
                 old_keys.insert(relative.clone());
             }
         }
     }
 
-    let new_size = prepared.new_size();
-    let usage = catalog::storage_usage(store, paths, settings.backend.as_str(), limit_bytes).await;
-    if usage
-        .used
-        .saturating_sub(old_size)
-        .saturating_sub(reclaim_bytes)
-        + new_size
-        > limit_bytes
-    {
-        return Err(PublishError::Bad(format!(
-            "{} 存储配额不足，请先删除旧主题或调高配额",
-            crate::config::format_storage_size(limit_bytes)
-        )));
-    }
-    let required_local = if settings.backend == crate::config::Backend::Local {
-        new_size
-    } else {
-        0
-    };
-    if usage.disk_free < required_local.saturating_add(DISK_RESERVE_BYTES) {
-        return Err(PublishError::Bad(
-            "主机磁盘剩余空间不足，已拒绝上传".to_string(),
-        ));
-    }
-
     store
-        .put(
+        .put_at(
+            location.as_deref(),
             &keys.package,
             &prepared.package.data,
             &content_type_for(&keys.package),
         )
         .await?;
     store
-        .put(
+        .put_at(
+            location.as_deref(),
             &keys.preview,
             &prepared.preview.data,
             &content_type_for(&keys.preview),
@@ -606,12 +583,24 @@ pub async fn publish_theme(
     written.insert(keys.package.clone());
     written.insert(keys.preview.clone());
     if let (Some(avatar), Some(key)) = (&prepared.avatar, &keys.avatar) {
-        store.put(key, &avatar.data, &content_type_for(key)).await?;
+        store
+            .put_at(
+                location.as_deref(),
+                key,
+                &avatar.data,
+                &content_type_for(key),
+            )
+            .await?;
         written.insert(key.clone());
     }
     for (screenshot, key) in prepared.screenshots.iter().zip(keys.screenshots.iter()) {
         store
-            .put(key, &screenshot.data, &content_type_for(key))
+            .put_at(
+                location.as_deref(),
+                key,
+                &screenshot.data,
+                &content_type_for(key),
+            )
             .await?;
         written.insert(key.clone());
     }
@@ -641,6 +630,7 @@ pub async fn publish_theme(
         asset_size: Some(new_size),
         sha256: Some(sha256_hex(&prepared.package.data)),
         author_hash: author_hash.clone(),
+        storage_id: location.clone(),
         extra: Default::default(),
     };
     if let Some(avatar) = &keep_old_avatar {
@@ -668,24 +658,41 @@ pub struct AssetKeys {
 
 impl AssetKeys {
     fn new(stem: &str, prepared: &PreparedUpload) -> Self {
+        Self::new_at(stem, prepared, None)
+    }
+
+    fn new_at(stem: &str, prepared: &PreparedUpload, location: Option<&str>) -> Self {
         let avatar = prepared
             .avatar
             .as_ref()
-            .map(|avatar| format!("avatars/{stem}{}", avatar.ext));
+            .map(|avatar| prefix_key(format!("avatars/{stem}{}", avatar.ext), location));
         let screenshots = prepared
             .screenshots
             .iter()
             .enumerate()
             .map(|(index, screenshot)| {
-                format!("screenshots/{stem}-{:02}{}", index + 1, screenshot.ext)
+                prefix_key(
+                    format!("screenshots/{stem}-{:02}{}", index + 1, screenshot.ext),
+                    location,
+                )
             })
             .collect();
         Self {
-            package: format!("themes/{stem}{}", prepared.package.ext),
-            preview: format!("previews/{stem}{}", prepared.preview.ext),
+            package: prefix_key(format!("themes/{stem}{}", prepared.package.ext), location),
+            preview: prefix_key(format!("previews/{stem}{}", prepared.preview.ext), location),
             avatar,
             screenshots,
         }
+    }
+}
+
+fn prefix_key(key: String, location: Option<&str>) -> String {
+    let Some(location) = location else {
+        return key;
+    };
+    match key.split_once('/') {
+        Some((directory, rest)) => format!("{directory}/_loc/{location}/{rest}"),
+        None => key,
     }
 }
 

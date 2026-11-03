@@ -509,6 +509,9 @@ pub async fn storage_usage(
                 continue;
             }
             if let Some(meta) = read_meta_file(&path) {
+                if meta.storage_id.is_some() {
+                    continue;
+                }
                 asset_used = asset_used.saturating_add(meta_asset_size(store, &meta).await);
             }
         }
@@ -525,6 +528,26 @@ pub async fn storage_usage(
         pending: pending_used,
         backend: backend.to_string(),
     }
+}
+
+pub async fn location_usage(paths: &Paths, location_id: &str) -> u64 {
+    let mut used = 0u64;
+    if let Ok(entries) = fs::read_dir(&paths.meta) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                continue;
+            }
+            let Some(meta) = read_meta_file(&path) else {
+                continue;
+            };
+            if meta.storage_id.as_deref() != Some(location_id) {
+                continue;
+            }
+            used = used.saturating_add(meta.asset_size.unwrap_or(0));
+        }
+    }
+    used
 }
 
 pub async fn backfill_meta_assets(store: &AssetStore, paths: &Paths) -> Result<()> {
@@ -678,6 +701,7 @@ mod tests {
             storage_env: root.join("storage.env"),
             account_env: root.join("account.env"),
             network_env: root.join("network.env"),
+            sources_file: root.join("sources.json"),
             caddyfile: root.join("Caddyfile"),
             db: root.join("account.db"),
         }

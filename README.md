@@ -8,6 +8,7 @@ Rust 编写的主题镜像、投稿审核和账号系统，提供 Android 管理
 - 投稿审核、作者许可自动发布、管理员人工审核；撤回主题保留 14 天。
 - 统一登录、邮箱验证、密码重置、GitHub OAuth、作者身份绑定/重置。
 - 本地磁盘或 S3 兼容存储；支持配额、存储迁移、网络和认证配置。
+- 主存储之外可添加多个存储位置：本地/NAS、OpenList/AList；可只读导入，也可标记为可写，在主存储满后按优先级作为溢出位置。
 - 中文 / English，首次按浏览器语言选择，之后保存在 `localStorage.sukisu-lang`。
 - 主题描述支持 `用户名@平台` 提及，用户名支持中文/Unicode；支持 GitHub、Gitee、Bilibili、酷安、Telegram、微博、小红书、XDA、YouTube、爱发电、X、知乎、Threads、抖音。
 
@@ -118,9 +119,10 @@ target/aarch64-unknown-linux-musl/release/sukisu-theme-web
 | `/etc/sukisu-theme-web/config.env` | `PUBLIC_URL`、`ADMIN_URL` |
 | `/etc/sukisu-theme-web/network.env` | `ADMIN_BIND`、`ADMIN_PORT`、`PUBLIC_DOMAINS` |
 | `/etc/sukisu-theme-web/account.env` | `ACCOUNT_URL`、SMTP、GitHub OAuth |
+| `/etc/sukisu-theme-web/sources.json` | 导入/可写存储位置（本地/NAS、OpenList/AList Token、配额） |
 | `/var/lib/sukisu-theme-web/account.db` | SQLite 账号数据库 |
 
-可以用 `THEME_STORAGE_ENV`、`THEME_DB_PATH`、`THEME_ADMIN_ENV`、`THEME_ADMIN_CONFIG`、`THEME_NETWORK_ENV`、`THEME_ACCOUNT_ENV`、`THEME_CADDYFILE`、`THEME_STATIC_DIR` 覆盖路径；`THEME_TOKEN_ENV`、`THEME_AUTHORS_FILE`、`THEME_ADMIN_PASSWORD_FILE` 分别覆盖令牌、作者和密码文件。
+可以用 `THEME_STORAGE_ENV`、`THEME_DB_PATH`、`THEME_ADMIN_ENV`、`THEME_ADMIN_CONFIG`、`THEME_NETWORK_ENV`、`THEME_ACCOUNT_ENV`、`THEME_CADDYFILE`、`THEME_STATIC_DIR` 覆盖路径；`THEME_TOKEN_ENV`、`THEME_AUTHORS_FILE`、`THEME_ADMIN_PASSWORD_FILE`、`THEME_SOURCES_FILE` 分别覆盖令牌、作者、密码和导入/可写来源文件。
 
 ### `storage.env`
 
@@ -181,6 +183,18 @@ SMTP_TLS=starttls
 ```
 
 未配置 SMTP 时无法注册邮箱账号；未配置 GitHub 时隐藏 GitHub 登录按钮。管理员也可以登录后在「认证」页修改并测试。
+
+### 存储位置、溢出与导入
+
+管理后台「存储位置」页支持配置多个来源，默认为只读导入；也可以标记为可写：
+
+- **主存储**：仍然是上传/发布的第一选择，配额在「存储」页设置。
+- **可写来源**：填写独立配额和优先级。主存储达到配额或磁盘剩余阈值后，新主题按优先级写入下一个可用位置；旧主题保留原位置继续服务。
+- **本地 / NAS**：填写服务器上的绝对目录；作为可写位置时，会在该根目录下创建 `themes/`、`previews/`、`screenshots/`、`avatars/`。NAS 需先在系统挂载 SMB/NFS。
+- **OpenList / AList**：支持目录浏览、上传、建目录、删除和下载（含 Range）；云盘分享仍需先在 AList/OpenList 中挂载。应用不实现分享链接破解或限速绕过。
+- **导入**：浏览来源目录，选择 `.sukisu` 包、预览图和可选头像/截图，填写元数据后直接发布；导入同样参与溢出选路。
+- 每个主题在 `meta` 中记录 `storageId`，资源 key 使用 `_loc/<sourceId>` 段；删除、撤回、预览和下载会按 key 解析回原位置。
+- `sources.json` 保存来源、Token 和配额（权限 0600）；备份时需要包含该文件。
 
 ## 部署（Linux + systemd + Caddy）
 
@@ -360,6 +374,7 @@ systemctl is-active sukisu-theme-web
 | `/srv/sukisu-themes` | 主题包、预览图、截图、头像、meta、`catalog.json` |
 | `/var/lib/sukisu-theme-web/account.db` | SQLite（含 `-wal` / `-shm`） |
 | `/etc/sukisu-theme-web`、`/etc/sukisu-themes` | 配置和访问令牌 |
+| `/etc/sukisu-theme-web/sources.json` | 存储位置、配额和 AList Token |
 | `/etc/caddy/Caddyfile` | 反向代理配置 |
 
 ## 多语言

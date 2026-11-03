@@ -87,6 +87,7 @@ pub struct Paths {
     pub storage_env: PathBuf,
     pub account_env: PathBuf,
     pub network_env: PathBuf,
+    pub sources_file: PathBuf,
     pub caddyfile: PathBuf,
     pub db: PathBuf,
 }
@@ -119,6 +120,7 @@ pub fn load_paths(settings: &StorageSettings) -> Paths {
         storage_env: env_path("THEME_STORAGE_ENV", "/etc/sukisu-theme-web/storage.env"),
         account_env: env_path("THEME_ACCOUNT_ENV", "/etc/sukisu-theme-web/account.env"),
         network_env: env_path("THEME_NETWORK_ENV", "/etc/sukisu-theme-web/network.env"),
+        sources_file: env_path("THEME_SOURCES_FILE", "/etc/sukisu-theme-web/sources.json"),
         caddyfile: env_path("THEME_CADDYFILE", "/etc/caddy/Caddyfile"),
         db: env_path("THEME_DB_PATH", "/var/lib/sukisu-theme-web/account.db"),
     }

@@ -22,8 +22,8 @@ use crate::catalog;
 use crate::config::{
     self, read_env, set_env_key, validate_s3_settings, validate_storage_root, write_storage_config,
     Backend, Paths, StorageSettings, CSRF_HEADER, CSRF_VALUE, CURRENT_FORMAT_VERSION,
-    DISK_RESERVE_BYTES, MAX_BODY_BYTES, MAX_PENDING_SUBMISSIONS, MAX_SUBMISSIONS_PER_HOUR,
-    MIN_FORMAT_VERSION, TOKEN_HEADER,
+    MAX_BODY_BYTES, MAX_PENDING_SUBMISSIONS, MAX_SUBMISSIONS_PER_HOUR, MIN_FORMAT_VERSION,
+    TOKEN_HEADER,
 };
 use crate::jobs::JobManager;
 use crate::storage::{self, AssetStore, ServeBody, ServeError};
@@ -54,6 +54,7 @@ pub struct AppState {
     pub account_rate: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
     pub db: crate::db::Database,
     pub sessions: auth::SessionStore,
+    pub sources: Arc<crate::sources::SourcesStore>,
     pub login_failures: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
     withdrawn_assets: Arc<RwLock<HashSet<String>>>,
 }
@@ -62,11 +63,14 @@ impl AppState {
     pub async fn new(settings: StorageSettings) -> anyhow::Result<Self> {
         let paths = Arc::new(config::load_paths(&settings));
         config::ensure_storage_dirs(&paths, &settings)?;
-        let store = storage::build_store(&settings)?;
+        let primary = storage::build_store(&settings)?;
         let db = crate::db::Database::open(&paths.db).await?;
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(20))
             .build()?;
+        let sources = crate::sources::SourcesStore::load(paths.sources_file.clone()).await;
+        let location_specs = crate::sources::location_specs(&sources).await;
+        let store = storage::build_multi(primary, location_specs, http.clone());
         let limit_bytes = settings.limit_bytes;
         let sessions = auth::SessionStore::new(db.clone());
         let withdrawn_assets = Arc::new(RwLock::new(catalog::withdrawn_asset_keys(&paths)));
@@ -81,6 +85,7 @@ impl AppState {
             account_rate: Arc::new(Mutex::new(HashMap::new())),
             db,
             sessions,
+            sources,
             login_failures: Arc::new(Mutex::new(HashMap::new())),
             withdrawn_assets,
         })
@@ -209,6 +214,7 @@ pub fn router(state: AppState) -> Router {
         .merge(crate::admin_users::router())
         .merge(crate::network_api::router())
         .merge(crate::auth_settings_api::router())
+        .merge(crate::sources_api::router())
         .merge(crate::resumable::router())
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard))
         .layer(middleware::from_fn(csrf_guard));
@@ -794,6 +800,7 @@ async fn asset(
             let reader = stream.into_async_read();
             Body::from_stream(ReaderStream::new(reader))
         }
+        ServeBody::Remote(response) => Body::from_stream(response.bytes_stream()),
     };
     let mut builder = Response::builder()
         .status(StatusCode::from_u16(object.status).unwrap_or(StatusCode::OK))
@@ -1043,21 +1050,12 @@ async fn submit(
         return Err(ApiError::too_many("待审核队列已满，请稍后再试"));
     }
     let new_size = prepared.new_size();
-    let usage = catalog::storage_usage(
-        &state.store,
-        &state.paths,
-        state.settings.backend.as_str(),
-        limit_bytes,
-    )
-    .await;
-    if usage.used.saturating_add(new_size) > limit_bytes {
-        return Err(ApiError::bad(format!(
-            "{} 存储配额不足，请稍后再试或调高配额",
-            config::format_storage_size(limit_bytes)
-        )));
-    }
-    if usage.disk_free < new_size.saturating_add(DISK_RESERVE_BYTES) {
-        return Err(ApiError::bad("主机磁盘剩余空间不足，已拒绝上传"));
+    if let Err(error) = state
+        .store
+        .choose_location(new_size, &state.paths, limit_bytes)
+        .await
+    {
+        return Err(ApiError::bad(error.to_string()));
     }
     let submission = crate::util::submission_id();
     uploads::write_pending(
@@ -1634,7 +1632,7 @@ async fn storage_get(State(state): State<AppState>) -> Json<Value> {
     }))
 }
 
-fn job_json(state: &AppState) -> Value {
+pub(crate) fn job_json(state: &AppState) -> Value {
     let mut value = serde_json::to_value(state.jobs.snapshot()).unwrap_or_else(|_| json!({}));
     if let Value::Object(map) = &mut value {
         map.insert("ok".to_string(), json!(true));
@@ -1752,7 +1750,12 @@ async fn storage_backend(State(state): State<AppState>, body: Bytes) -> ApiResul
         .unwrap_or(false)
         && !same_target;
     if !same_target {
-        let source_keys = state.store.list().await.map_err(ApiError::internal)?;
+        let source_keys = state
+            .store
+            .primary()
+            .list()
+            .await
+            .map_err(ApiError::internal)?;
         let mut missing = Vec::new();
         for key in &source_keys {
             if !target.exists(key).await {
@@ -1769,7 +1772,7 @@ async fn storage_backend(State(state): State<AppState>, body: Bytes) -> ApiResul
     let Some(progress) = state.jobs.start("backend") else {
         return Err(ApiError::conflict("已有存储任务正在进行，请稍后再试"));
     };
-    let source = state.store.clone();
+    let source = state.store.primary().clone();
     let paths = state.paths.clone();
     tokio::spawn(async move {
         let result = async {

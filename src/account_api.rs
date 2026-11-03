@@ -2192,21 +2192,12 @@ async fn submit_theme(
     }
     let new_size = prepared.new_size();
     let limit = state.limit_bytes.load(std::sync::atomic::Ordering::Relaxed);
-    let usage = crate::catalog::storage_usage(
-        &state.store,
-        &state.paths,
-        state.settings.backend.as_str(),
-        limit,
-    )
-    .await;
-    if usage.used.saturating_add(new_size) > limit {
-        return Err(ApiError::bad(format!(
-            "{} 存储配额不足，请稍后再试或调高配额",
-            crate::config::format_storage_size(limit)
-        )));
-    }
-    if usage.disk_free < new_size.saturating_add(crate::config::DISK_RESERVE_BYTES) {
-        return Err(ApiError::bad("主机磁盘剩余空间不足，已拒绝上传"));
+    if let Err(error) = state
+        .store
+        .choose_location(new_size, &state.paths, limit)
+        .await
+    {
+        return Err(ApiError::bad(error.to_string()));
     }
     if let Some(avatar) = &prepared.avatar {
         let _ = crate::uploads::persist_author_avatar(&state.store, &author_hash, avatar).await;
