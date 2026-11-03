@@ -1,0 +1,18 @@
+---
+description: Production deployment facts for the SukiSU theme mirror
+alwaysApply: true
+---
+
+# Production deployment
+
+- Deploy to `root@ssh.neko.shirkneko.top` (Armbian, `linux-aarch64`) with key `~/.ssh/id_ed25519`.
+- Public entry: `https://themes.neko.shirkneko.top:8443/` → Lucky TLS → Caddy `127.0.0.1:8080` → app `127.0.0.1:8090`.
+- Never store the SSH passphrase, tokens, or `store.env` contents in the repo. Ask the user to unlock the key, or use a session-only `SUKISU_SSH_PASS` with an askpass helper.
+- Windows OpenSSH `ControlMaster`/`ControlPath` is broken on this host. Use one SSH invocation per operation or stream a tar/script over stdin.
+- Build: `powershell -ExecutionPolicy Bypass -File scripts/build-aarch64.ps1`
+  - Output: `target/aarch64-unknown-linux-musl/release/sukisu-theme-web`
+- Service: `sukisu-theme-web.service`; binary `/opt/sukisu-theme-web/sukisu-theme-web-rs`; listens on `127.0.0.1:8090`.
+- `THEME_STATIC_DIR` is not set. All HTML/CSS/JS/locales/logo are embedded in the binary; rebuild and replace the binary for every static change.
+- Caddy: `/etc/caddy/Caddyfile`. Keep the `@ui_assets path /i18n.js /locales/*` → `reverse_proxy 127.0.0.1:8090` route before the token gate or language assets return 401. Add any new root-level public asset to `@ui_assets`; pages use `/admin/logo.svg` and `/account/logo.svg`.
+- Backups: `/root/sukisu-deploy-backup/<timestamp>` and `/root/caddy-deploy-backup/Caddyfile.<timestamp>`.
+- Read `docs/DEPLOYMENT.md` for commands, verification, rollback, and troubleshooting.

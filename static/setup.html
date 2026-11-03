@@ -15,6 +15,7 @@
   }
 })();
 </script>
+<script src="/i18n.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Urbanist:wght@400;500;600;700;800&family=Fira+Code:wght@400;500;600&display=swap');
 
@@ -560,6 +561,8 @@ input:-webkit-autofill:focus {
   transition: background-color 9999s ease-out 0s;
 }
 
+.brand .logo img { object-fit: contain; background: #fff; border-radius: 10px; }
+
 </style>
 </head>
 <body>
@@ -568,6 +571,7 @@ input:-webkit-autofill:focus {
     <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2Z"/></svg>
     <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M19.1 4.9l-1.6 1.6M6.5 17.5l-1.6 1.6"/></svg>
   </button>
+  <div class="lang-switch lang-switch-fixed" data-lang-switcher></div>
 
   <section class="login-card">
     <div class="story">

@@ -39,6 +39,8 @@ const EMBEDDED_SETUP_HTML: &str = include_str!("../static/setup.html");
 const EMBEDDED_ACCOUNT_AUTH_HTML: &str = include_str!("../static/account-auth.html");
 const EMBEDDED_ACCOUNT_HTML: &str = include_str!("../static/account.html");
 const EMBEDDED_LOGO_SVG: &[u8] = include_bytes!("../static/logo.svg");
+const EMBEDDED_I18N_JS: &str = include_str!("../static/i18n.js");
+const EMBEDDED_LOCALE_EN: &str = include_str!("../static/locales/en.json");
 
 #[derive(Clone)]
 pub struct AppState {
@@ -817,6 +819,14 @@ fn embedded_static(relative: &str) -> Option<(&'static [u8], &'static str)> {
             "text/html; charset=utf-8",
         )),
         "logo.svg" => Some((EMBEDDED_LOGO_SVG, "image/svg+xml")),
+        "i18n.js" => Some((
+            EMBEDDED_I18N_JS.as_bytes(),
+            "application/javascript; charset=utf-8",
+        )),
+        "locales/en.json" => Some((
+            EMBEDDED_LOCALE_EN.as_bytes(),
+            "application/json; charset=utf-8",
+        )),
         _ => None,
     }
 }

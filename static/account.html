@@ -15,6 +15,7 @@
   }
 })();
 </script>
+<script src="/i18n.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Urbanist:wght@400;500;600;700;800&family=Fira+Code:wght@400;500;600&display=swap');
 :root {
@@ -474,6 +475,8 @@ input:-webkit-autofill:focus {
   transition: background-color 9999s ease-out 0s;
 }
 
+.brand img { object-fit: contain; background: #fff; }
+
 </style>
 </head>
 <body>
@@ -481,6 +484,7 @@ input:-webkit-autofill:focus {
   <header class="topbar">
     <div class="brand"><img src="/account/logo.svg" alt="SukiSU"><div><b>SukiSU 主题镜像</b><span>用户中心</span></div></div>
     <div class="top-actions">
+      <div class="lang-switch lang-switch-compact" data-lang-switcher></div>
       <span class="pill" id="statusPill">读取中</span>
       <img class="avatar hidden" id="topAvatar" alt="">
       <span class="pill" id="topUser">未登录</span>
@@ -628,6 +632,12 @@ input:-webkit-autofill:focus {
               <button type="button" class="mention-chip" data-target="userUpDescription" data-mention="yourname@weibo">Weibo</button>
               <button type="button" class="mention-chip" data-target="userUpDescription" data-mention="yourname@xiaohongshu">Xiaohongshu</button>
               <button type="button" class="mention-chip" data-target="userUpDescription" data-mention="yourname@xda">Xda</button>
+              <button type="button" class="mention-chip" data-target="userUpDescription" data-mention="yourname@youtube">YouTube</button>
+              <button type="button" class="mention-chip" data-target="userUpDescription" data-mention="yourname@afdian">Afdian</button>
+              <button type="button" class="mention-chip" data-target="userUpDescription" data-mention="yourname@twitter">X</button>
+              <button type="button" class="mention-chip" data-target="userUpDescription" data-mention="yourname@zhihu">Zhihu</button>
+              <button type="button" class="mention-chip" data-target="userUpDescription" data-mention="yourname@threads">Threads</button>
+              <button type="button" class="mention-chip" data-target="userUpDescription" data-mention="yourname@douyin">Douyin</button>
             </div>
           </div>
           <div class="field">
@@ -913,7 +923,7 @@ input:-webkit-autofill:focus {
     } else {
       banner.classList.remove('show');
     }
-    $('sideInfo').textContent = (activeAuthor ? '作者：' + (activeAuthor.displayName || activeAuthor.fingerprint) : '尚未绑定作者') + '\n' + statusText(user.status);
+    $('sideInfo').innerHTML = '<div>' + (activeAuthor ? '作者：' + escapeHtml(activeAuthor.displayName || activeAuthor.fingerprint) : '尚未绑定作者') + '</div><div>' + escapeHtml(statusText(user.status)) + '</div>';
     $('emailHint').textContent = user.email ? '当前邮箱：' + user.email : '尚未绑定邮箱';
     if (data.managerVersionCode && (!$('userUpMin').value || $('userUpMin').value === '0')) {
       $('userUpMin').value = data.managerVersionCode;
@@ -1056,6 +1066,10 @@ input:-webkit-autofill:focus {
     xda: 'https://xdaforums.com',
     youtube: 'https://www.youtube.com',
     afdian: 'https://afdian.com',
+    twitter: 'https://x.com',
+    zhihu: 'https://www.zhihu.com',
+    threads: 'https://www.threads.net',
+    douyin: 'https://www.douyin.com',
   };
 
   function userMentionUrl(user, platform) {
@@ -1071,6 +1085,10 @@ input:-webkit-autofill:focus {
       case 'xda': return 'https://xdaforums.com/m/' + name + '/';
       case 'youtube': return 'https://www.youtube.com/@' + name;
       case 'afdian': return 'https://afdian.com/a/' + name;
+      case 'twitter': return 'https://x.com/' + name;
+      case 'zhihu': return 'https://www.zhihu.com/people/' + name;
+      case 'threads': return 'https://www.threads.net/@' + name;
+      case 'douyin': return 'https://www.douyin.com/search/' + name;
       default: return '';
     }
   }
@@ -1082,12 +1100,13 @@ input:-webkit-autofill:focus {
     html = html.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
     html = html.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,
       '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
-    html = html.replace(/(^|[^\w@])([A-Za-z0-9._-]+)@(github|gitee|bilibili|coolapk|telegram|weibo|xiaohongshu|xda|youtube|afdian)(?![\w.-]*\.)/gi,
+    // Usernames may contain CJK and other Unicode letters, not just ASCII.
+    html = html.replace(/(^|[^\p{L}\p{N}@._·-])([\p{L}\p{N}\p{M}._·-]+)@(github|gitee|bilibili|coolapk|telegram|weibo|xiaohongshu|xda|youtube|afdian|twitter|zhihu|threads|douyin)(?![\p{L}\p{N}._-]*\.)/giu,
       (match, prefix, user, platform) => {
         const url = userMentionUrl(user, platform);
         return url ? `${prefix}<a class="mention" href="${url}" target="_blank" rel="noreferrer">${user}@${platform}</a>` : match;
       });
-    html = html.replace(/(^|[^\w@])@([A-Za-z0-9_-]+)/g, (match, prefix, name) => {
+    html = html.replace(/(^|[^\p{L}\p{N}@._·-])@([A-Za-z0-9_-]+)/gu, (match, prefix, name) => {
       const url = SITE_MENTIONS[name.toLowerCase()];
       return url
         ? `${prefix}<a class="mention" href="${url}" target="_blank" rel="noreferrer">@${name}</a>`
@@ -1309,7 +1328,7 @@ input:-webkit-autofill:focus {
   function formatTime(value) {
     if (!value) return '—';
     const date = new Date(value);
-    return isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false });
+    return isNaN(date.getTime()) ? value : date.toLocaleString(window.SukisuI18n ? SukisuI18n.locale : 'zh-CN', { hour12: false });
   }
 
   document.querySelectorAll('.side button[data-view]').forEach(button => {

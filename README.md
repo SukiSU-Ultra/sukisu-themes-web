@@ -1,125 +1,128 @@
 # SukiSU 主题镜像
 
-Rust 实现的主题镜像、投稿审核和账号系统，包含 Web 管理后台、用户中心和 Android 管理器接口。
+Rust 编写的主题镜像、投稿审核和账号系统，提供 Android 管理器接口、管理后台和用户中心。
 
 ## 功能
 
-### 主题与投稿
-- 生成主题目录 `catalog.json`，支持搜索、排序、预览图和截图。
-- 主题包上传前本地校验，服务器再次校验 AES-GCM 和 ZIP 内容。
-- 预览图、作者头像和截图自动压缩；支持 JPG、PNG、WebP、GIF。
-- 支持更新已有主题；新主题自动分配 ID，格式为 `11010-01`、`11010-02`。
-- 投稿进入待审核队列，管理员批准后发布；满足作者许可时可自动发布。
-- 撤回主题保留 14 天，期间只有作者可以预览和下载，并可重新发布；到期自动永久删除。
-- 网页和管理器显示上传进度、校验、待审核、已发布或已拒绝的完整状态。
-- 每个主题包生成 SHA-256；网页详情展示，管理器下载时自动校验，不一致拒绝安装。
-- 许可证选择、推荐标签、自定义标签、最低管理器版本。
-- 主题描述支持 `用户名@github` 用户提及。
+- 主题目录 `catalog.json`；上传前本地校验、服务端校验、图片压缩、SHA-256。
+- 投稿审核、作者许可自动发布、管理员人工审核；撤回主题保留 14 天。
+- 统一登录、邮箱验证、密码重置、GitHub OAuth、作者身份绑定/重置。
+- 本地磁盘或 S3 兼容存储；支持配额、存储迁移、网络和认证配置。
+- 中文 / English，首次按浏览器语言选择，之后保存在 `localStorage.sukisu-lang`。
+- 主题描述支持 `用户名@平台` 提及，用户名支持中文/Unicode；支持 GitHub、Gitee、Bilibili、酷安、Telegram、微博、小红书、XDA、YouTube、爱发电、X、知乎、Threads、抖音。
 
-### 账号与作者
-- 统一登录入口：管理员和用户使用同一个登录页，登录后按账号权限进入管理后台或用户中心。
-- 用户注册、邮箱验证、密码重置、GitHub OAuth；邮箱验证后即可使用，不再等待账号审核。
-- 用户资料、头像、密码、邮箱管理。
-- 作者身份申请、绑定、复用、重置，管理员审核。
-- 管理员可禁用、启用用户，重置密码，调整角色，查看操作日志。
-- 账号、会话、作者、投稿和审计记录保存在 SQLite。
-
-### 存储与网络
-- 本地磁盘或 S3 兼容对象存储（AWS S3、Cloudflare R2、MinIO、Backblaze B2 等）。
-- 可调整存储目录、存储后端和存储配额。
-- 支持存储迁移和进度查询。
-- 后台可修改监听地址、端口、公开域名和公开 URL，自动更新 Caddy 上游，失败自动回滚。
-
-### 管理器
-- 主题商店浏览、搜索、排序、下载和详情预览。
-- 支持多个主题镜像源。
-- 未登录可浏览和下载，投稿需要登录账号。
-- 登录后使用账号作者身份投稿，服务器自动分配主题 ID。
-- 已有作者头像时从服务器加载，不再显示头像选择器；新投稿自动复用。
-- 预览图、头像、截图在本地统一转成 WebP 后上传，JPG 也可直接选择。
-- 上传时显示本地校验、上传百分比、服务器校验和审核/发布结果。
-- 主题详情显示 SHA-256；下载时校验文件大小和 SHA-256。
-- 镜像源管理只显示目录、主题包、预览图、头像和健康检查等只读接口，不显示管理后台地址或管理 API。
-
-## 使用
-
-### 入口
+## 入口
 
 | 地址 | 用途 |
 | --- | --- |
-| `/` | 跳转到统一登录/注册 |
-| `/account/login` | 统一登录/注册 |
+| `/` | 跳转统一登录/注册 |
+| `/account/login` | 登录 / 注册 / 找回密码 |
 | `/account/` | 用户中心 |
-| `/admin/` | 管理后台（管理员） |
-| `/admin/setup` | 首次初始化 |
+| `/admin/` | 管理后台 |
+| `/admin/setup` | 首次初始化管理员 |
+| `/health` | 健康检查（Caddy 返回 `ok`） |
+| `/catalog.json` | 主题目录（需 `X-Sukisu-Theme-Token`） |
+| `/themes/*`、`/previews/*`、`/screenshots/*`、`/avatars/*` | 资源文件（需访问令牌） |
+| `/submit` | 管理器投稿（由服务端校验令牌） |
 
-首次启动打开 `/admin/setup`，创建管理员账号并设置初始存储配额。初始化完成后该页面自动关闭。
+## 依赖
 
-### 管理后台
+### 构建
 
-- **总览**：服务状态、主题数量、待审核数量、存储用量。
-- **账号**：用户管理、作者申请、作者绑定/重置、操作日志。
-- **主题**：上传、更新、审核、拒绝、删除、重建目录；点击主题卡片查看详情和完整 SHA-256。
-- **系统**：认证配置、网络配置、存储配置、访问令牌、管理员密码。
+- Rust 1.85+。
+- Linux 原生构建：`build-essential`、`pkg-config`、`ca-certificates`。
+- Debian/Armbian 安装示例：
 
-管理员侧栏提供用户中心入口；管理员进入用户中心后也会看到“管理后台”按钮，两边使用同一个登录状态。
+  ```bash
+  sudo apt update
+  sudo apt install -y build-essential pkg-config ca-certificates curl caddy
+  ```
 
-认证页可以配置 SMTP 和 GitHub OAuth，保存后立即生效。密码和 Secret 只写不回显，可发送测试邮件、检查 GitHub 参数。
+  如果发行版仓库没有 Caddy，按 Caddy 官方文档安装。
+- 交叉编译 `aarch64-unknown-linux-musl`：
+  - `rustup target add aarch64-unknown-linux-musl`
+  - Zig 0.16（`scripts/zigcc-aarch64-musl.bat`、`scripts/ar-aarch64-musl.bat` 会调用 `zig cc` / `zig ar`）
+- 前端是原生 HTML/CSS/JS，不需要 Node.js/npm。
 
-网络页保存后会自动重启服务并 reload Caddy；新端口健康检查失败时会恢复旧配置。
+### 运行
 
-### 用户中心
+- Linux + systemd；Caddy/Nginx/Lucky 等反向代理负责 TLS 和路由。
+- SQLite 已静态编译，不需要单独安装数据库；也不需要 OpenSSL 开发包。
+- 可选：SMTP 服务、GitHub OAuth App、S3 兼容对象存储（AWS S3 / R2 / MinIO / B2）。
 
-1. 注册账号并完成邮箱验证，验证后即可使用账号功能。
-2. 申请作者身份，填写作者名称和作者 ID。
-3. 管理员批准作者申请后即可上传主题。
-5. 上传时显示文件上传进度和服务器校验状态。
-6. 在「我的内容」查看投稿记录、完整状态和 SHA-256，审核通过后显示在主题商店。
-7. 点击已发布主题可预览图片、查看详情、下载主题包或撤回下架；待审核投稿也可以撤回。
-8. 已撤回主题会单独显示，14 天内可重新发布，且只有作者能预览和下载；到期自动删除。
+## 快速开始
 
-作者 ID 重置后，旧主题仍归属于同一用户。
+### 本地运行
 
-### Android 管理器
+```bash
+cargo build --release
+mkdir -p dev-data
+cat > dev-storage.env <<EOF
+THEME_STORAGE_ROOT=$PWD/dev-data
+THEME_STORAGE_LIMIT_BYTES=1258291200
+EOF
+THEME_STORAGE_ENV="$PWD/dev-storage.env" THEME_DB_PATH="$PWD/dev-account.db" \
+  ADMIN_BIND=127.0.0.1 ADMIN_PORT=8090 ./target/release/sukisu-theme-web
+```
 
-1. 在主题商店设置中填写镜像地址和访问令牌。
-2. 打开账号页注册或登录。
-3. 进入投稿页，主题 ID 自动获取；更新主题时选择已有主题。
-4. 选择主题包、预览图、截图和作者头像。
-5. 提交时查看本地校验、上传进度、服务器校验和审核/发布结果。
-6. 在投稿页查看最近投稿状态，或到用户中心/管理后台查看完整流程。
-7. 已通过的主题可在「我的投稿」中撤回下架；撤回后 14 天内可在「已撤回主题」中重新发布。
+打开 `http://127.0.0.1:8090/admin/setup` 创建管理员并设置存储配额。
 
-预览图/头像/截图会在管理器本地压缩并转换为 WebP，不需要手动转换。已有作者头像会直接使用服务器头像，只在该作者还没有头像时显示选择器。
+Windows 本地开发（先创建 `dev-storage.env`，内容见下方）：
 
-主题详情页显示 SHA-256；下载时管理器会自动校验文件大小和 SHA-256，不一致会拒绝安装。
+```powershell
+$env:THEME_STORAGE_ENV="$PWD\dev-storage.env"
+$env:THEME_DB_PATH="$PWD\dev-account.db"
+$env:THEME_STATIC_DIR="$PWD\static"
+$env:THEME_DISABLE_SYSTEMCTL="1"
+$env:ADMIN_BIND="127.0.0.1"
+$env:ADMIN_PORT="8090"
+cargo run
+```
 
-### 作者头像
+`dev-storage.env`：
 
-- 作者第一次上传头像后保存到服务器。
-- 后续投稿自动复用该头像，管理器不再显示头像选择器。
-- 需要更换头像时，在网页端投稿表单重新选择作者头像。
+```ini
+THEME_STORAGE_ROOT=C:/path/to/sukisu-data
+THEME_STORAGE_LIMIT_BYTES=1258291200
+```
 
-## 运行
+开发开关：
 
-### 环境
+- `THEME_STATIC_DIR=static`：直接从磁盘读取 HTML/JS/语言文件，改完刷新即可，不用重编译。
+- `THEME_DEV_MODE=1`：邮件链接写入日志，不真正发信。
+- `THEME_DISABLE_SYSTEMCTL=1`：不调用 systemctl/caddy（非 systemd 环境）。
 
-- Rust 1.85+
-- Caddy 或其他反向代理
-- Linux / Windows / macOS
+### 交叉编译 aarch64
 
-### 配置
+```powershell
+rustup target add aarch64-unknown-linux-musl
+# 确保 zig 0.16 在 PATH
+powershell -ExecutionPolicy Bypass -File scripts/build-aarch64.ps1
+```
+
+产物：
+
+```text
+target/aarch64-unknown-linux-musl/release/sukisu-theme-web
+```
+
+## 配置
+
+默认配置目录：
 
 | 文件 | 用途 |
 | --- | --- |
 | `/etc/sukisu-theme-web/storage.env` | 存储目录、后端、S3 参数、配额 |
-| `/etc/sukisu-themes/store.env` | `THEME_STORE_TOKEN` |
-| `/etc/sukisu-theme-web/admin.env` | 管理员用户名和密码哈希 |
-| `/etc/sukisu-theme-web/config.env` | 公开地址、管理后台地址 |
-| `/etc/sukisu-theme-web/account.env` | SMTP、GitHub OAuth、用户中心地址 |
-| `/etc/sukisu-theme-web/network.env` | 监听地址、端口、公开域名 |
+| `/etc/sukisu-themes/store.env` | `THEME_STORE_TOKEN`（资源访问令牌） |
+| `/etc/sukisu-theme-web/admin.env` | 可选的预置管理员（`ADMIN_USERNAME` / `ADMIN_PASSWORD_HASH`） |
+| `/etc/sukisu-theme-web/config.env` | `PUBLIC_URL`、`ADMIN_URL` |
+| `/etc/sukisu-theme-web/network.env` | `ADMIN_BIND`、`ADMIN_PORT`、`PUBLIC_DOMAINS` |
+| `/etc/sukisu-theme-web/account.env` | `ACCOUNT_URL`、SMTP、GitHub OAuth |
+| `/var/lib/sukisu-theme-web/account.db` | SQLite 账号数据库 |
 
-`storage.env`：
+可以用 `THEME_STORAGE_ENV`、`THEME_DB_PATH`、`THEME_ADMIN_ENV`、`THEME_ADMIN_CONFIG`、`THEME_NETWORK_ENV`、`THEME_ACCOUNT_ENV`、`THEME_CADDYFILE`、`THEME_STATIC_DIR` 覆盖路径；`THEME_TOKEN_ENV`、`THEME_AUTHORS_FILE`、`THEME_ADMIN_PASSWORD_FILE` 分别覆盖令牌、作者和密码文件。
+
+### `storage.env`
 
 ```ini
 THEME_STORAGE_ROOT=/srv/sukisu-themes
@@ -136,11 +139,37 @@ S3_SECRET_KEY=
 S3_PATH_STYLE=true
 ```
 
-`account.env`：
+### `store.env`
+
+```bash
+openssl rand -hex 32
+```
 
 ```ini
-ACCOUNT_URL=https://<镜像域名>/account/
-GITHUB_CALLBACK_URL=https://<镜像域名>/account/api/auth/github/callback
+# /etc/sukisu-themes/store.env
+THEME_STORE_TOKEN=<上面生成的 64 位十六进制>
+```
+
+管理器配置和 Caddy 必须使用同一个令牌。
+
+### `network.env` / `config.env`
+
+```ini
+# network.env
+ADMIN_BIND=127.0.0.1
+ADMIN_PORT=8090
+PUBLIC_DOMAINS=themes.example.com
+
+# config.env
+PUBLIC_URL=https://themes.example.com/
+ADMIN_URL=https://themes.example.com/admin/
+```
+
+### `account.env`
+
+```ini
+ACCOUNT_URL=https://themes.example.com/account/
+GITHUB_CALLBACK_URL=https://themes.example.com/account/api/auth/github/callback
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
 SMTP_HOST=
@@ -151,36 +180,209 @@ SMTP_FROM=
 SMTP_TLS=starttls
 ```
 
-未配置 SMTP 时无法注册邮箱账号；未配置 GitHub 时用户中心隐藏 GitHub 登录按钮。
+未配置 SMTP 时无法注册邮箱账号；未配置 GitHub 时隐藏 GitHub 登录按钮。管理员也可以登录后在「认证」页修改并测试。
 
-### 构建与启动
+## 部署（Linux + systemd + Caddy）
+
+### 1. 安装二进制和目录
 
 ```bash
-cargo build --release
-./target/release/sukisu-theme-web
+install -d /opt/sukisu-theme-web /srv/sukisu-themes \
+  /etc/sukisu-theme-web /etc/sukisu-themes /var/lib/sukisu-theme-web
+install -m 0755 target/aarch64-unknown-linux-musl/release/sukisu-theme-web \
+  /opt/sukisu-theme-web/sukisu-theme-web-rs
 ```
 
-ARM64 Linux 静态二进制：
+静态资源已嵌入二进制。生产环境不要设置 `THEME_STATIC_DIR`；修改 HTML/JS/语言文件后必须重新构建并替换二进制。
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/build-aarch64.ps1
+### 2. 写入配置
+
+按上一节创建 `storage.env`、`store.env`、`network.env`、`config.env`；SMTP/GitHub 可选。
+
+### 3. systemd
+
+`/etc/systemd/system/sukisu-theme-web.service`：
+
+```ini
+[Unit]
+Description=SukiSU theme mirror web console
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/sukisu-theme-web/sukisu-theme-web-rs
+Restart=always
+RestartSec=3
+Environment=RUST_LOG=info
+EnvironmentFile=-/etc/sukisu-theme-web/network.env
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-产物：
+服务默认以 root 运行，因为需要写存储目录、SQLite 和 `/etc/sukisu-theme-web`，并调用 `systemctl`/Caddy。
+
+```bash
+systemctl daemon-reload
+systemctl enable --now sukisu-theme-web
+```
+
+### 4. Caddy
+
+给 Caddy 提供令牌和存储根目录：
+
+`/etc/systemd/system/caddy.service.d/theme-store.conf`：
+
+```ini
+[Service]
+EnvironmentFile=/etc/sukisu-themes/store.env
+EnvironmentFile=/etc/sukisu-theme-web/storage.env
+```
+
+`/etc/caddy/Caddyfile`（最小可用配置，假设 TLS 由前置 Lucky/Nginx 终止；如果 Caddy 直接对外，改成域名站点并配置证书）：
+
+```caddyfile
+http://:8080 {
+	bind 127.0.0.1
+	root * {$THEME_STORAGE_ROOT}
+	encode zstd gzip
+
+	header {
+		Access-Control-Allow-Origin "*"
+		X-Content-Type-Options "nosniff"
+	}
+
+	handle_path /admin* {
+		reverse_proxy 127.0.0.1:8090
+	}
+	handle /account* {
+		reverse_proxy 127.0.0.1:8090
+	}
+	handle /submit {
+		reverse_proxy 127.0.0.1:8090
+	}
+	handle /health {
+		respond "ok" 200
+	}
+
+	# 公共 UI 资源，必须在 token 校验之前
+	handle /i18n.js {
+		reverse_proxy 127.0.0.1:8090
+	}
+	handle /locales/* {
+		reverse_proxy 127.0.0.1:8090
+	}
+
+	handle / {
+		redir * /account/login 302
+	}
+
+	@authorized header X-Sukisu-Theme-Token {$THEME_STORE_TOKEN}
+	handle @authorized {
+		@assets path /themes/* /previews/* /screenshots/* /avatars/*
+		handle @assets {
+			reverse_proxy 127.0.0.1:8090
+		}
+		handle {
+			file_server
+		}
+	}
+
+	handle {
+		respond "Unauthorized" 401
+	}
+}
+```
+
+```bash
+systemctl daemon-reload
+
+# Caddyfile 使用 {$THEME_STORE_TOKEN} 和 {$THEME_STORAGE_ROOT}，校验前先导出
+export THEME_STORE_TOKEN="$(sed -n 's/^THEME_STORE_TOKEN=//p' /etc/sukisu-themes/store.env | tail -1)"
+export THEME_STORAGE_ROOT="$(sed -n 's/^THEME_STORAGE_ROOT=//p' /etc/sukisu-theme-web/storage.env | tail -1)"
+
+caddy validate --config /etc/caddy/Caddyfile
+systemctl enable --now caddy
+systemctl reload caddy
+```
+
+如果不用 Caddy，Nginx 等价规则：
+
+- `/admin/` 反代到 `http://127.0.0.1:8090/`（去掉 `/admin` 前缀）。
+- `/account/` 反代到 `http://127.0.0.1:8090`（保留前缀）。
+- `/i18n.js`、`/locales/*` 无需令牌即可访问。
+- `/themes/`、`/previews/`、`/screenshots/`、`/avatars/`、`/catalog.json` 校验 `X-Sukisu-Theme-Token`。
+- `/health` 直接返回 `200 ok`。
+
+管理后台的「网络」页会改写 `THEME_CADDYFILE`（默认 `/etc/caddy/Caddyfile`）并重启服务；不使用 Caddy 时可设置 `THEME_DISABLE_SYSTEMCTL=1`，改用其他方式维护代理配置。
+
+### 5. 初始化
+
+浏览器打开：
 
 ```text
-target/aarch64-unknown-linux-musl/release/sukisu-theme-web
+https://<域名>/admin/setup
 ```
 
-用 Caddy/Nginx 将 `/admin*`、`/account*`、`/submit`、`/themes/*`、`/previews/*`、`/screenshots/*`、`/avatars/*` 反代到服务端口。资源请求需要携带 `X-Sukisu-Theme-Token`。
+创建管理员、选择存储目录和配额。完成后即可登录管理后台。若使用 `admin.env` 预置管理员，直接访问 `/account/login`。
 
-### 数据目录
+### 6. 验证
+
+```bash
+curl -fsS http://127.0.0.1:8080/health
+curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8090/account/login
+curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/i18n.js
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/themes/missing
+```
+
+预期：`ok`、`200`、`200`、`401`。公网再确认登录页、`/i18n.js`、`/locales/en.json` 和 logo 正常。
+
+## 升级与备份
+
+升级：
+
+```bash
+BACKUP=/root/sukisu-deploy-backup/$(date +%Y%m%d-%H%M%S)
+mkdir -p "$BACKUP"
+cp -a /opt/sukisu-theme-web/sukisu-theme-web-rs "$BACKUP/"
+install -m 0755 sukisu-theme-web /opt/sukisu-theme-web/sukisu-theme-web-rs
+systemctl restart sukisu-theme-web
+systemctl is-active sukisu-theme-web
+```
+
+失败时恢复 `$BACKUP/sukisu-theme-web-rs` 并重启。
+
+备份：
 
 | 路径 | 内容 |
 | --- | --- |
-| `/srv/sukisu-themes` | 主题包、预览图、截图、头像、meta、catalog |
-| `/var/lib/sukisu-theme-web/account.db` | SQLite 账号数据库 |
-| `/etc/sukisu-theme-web` | 服务配置 |
-| `/etc/sukisu-themes/store.env` | 主题商店访问令牌 |
+| `/srv/sukisu-themes` | 主题包、预览图、截图、头像、meta、`catalog.json` |
+| `/var/lib/sukisu-theme-web/account.db` | SQLite（含 `-wal` / `-shm`） |
+| `/etc/sukisu-theme-web`、`/etc/sukisu-themes` | 配置和访问令牌 |
+| `/etc/caddy/Caddyfile` | 反向代理配置 |
 
-备份时同时备份数据目录、SQLite 数据库（含 WAL/SHM）和 `/etc/sukisu-theme-web`、`/etc/sukisu-themes`。
+## 多语言
+
+- 语言：`zh-CN`（HTML 原文）、`en`（`static/locales/en.json`）。
+- 新增语言：复制 `en.json` 为 `static/locales/<code>.json` 并翻译；在 `static/i18n.js` 的 `LANGUAGES` 注册；在 `src/api.rs` 添加 `include_str!` 常量和 `embedded_static` 分支。
+- 静态资源嵌入二进制，新增语言文件后必须重新构建。
+
+## 常见问题
+
+- **页面没有语言下拉框**：检查 `/i18n.js`、`/locales/en.json` 是否被反向代理 401；Caddy 需保留 `handle /i18n.js` 和 `handle /locales/*`。
+- **`/account/i18n.js` 404**：正确路径是根路径 `/i18n.js`；不要加 `/account` 前缀。
+- **改了 HTML/JS 线上没变化**：生产环境未设置 `THEME_STATIC_DIR`，资源在二进制里，重新构建并替换二进制。
+- **Caddy 启动后 502**：确认服务监听 `127.0.0.1:8090`，`/admin*` 需要去前缀，`/account*` 保留前缀。
+- **首次打不开初始化页**：确认没有预置 `admin.env`；已有管理员时请走 `/account/login`。
+- **浏览器显示旧页面**：`Ctrl + F5` 强制刷新。
+
+## 开发
+
+```bash
+cargo check
+cargo test
+cargo build --release
+```
+
+完整生产部署、Caddy 验证、回滚和真实主机信息见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
