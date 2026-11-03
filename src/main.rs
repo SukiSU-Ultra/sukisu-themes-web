@@ -1,3 +1,6 @@
+// Helper APIs are kept for the standalone service and future protocol extensions.
+#![allow(dead_code)]
+
 mod account_api;
 mod accounts;
 mod admin_users;
@@ -15,6 +18,7 @@ mod models;
 mod network_api;
 mod oauth;
 mod package;
+mod resumable;
 mod storage;
 mod system;
 mod uploads;
@@ -40,6 +44,7 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| PathBuf::from("/etc/sukisu-theme-web/storage.env"));
     let settings = config::read_storage_config(&storage_env);
     let state = api::AppState::new(settings).await?;
+    resumable::cleanup_stale(&state.paths);
 
     if let Err(error) = accounts::ensure_admin_seed(&state.db, &state.paths).await {
         tracing::warn!("admin seed warning: {error:#}");
@@ -56,6 +61,7 @@ async fn main() -> anyhow::Result<()> {
                 tracing::warn!("withdrawn cleanup warning: {error:#}");
             }
             cleanup_state.refresh_withdrawn_assets();
+            resumable::cleanup_stale(&cleanup_state.paths);
             tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
         }
     });

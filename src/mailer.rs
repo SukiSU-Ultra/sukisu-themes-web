@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
-use lettre::message::header::ContentType;
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 

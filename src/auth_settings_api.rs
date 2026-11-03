@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 
 use crate::accounts::SessionInfo;
 use crate::api::{json_body, ApiError, AppState};
-use crate::config::{self, read_env, remove_env_key, set_env_key};
+use crate::config::{read_env, remove_env_key, set_env_key};
 use crate::mailer;
 use crate::oauth;
 

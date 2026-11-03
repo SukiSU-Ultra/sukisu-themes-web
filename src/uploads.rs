@@ -123,7 +123,7 @@ pub async fn persist_author_avatar(
     Ok(())
 }
 
-async fn read_field_bytes(mut field: axum::extract::multipart::Field<'_>) -> Result<Vec<u8>> {
+async fn read_field_bytes(field: axum::extract::multipart::Field<'_>) -> Result<Vec<u8>> {
     let bytes = field.bytes().await.context("读取上传文件失败")?;
     Ok(bytes.to_vec())
 }
@@ -141,6 +141,7 @@ pub async fn parse_multipart(mut multipart: Multipart) -> Result<UploadForm, Str
     let mut license = String::new();
     let mut min_manager_version = String::new();
     let mut changelog = String::new();
+    let mut upload_id: Option<String> = None;
     let mut package: Option<FilePart> = None;
     let mut preview: Option<FilePart> = None;
     let mut avatar: Option<FilePart> = None;
@@ -225,13 +226,23 @@ pub async fn parse_multipart(mut multipart: Multipart) -> Result<UploadForm, Str
                     "license" => license = value,
                     "minManagerVersion" => min_manager_version = value,
                     "changelog" => changelog = value,
+                    "uploadId" => upload_id = Some(value.trim().to_string()),
                     _ => {}
                 }
             }
         }
     }
 
-    let package = package.ok_or_else(|| "package 文件不能为空".to_string())?;
+    let upload_id = upload_id.filter(|value| !value.is_empty());
+    let package = match package {
+        Some(package) => package,
+        None if upload_id.is_some() => FilePart {
+            filename: "resumable.sukisu".to_string(),
+            ext: ".sukisu".to_string(),
+            data: Vec::new(),
+        },
+        None => return Err("package 文件不能为空".to_string()),
+    };
     let preview = preview.ok_or_else(|| "preview 文件不能为空".to_string())?;
     Ok(UploadForm {
         id,
@@ -246,6 +257,7 @@ pub async fn parse_multipart(mut multipart: Multipart) -> Result<UploadForm, Str
         license,
         min_manager_version,
         changelog,
+        upload_id,
         package,
         preview,
         avatar,
@@ -405,7 +417,7 @@ pub async fn prepare_upload(form: UploadForm) -> Result<PreparedUpload, String> 
 }
 
 pub fn load_pending_upload(
-    paths: &Paths,
+    _paths: &Paths,
     directory: &Path,
     meta: &PendingMeta,
 ) -> Result<PreparedUpload, String> {

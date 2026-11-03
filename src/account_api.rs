@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use axum::extract::{Extension, Multipart, Path, Query, State};
@@ -78,6 +76,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/preview", get(account_preview))
         .route("/theme-id/next", get(next_theme_id))
         .route("/submit", post(submit_theme))
+        .merge(crate::resumable::router())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             account_csrf_guard,
@@ -2114,6 +2113,12 @@ async fn submit_theme(
     let mut form = crate::uploads::parse_multipart(multipart)
         .await
         .map_err(ApiError::bad)?;
+    let upload_id = form.upload_id.clone();
+    if form.package.data.is_empty() {
+        if let Some(id) = upload_id.as_deref() {
+            form.package = crate::resumable::assemble(&state, &session.user_id, id).await?;
+        }
+    }
     let author_id = form.author_id.clone();
     let author_name = form.author.clone();
     let requested_id = form.id.trim().to_string();
@@ -2246,6 +2251,9 @@ async fn submit_theme(
         )
         .await
         .ok();
+        if let Some(id) = upload_id.as_deref() {
+            crate::resumable::remove_session(&state, &session.user_id, id).await;
+        }
         return Ok(Json(json!({
             "ok": true,
             "pending": false,
@@ -2284,6 +2292,9 @@ async fn submit_theme(
     )
     .await
     .map_err(ApiError::internal)?;
+    if let Some(id) = upload_id.as_deref() {
+        crate::resumable::remove_session(&state, &session.user_id, id).await;
+    }
     Ok((
         StatusCode::ACCEPTED,
         Json(json!({

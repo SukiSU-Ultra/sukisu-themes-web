@@ -1,12 +1,12 @@
 use std::path::Path;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use rusqlite::{params, OptionalExtension};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::config::{read_env, Paths};
-use crate::db::{self, Database};
+use crate::db::Database;
 use crate::util::{now_iso, random_hex, unix_now};
 
 pub const EMAIL_VERIFY_TTL_SECS: u64 = 24 * 60 * 60;

@@ -644,7 +644,7 @@ input:-webkit-autofill:focus {
           </div>
           <div class="row">
             <button class="btn primary" id="userUpSubmit">上传并提交审核</button>
-            <span class="pill" id="userUpSizeHint">主题包 ≤ 16 MB，单张图片原始 ≤ 12 MB（自动压缩，输出 ≤ 2 MB）</span>
+            <span class="pill" id="userUpSizeHint">主题包 ≤ 128 MB，单张图片原始 ≤ 12 MB（自动压缩，输出 ≤ 2 MB） · 支持断点续传</span>
             <span class="muted" id="userUpHint">首次投稿需要管理员审核。</span>
           </div>
         </div>
@@ -735,6 +735,70 @@ input:-webkit-autofill:focus {
       throw new Error(data.error || ('HTTP ' + response.status));
     }
     return data;
+  }
+
+  function resumableKey(file) {
+    return 'sukisu-upload-' + file.name + ':' + file.size + ':' + (file.lastModified || 0);
+  }
+
+  function clearResumableKey(file) {
+    try { localStorage.removeItem(resumableKey(file)); } catch (_) {}
+  }
+
+  async function uploadResumablePackage(file, onProgress) {
+    const fingerprint = file.name + ':' + file.size + ':' + (file.lastModified || 0);
+    const initResponse = await fetch(API + '/uploads/init', {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'SukiSUThemeAdmin',
+      },
+      body: JSON.stringify({ filename: file.name, size: file.size, fingerprint }),
+    });
+    const session = await initResponse.json().catch(() => ({}));
+    if (initResponse.status === 401) {
+      location.replace('/account/login');
+      throw new Error('请重新登录');
+    }
+    if (!initResponse.ok || session.ok === false) {
+      throw new Error(session.error || ('初始化上传失败 HTTP ' + initResponse.status));
+    }
+    const uploadId = session.uploadId;
+    const chunkSize = Number(session.chunkSize) || 4 * 1024 * 1024;
+    const totalChunks = Number(session.totalChunks) || Math.ceil(file.size / chunkSize);
+    const received = new Set((session.received || []).map(Number));
+    let uploadedBytes = Number(session.receivedBytes) || 0;
+    try { localStorage.setItem(resumableKey(file), uploadId); } catch (_) {}
+    onProgress(file.size ? uploadedBytes / file.size : 0);
+    for (let index = 0; index < totalChunks; index++) {
+      if (received.has(index)) continue;
+      const start = index * chunkSize;
+      const end = Math.min(file.size, start + chunkSize);
+      const chunk = file.slice(start, end);
+      const response = await fetch(API + '/uploads/' + encodeURIComponent(uploadId) + '/' + index, {
+        method: 'POST',
+        cache: 'no-store',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-Requested-With': 'SukiSUThemeAdmin',
+        },
+        body: chunk,
+      });
+      if (response.status === 401) {
+        location.replace('/account/login');
+        throw new Error('请重新登录');
+      }
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || ('分片上传失败 HTTP ' + response.status));
+      }
+      uploadedBytes += chunk.size;
+      onProgress(file.size ? uploadedBytes / file.size : 0);
+    }
+    return uploadId;
   }
 
   function uploadWithProgress(url, form, onProgress) {
@@ -1441,7 +1505,6 @@ $('userUpSubmit').addEventListener('click', async () => {
   form.append('minManagerVersion', $('userUpMin').value.trim() || '0');
   form.append('description', $('userUpDescription').value.trim());
   form.append('changelog', $('userUpChangelog').value.trim());
-  form.append('package', packageFile);
   form.append('preview', previewFile);
   const avatar = $('userUpAvatar').files[0];
   if (avatar) form.append('avatar', avatar);
@@ -1455,18 +1518,26 @@ $('userUpSubmit').addEventListener('click', async () => {
   button.textContent = '上传中…';
   progress.classList.remove('hidden');
   progressBar.style.width = '0%';
-  progressText.textContent = '正在上传…';
+  progressText.textContent = '正在上传主题包…';
   progressPercent.textContent = '0%';
   try {
-    const data = await uploadWithProgress(API + '/submit', form, ratio => {
+    const uploadId = await uploadResumablePackage(packageFile, ratio => {
       const percent = Math.round(Math.max(0, Math.min(1, ratio)) * 100);
       progressBar.style.width = percent + '%';
       progressPercent.textContent = percent + '%';
-      progressText.textContent = percent >= 100 ? '服务器校验中…' : '正在上传…';
+      progressText.textContent = percent >= 100 ? '主题包已上传，正在提交…' : '正在上传主题包…';
+    });
+    progressBar.style.width = '100%';
+    progressPercent.textContent = '100%';
+    progressText.textContent = '正在提交…';
+    form.append('uploadId', uploadId);
+    const data = await uploadWithProgress(API + '/submit', form, ratio => {
+      if (ratio >= 1) progressText.textContent = '服务器校验中…';
     });
     progressBar.style.width = '100%';
     progressPercent.textContent = '100%';
     progressText.textContent = data.pending ? '已提交，等待审核' : '已发布';
+    clearResumableKey(packageFile);
     toast(data.message || ('已提交：' + (data.id || themeId || userUploadNextId)));
     $('userUpName').value = '';
     $('userUpTags').value = '';
@@ -1483,7 +1554,7 @@ $('userUpSubmit').addEventListener('click', async () => {
     await loadUploadView();
     await loadProfile();
   } catch (error) {
-    progressText.textContent = '上传失败';
+    progressText.textContent = '上传失败，可重新提交继续上传';
     toast('上传失败：' + error.message, true);
   } finally {
     button.disabled = false;

@@ -1,13 +1,10 @@
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use axum::body::Body;
-use axum::extract::{
-    DefaultBodyLimit, Extension, Multipart, OriginalUri, Path as AxumPath, Query, Request, State,
-};
+use axum::extract::{DefaultBodyLimit, Extension, Multipart, OriginalUri, Query, Request, State};
 use axum::http::{HeaderMap, Method, StatusCode, Uri};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -29,13 +26,11 @@ use crate::config::{
     MIN_FORMAT_VERSION, TOKEN_HEADER,
 };
 use crate::jobs::JobManager;
-use crate::models::{JobState, StorageUsage};
 use crate::storage::{self, AssetStore, ServeBody, ServeError};
 use crate::system;
 use crate::uploads::{self, PublishError};
 use crate::util::{
-    file_extension, image_extension_allowed, now_iso, quote_query, random_hex, valid_author_hash,
-    valid_theme_id, valid_token,
+    image_extension_allowed, random_hex, valid_author_hash, valid_theme_id, valid_token,
 };
 
 const EMBEDDED_INDEX_HTML: &str = include_str!("../static/index.html");
@@ -212,6 +207,7 @@ pub fn router(state: AppState) -> Router {
         .merge(crate::admin_users::router())
         .merge(crate::network_api::router())
         .merge(crate::auth_settings_api::router())
+        .merge(crate::resumable::router())
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard))
         .layer(middleware::from_fn(csrf_guard));
 
@@ -1078,13 +1074,23 @@ async fn submit(
         .into_response())
 }
 
-async fn upload_theme(State(state): State<AppState>, multipart: Multipart) -> ApiResult<Response> {
+async fn upload_theme(
+    State(state): State<AppState>,
+    Extension(actor): Extension<crate::accounts::SessionInfo>,
+    multipart: Multipart,
+) -> ApiResult<Response> {
     if state.jobs.is_running() {
         return Err(ApiError::conflict("存储迁移进行中，请稍后再试"));
     }
     let mut form = uploads::parse_multipart(multipart)
         .await
         .map_err(ApiError::bad)?;
+    let upload_id = form.upload_id.clone();
+    if form.package.data.is_empty() {
+        if let Some(id) = upload_id.as_deref() {
+            form.package = crate::resumable::assemble(&state, &actor.user_id, id).await?;
+        }
+    }
     let requested_id = form.id.trim().to_string();
     let owner_hash_value = form
         .owner_hash
@@ -1151,6 +1157,9 @@ async fn upload_theme(State(state): State<AppState>, multipart: Multipart) -> Ap
     )
     .await?;
     state.refresh_withdrawn_assets();
+    if let Some(id) = upload_id.as_deref() {
+        crate::resumable::remove_session(&state, &actor.user_id, id).await;
+    }
     Ok(Json(json!({"ok": true, "id": theme_id, "themes": themes.len()})).into_response())
 }
 
@@ -1817,6 +1826,7 @@ async fn storage_limit(State(state): State<AppState>, body: Bytes) -> ApiResult<
 mod route_tests {
     use super::*;
     use axum::body::Body;
+    use axum::extract::Path as AxumPath;
     use axum::http::Request;
     use http_body_util::BodyExt;
     use tower::ServiceExt;

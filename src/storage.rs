@@ -1,14 +1,12 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::Object;
-use bytes::Bytes;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::io::AsyncSeekExt;
 use walkdir::WalkDir;
 
-use crate::config::{write_atomic, Backend, StorageSettings, ASSET_DIRS, ASSET_PREFIXES};
+use crate::config::{write_atomic, Backend, StorageSettings, ASSET_DIRS};
 use crate::jobs::JobProgress;
 use crate::util::{content_type_for, normalize_asset_key, parse_byte_range, sha256_hex, ByteRange};
 
@@ -506,7 +504,7 @@ mod tests {
         let object = store.serve("avatars/a.jpg", None).await.unwrap();
         assert_eq!(object.status, 200);
         assert_eq!(object.content_length, 5);
-        let mut body = match object.body {
+        let body = match object.body {
             ServeBody::Local(file) => file,
             _ => panic!("expected local body"),
         };
@@ -521,7 +519,7 @@ mod tests {
         assert_eq!(object.status, 206);
         assert_eq!(object.content_length, 3);
         assert_eq!(object.content_range.as_deref(), Some("bytes 1-3/5"));
-        let mut body = match object.body {
+        let body = match object.body {
             ServeBody::Local(file) => file,
             _ => panic!("expected local body"),
         };

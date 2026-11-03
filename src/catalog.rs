@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde_json::{json, Value};
 
 use crate::config::{write_atomic, Paths, CURRENT_FORMAT_VERSION, MIN_FORMAT_VERSION};
@@ -307,7 +307,7 @@ pub fn pending_dir(paths: &Paths, submission: &str) -> Option<PathBuf> {
     }
 }
 
-pub fn pending_meta(paths: &Paths, directory: &Path) -> Option<PendingMeta> {
+pub fn pending_meta(_paths: &Paths, directory: &Path) -> Option<PendingMeta> {
     let text = fs::read_to_string(directory.join("meta.json")).ok()?;
     serde_json::from_str(&text).ok()
 }
@@ -667,6 +667,7 @@ mod tests {
             root: root.to_path_buf(),
             meta: root.join("meta"),
             pending: root.join("pending"),
+            uploads: root.join("uploads"),
             catalog: root.join("catalog.json"),
             static_dir: root.join("static"),
             authors_file: root.join("authors.json"),

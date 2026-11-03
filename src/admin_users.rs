@@ -336,10 +336,7 @@ async fn user_delete(
         "user.delete",
         Some("user"),
         Some(&id),
-        Some(&format!(
-            "{}; authors={removed_authors}",
-            user.username
-        )),
+        Some(&format!("{}; authors={removed_authors}", user.username)),
     )
     .await
     .ok();

@@ -285,6 +285,7 @@ pub struct UploadForm {
     pub license: String,
     pub min_manager_version: String,
     pub changelog: String,
+    pub upload_id: Option<String>,
     pub package: FilePart,
     pub preview: FilePart,
     pub avatar: Option<FilePart>,

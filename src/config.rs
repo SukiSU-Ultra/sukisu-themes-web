@@ -13,7 +13,7 @@ pub const STORAGE_LIMIT_BYTES: u64 = 1200 * 1024 * 1024;
 pub const MIN_STORAGE_LIMIT_BYTES: u64 = 64 * 1024 * 1024;
 pub const MAX_STORAGE_LIMIT_BYTES: u64 = 10 * 1024 * 1024 * 1024 * 1024;
 pub const DISK_RESERVE_BYTES: u64 = 300 * 1024 * 1024;
-pub const MAX_PACKAGE_BYTES: usize = 16 * 1024 * 1024;
+pub const MAX_PACKAGE_BYTES: usize = 128 * 1024 * 1024;
 pub const MAX_IMAGE_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_IMAGE_INPUT_BYTES: usize = 12 * 1024 * 1024;
 pub const PREVIEW_MAX_EDGE: u32 = 1280;
@@ -25,7 +25,7 @@ pub const MAX_SCREENSHOTS: usize = 6;
 pub const MAX_PENDING_SUBMISSIONS: usize = 35;
 pub const MAX_SUBMISSIONS_PER_HOUR: usize = 200;
 pub const MAX_BODY_BYTES: usize = 8 * 1024;
-pub const MAX_UPLOAD_BODY_BYTES: usize = 128 * 1024 * 1024;
+pub const MAX_UPLOAD_BODY_BYTES: usize = 256 * 1024 * 1024;
 pub const MIN_FORMAT_VERSION: u32 = 1;
 pub const CURRENT_FORMAT_VERSION: u32 = 2;
 
@@ -76,6 +76,7 @@ pub struct Paths {
     pub root: PathBuf,
     pub meta: PathBuf,
     pub pending: PathBuf,
+    pub uploads: PathBuf,
     pub catalog: PathBuf,
     pub static_dir: PathBuf,
     pub authors_file: PathBuf,
@@ -103,6 +104,7 @@ pub fn load_paths(settings: &StorageSettings) -> Paths {
     Paths {
         meta: root.join("meta"),
         pending: root.join("pending"),
+        uploads: root.join("uploads"),
         catalog: root.join("catalog.json"),
         root,
         static_dir: env_path("THEME_STATIC_DIR", &format!("{BASE_DIR}/static")),
@@ -338,6 +340,7 @@ pub fn ensure_storage_dirs(paths: &Paths, settings: &StorageSettings) -> Result<
         .with_context(|| format!("无法创建存储目录 {}", paths.root.display()))?;
     fs::create_dir_all(&paths.meta)?;
     fs::create_dir_all(&paths.pending)?;
+    fs::create_dir_all(&paths.uploads)?;
     if settings.backend == Backend::Local {
         for name in ASSET_DIRS {
             fs::create_dir_all(paths.root.join(name))?;
