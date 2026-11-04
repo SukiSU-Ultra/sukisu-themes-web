@@ -142,6 +142,18 @@ handle @ui_assets {
 
 不要移除；否则 `/i18n.js` 和 `/locales/en.json` 会返回 401，页面 HTML 是新版但语言切换不出现。
 
+镜像选择（`THEME_MIRRORS_FILE`）不需要修改 Caddy：302 是普通 HTTP 响应，管理器会自动跟随到独立镜像。部署后确认：
+
+```bash
+curl -sI -H "X-Sukisu-Theme-Token: $THEME_STORE_TOKEN" \
+  "https://<域名>/themes/<id>-v1.sukisu" | grep -iE 'HTTP|location'
+```
+
+- 有健康镜像时返回 `302` + 镜像地址；没有则返回 `200` 并由本服务器服务。
+- 镜像必须公网可达、路径结构一致，并接受转发过来的 token 或公开可读。
+- 带 `Range` 的续传请求应返回 `200/206`，不应返回 `302`。
+- 详见 [`docs/MIRRORS.md`](MIRRORS.md)。
+
 Caddy 校验需要运行中进程的环境变量：
 
 ```bash

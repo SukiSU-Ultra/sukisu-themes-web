@@ -1257,6 +1257,11 @@ async fn create_author_request(
     let existing = authors::authors_for_user(&state.db, &session.user_id)
         .await
         .map_err(ApiError::internal)?;
+    if kind == "new" && existing.iter().any(|author| author.status == "active") {
+        return Err(ApiError::conflict(
+            "当前已有作者身份，如需换号请申请重置作者 ID",
+        ));
+    }
     if kind == "reset" {
         let active = existing
             .iter()

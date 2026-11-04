@@ -428,6 +428,8 @@ input::placeholder, textarea::placeholder { color: var(--faint); }
 .row { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 12px; }
 .upload-progress { margin-top: 14px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--input-bg); }
 .upload-progress-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 7px; color: var(--muted); font-size: 11.5px; }
+.upload-progress-meta { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 7px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.upload-progress-meta .speed { color: var(--brand); font-weight: 650; }
 .progress-track { height: 7px; overflow: hidden; border-radius: 99px; background: var(--line); }
 .progress-track i { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--gradient); transition: width .18s ease; }
 button {
@@ -1655,6 +1657,10 @@ input:-webkit-autofill:focus {
               <span id="uploadProgressPercent">0%</span>
             </div>
             <div class="progress-track"><i id="uploadProgressBar"></i></div>
+            <div class="upload-progress-meta">
+              <span id="uploadProgressBytes">0 B / 0 B</span>
+              <span><span class="speed" id="uploadProgressSpeed">—</span> <span id="uploadProgressEta"></span></span>
+            </div>
           </div>
           <div class="row">
             <button class="primary" type="submit" id="uploadBtn">上传并发布</button>
@@ -2123,6 +2129,103 @@ function clearResumableKey(file) {
   try { localStorage.removeItem(resumableKey(file)); } catch (_) {}
 }
 
+function formatTransferBytes(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let amount = value;
+  let unit = 0;
+  while (amount >= 1024 && unit < units.length - 1) {
+    amount /= 1024;
+    unit++;
+  }
+  return (amount >= 100 ? amount.toFixed(0) : amount.toFixed(1)) + ' ' + units[unit];
+}
+
+function formatTransferEta(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const rest = total % 60;
+  const pad = value => String(value).padStart(2, '0');
+  return hours > 0 ? hours + ':' + pad(minutes) + ':' + pad(rest) : minutes + ':' + pad(rest);
+}
+
+function createTransferMeter(total) {
+  return { total: Math.max(0, Number(total) || 0), samples: [] };
+}
+
+function updateTransferMeter(meter, transferred, total) {
+  const now = performance.now();
+  const safeTotal = Math.max(0, Number(total) || meter.total || 0);
+  if (safeTotal !== meter.total) {
+    meter.total = safeTotal;
+    meter.samples = [];
+  }
+  const value = Math.max(0, Math.min(safeTotal, Number(transferred) || 0));
+  meter.samples.push([now, value]);
+  while (meter.samples.length > 2 && now - meter.samples[0][0] > 2500) meter.samples.shift();
+  let speed = 0;
+  if (meter.samples.length >= 2) {
+    const first = meter.samples[0];
+    const last = meter.samples[meter.samples.length - 1];
+    const elapsed = Math.max(1, last[0] - first[0]) / 1000;
+    speed = Math.max(0, (last[1] - first[1]) / elapsed);
+  }
+  return {
+    value,
+    total: safeTotal,
+    speed,
+    eta: speed > 0 && safeTotal > value ? (safeTotal - value) / speed : null,
+    ratio: safeTotal > 0 ? value / safeTotal : 0,
+  };
+}
+
+function paintTransfer(ui, reading, text, force) {
+  const now = performance.now();
+  if (!force && now - (ui.lastPaint || 0) < 120) return;
+  ui.lastPaint = now;
+  const percent = Math.round(Math.max(0, Math.min(1, reading.ratio)) * 100);
+  ui.bar.style.width = percent + '%';
+  ui.percent.textContent = percent + '%';
+  ui.text.textContent = text;
+  if (ui.bytes) ui.bytes.textContent = formatTransferBytes(reading.value) + ' / ' + formatTransferBytes(reading.total);
+  if (ui.speed) ui.speed.textContent = reading.speed > 0 ? '↑ ' + formatTransferBytes(reading.speed) + '/s' : '—';
+  if (ui.eta) ui.eta.textContent = reading.eta != null ? '剩余 ' + formatTransferEta(reading.eta) : '';
+}
+
+function uploadChunkWithProgress(uploadId, index, chunk, onBytes) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', API + '/uploads/' + encodeURIComponent(uploadId) + '/' + index);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.setRequestHeader('X-Requested-With', 'SukiSUThemeAdmin');
+    xhr.upload.addEventListener('progress', event => {
+      if (event.lengthComputable && event.total > 0) onBytes(event.loaded);
+    });
+    xhr.addEventListener('load', () => {
+      let data = {};
+      try { data = JSON.parse(xhr.responseText || '{}'); } catch (_) {}
+      if (xhr.status === 401) {
+        redirectToLogin();
+        const error = new Error('登录已过期，请重新登录');
+        error.unauthorized = true;
+        reject(error);
+        return;
+      }
+      if (xhr.status < 200 || xhr.status >= 300 || data.ok === false) {
+        reject(new Error(data.error || ('分片上传失败 HTTP ' + xhr.status)));
+        return;
+      }
+      resolve(data);
+    });
+    xhr.addEventListener('error', () => reject(new Error('网络错误')));
+    xhr.addEventListener('abort', () => reject(new Error('上传已取消')));
+    xhr.send(chunk);
+  });
+}
+
 async function uploadResumablePackage(file, onProgress) {
   const fingerprint = file.name + ':' + file.size + ':' + (file.lastModified || 0);
   const initResponse = await fetch(API + '/uploads/init', {
@@ -2150,31 +2253,63 @@ async function uploadResumablePackage(file, onProgress) {
   let uploadedBytes = Number(session.receivedBytes) || 0;
   try { localStorage.setItem(resumableKey(file), uploadId); } catch (_) {}
   onProgress(file.size ? uploadedBytes / file.size : 0, uploadedBytes, file.size);
+
+  const queue = [];
   for (let index = 0; index < totalChunks; index++) {
-    if (received.has(index)) continue;
-    const start = index * chunkSize;
-    const end = Math.min(file.size, start + chunkSize);
-    const chunk = file.slice(start, end);
-    const response = await fetch(API + '/uploads/' + encodeURIComponent(uploadId) + '/' + index, {
-      method: 'POST',
-      cache: 'no-store',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        'X-Requested-With': 'SukiSUThemeAdmin',
-      },
-      body: chunk,
-    });
-    if (response.status === 401) {
-      redirectToLogin();
-      throw new Error('登录已过期，请重新登录');
+    if (!received.has(index)) queue.push(index);
+  }
+  const inFlight = new Map();
+  let cursor = 0;
+  let failure = null;
+  const report = () => {
+    if (failure) return;
+    let partial = 0;
+    for (const loaded of inFlight.values()) partial += loaded;
+    const transferred = Math.min(file.size, uploadedBytes + partial);
+    onProgress(file.size ? transferred / file.size : 0, transferred, file.size);
+  };
+  const worker = async () => {
+    while (!failure) {
+      const position = cursor++;
+      if (position >= queue.length) return;
+      const index = queue[position];
+      const start = index * chunkSize;
+      const end = Math.min(file.size, start + chunkSize);
+      const chunk = file.slice(start, end);
+      let attempt = 0;
+      while (!failure) {
+        try {
+          await uploadChunkWithProgress(uploadId, index, chunk, loaded => {
+            inFlight.set(index, Math.min(loaded, chunk.size));
+            report();
+          });
+          inFlight.delete(index);
+          uploadedBytes += chunk.size;
+          report();
+          break;
+        } catch (error) {
+          inFlight.delete(index);
+          report();
+          if (error.unauthorized) {
+            failure = error;
+            throw error;
+          }
+          attempt++;
+          if (attempt >= 3) {
+            failure = error;
+            throw error;
+          }
+        }
+      }
     }
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      throw new Error(data.error || ('分片上传失败 HTTP ' + response.status));
+  };
+  const workers = Math.min(4, queue.length);
+  if (workers > 0) {
+    try {
+      await Promise.all(Array.from({ length: workers }, () => worker()));
+    } catch (error) {
+      throw failure || error;
     }
-    uploadedBytes += chunk.size;
-    onProgress(file.size ? uploadedBytes / file.size : 0, uploadedBytes, file.size);
   }
   return uploadId;
 }
@@ -2187,7 +2322,7 @@ function uploadWithProgress(url, form, onProgress) {
     xhr.setRequestHeader('X-Requested-With', 'SukiSUThemeAdmin');
     xhr.upload.addEventListener('progress', event => {
       if (event.lengthComputable && event.total > 0) {
-        onProgress(event.loaded / event.total);
+        onProgress(event.loaded / event.total, event.loaded, event.total);
       }
     });
     xhr.addEventListener('load', () => {
@@ -5220,6 +5355,9 @@ $('uploadForm').addEventListener('submit', async event => {
   const progressBar = $('uploadProgressBar');
   const progressText = $('uploadProgressText');
   const progressPercent = $('uploadProgressPercent');
+  const progressBytes = $('uploadProgressBytes');
+  const progressSpeed = $('uploadProgressSpeed');
+  const progressEta = $('uploadProgressEta');
   const packageFile = $('upPackage').files[0];
   if (!packageFile) {
     toast('请选择主题包', 'bad');
@@ -5228,38 +5366,83 @@ $('uploadForm').addEventListener('submit', async event => {
   button.disabled = true;
   button.textContent = '上传中…';
   progress.classList.remove('hidden');
-  progressBar.style.width = '0%';
-  progressText.textContent = '正在上传主题包…';
-  progressPercent.textContent = '0%';
+  const attachmentBytes = [
+    $('upPreview').files[0],
+    $('upAvatar').files[0],
+    ...Array.from($('upScreenshots').files),
+  ].filter(Boolean).reduce((sum, file) => sum + file.size, 0);
+  const overallTotal = packageFile.size + attachmentBytes;
+  const meter = createTransferMeter(overallTotal);
+  const transferUi = {
+    bar: progressBar,
+    percent: progressPercent,
+    text: progressText,
+    bytes: progressBytes,
+    speed: progressSpeed,
+    eta: progressEta,
+  };
+  progressBytes.textContent = formatTransferBytes(0) + ' / ' + formatTransferBytes(overallTotal);
+  paintTransfer(
+    transferUi,
+    { ratio: 0, value: 0, total: overallTotal, speed: 0, eta: null },
+    '正在上传主题包…',
+    true,
+  );
   try {
-    const uploadId = await uploadResumablePackage(packageFile, ratio => {
-      const percent = Math.round(Math.max(0, Math.min(1, ratio)) * 100);
-      progressBar.style.width = percent + '%';
-      progressPercent.textContent = percent + '%';
-      progressText.textContent = percent >= 100 ? '主题包已上传，正在提交…' : '正在上传主题包…';
+    const uploadId = await uploadResumablePackage(packageFile, (ratio, transferred) => {
+      paintTransfer(
+        transferUi,
+        updateTransferMeter(meter, transferred, overallTotal),
+        ratio >= 1 ? '正在上传预览图…' : '正在上传主题包…',
+      );
     });
-    progressBar.style.width = '100%';
-    progressPercent.textContent = '100%';
-    progressText.textContent = '正在提交…';
+    paintTransfer(
+      transferUi,
+      {
+        ratio: overallTotal > 0 ? packageFile.size / overallTotal : 1,
+        value: packageFile.size,
+        total: overallTotal,
+        speed: 0,
+        eta: null,
+      },
+      attachmentBytes > 0 ? '正在上传预览图…' : '正在提交…',
+      true,
+    );
     const formData = new FormData($('uploadForm'));
     formData.delete('package');
     formData.append('uploadId', uploadId);
     const data = await uploadWithProgress(
       API + '/upload-theme',
       formData,
-      ratio => {
-        if (ratio >= 1) progressText.textContent = '服务器校验中…';
+      (ratio, loaded, total) => {
+        const attachmentRatio = total > 0
+          ? Math.max(0, Math.min(1, loaded / total))
+          : Math.max(0, Math.min(1, ratio));
+        const transferred = packageFile.size + Math.round(attachmentBytes * attachmentRatio);
+        paintTransfer(
+          transferUi,
+          updateTransferMeter(meter, transferred, overallTotal),
+          attachmentRatio >= 1 ? '服务器校验中…' : (attachmentBytes > 0 ? '正在上传预览图…' : '正在提交…'),
+        );
       },
     );
-    progressBar.style.width = '100%';
-    progressPercent.textContent = '100%';
-    progressText.textContent = '已发布';
+    paintTransfer(
+      transferUi,
+      { ratio: 1, value: overallTotal, total: overallTotal, speed: 0, eta: null },
+      '已发布',
+      true,
+    );
     clearResumableKey(packageFile);
     toast('主题已上传：' + (data.id || '') + '，当前共 ' + (data.themes ?? 0) + ' 个主题');
     $('uploadForm').reset();
     await refresh(true);
   } catch (error) {
-    progressText.textContent = '上传失败，可重新提交继续上传';
+    paintTransfer(
+      transferUi,
+      { ratio: 0, value: 0, total: overallTotal, speed: 0, eta: null },
+      '上传失败，可重新提交继续上传',
+      true,
+    );
     toast('上传失败：' + error.message, 'bad');
   } finally {
     button.disabled = false;

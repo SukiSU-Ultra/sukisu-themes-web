@@ -62,6 +62,8 @@ pub struct AppState {
     pub db: crate::db::Database,
     pub sessions: auth::SessionStore,
     pub sources: Arc<crate::sources::SourcesStore>,
+    /// Optional HTTP mirrors used for package redirects.
+    pub mirrors: crate::mirrors::MirrorPool,
     pub login_failures: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
     withdrawn_assets: Arc<RwLock<HashSet<String>>>,
     /// Serializes in-place catalog counter writes during download bursts.
@@ -102,6 +104,7 @@ impl AppState {
             db,
             sessions,
             sources,
+            mirrors: crate::mirrors::MirrorPool::load().await,
             login_failures: Arc::new(Mutex::new(HashMap::new())),
             withdrawn_assets,
             stats_write_lock: Arc::new(tokio::sync::Mutex::new(())),
@@ -653,14 +656,14 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
         .unwrap_or_else(|_| ApiError::internal("logout response").into_response())
 }
 
-fn read_token(paths: &Paths) -> String {
+pub(crate) fn read_token(paths: &Paths) -> String {
     read_env(&paths.token_env)
         .get("THEME_STORE_TOKEN")
         .cloned()
         .unwrap_or_default()
 }
 
-fn token_matches(expected: &str, provided: &str) -> bool {
+pub(crate) fn token_matches(expected: &str, provided: &str) -> bool {
     expected.len() == provided.len() && expected.as_bytes().ct_eq(provided.as_bytes()).into()
 }
 
@@ -1257,6 +1260,27 @@ async fn asset(
         return Err(ApiError::not_found("not found"));
     }
     let range = headers.get("Range").and_then(|value| value.to_str().ok());
+    let mirrored = uri
+        .query()
+        .map(|query| query.split('&').any(|part| part == "sukisu_mirror=1"))
+        .unwrap_or(false);
+    // Fresh package downloads may be offloaded to a configured HTTP mirror.
+    // Resumed Range requests stay local so a partial file never mixes origins.
+    if range.is_none() && !mirrored {
+        if let Some(theme_id) = catalog::theme_id_from_package_path(&path) {
+            if let Some(location) = state.mirrors.pick(&path, &headers).await {
+                state.record_theme_download(&theme_id);
+                let location = axum::http::HeaderValue::from_str(&location)
+                    .map_err(ApiError::internal)?;
+                return Ok(Response::builder()
+                    .status(StatusCode::FOUND)
+                    .header("Location", location)
+                    .header("Cache-Control", "no-store")
+                    .body(Body::empty())
+                    .map_err(ApiError::internal)?);
+            }
+        }
+    }
     let object = match state.store.serve(&path, range).await {
         Ok(object) => object,
         Err(ServeError::NotFound) => return Err(ApiError::not_found("not found")),
@@ -1274,9 +1298,12 @@ async fn asset(
     // inflate the counter. The counter is buffered in memory and flushed in
     // batches, so this stays off the request's I/O path.
     if let Some(theme_id) = catalog::theme_id_from_package_path(&path) {
-        let counts = range
-            .map(|value| value.trim_start().starts_with("bytes=0-"))
-            .unwrap_or(true);
+        // A redirected (or self-mirror) request was already counted when the
+        // 302 was issued; don't count it again when serving locally.
+        let counts = !mirrored
+            && range
+                .map(|value| value.trim_start().starts_with("bytes=0-"))
+                .unwrap_or(true);
         if counts {
             state.record_theme_download(&theme_id);
         }

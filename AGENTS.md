@@ -27,6 +27,7 @@
   - Validate with the running Caddy environment (`/proc/<MainPID>/environ`) before `systemctl reload caddy`.
 - Backups: `/root/sukisu-deploy-backup/<timestamp>` (binary) and `/root/caddy-deploy-backup/Caddyfile.<timestamp>`.
 - Full runbook, verification commands, and rollback: `docs/DEPLOYMENT.md`.
+- Mirror redirect configuration and verification: `docs/MIRRORS.md`.
 
 ## Product notes
 
@@ -34,3 +35,14 @@
 - Native file-input labels (`选择文件` / `未选择任何文件`) come from the browser and are intentionally not translated.
 - Mention syntax supports Unicode usernames (e.g. `樱檩殇雪@coolapk`) across GitHub, Gitee, Bilibili, Coolapk, Telegram, Weibo, Xiaohongshu, XDA, YouTube, Afdian, X, Zhihu, Threads, Douyin.
 - Storage locations: primary local/S3 is the first write target; writable NAS/OpenList/AList sources are overflow targets. Existing themes stay on their original location; `Meta.storageId` and `_loc` key segments resolve them.
+
+## Mirror notes
+
+- `src/mirrors.rs` selects optional HTTP mirrors for fresh package downloads and answers `302 Location: <mirror>/themes/...?sukisu_mirror=1`. Managers stay plain HTTP clients; there is no WebRTC/P2P dependency in the app.
+- Config: `THEME_MIRRORS_FILE` (default `/etc/sukisu-theme-web/mirrors.json`), reloaded every 30 seconds. Entries: `name`, `baseUrl`, `token`, `priority`, `enabled`.
+- Only `themes/*` requests without a `Range` header are redirected. Resumed downloads stay local so a partial file never mixes origins. Mirrors must expose the same paths and byte-identical files.
+- A candidate must pass a `HEAD` probe (falling back to `Range: bytes=0-0`) before it is used; 4-second total budget, then local serving. Success is cached 60s, failure 20s.
+- The `sukisu_mirror=1` marker prevents a self-misconfigured mirror from redirecting in a loop; self-mirror fallbacks do not double-count downloads.
+- The manager forwards `X-Sukisu-Theme-Token` across the redirect. A mirror must accept the same token or be publicly readable; `token` in `mirrors.json` is only for the server-side probe.
+- Uploads still use up to 4 concurrent resumable chunks (manager streams 128 KB reads, flushes every 256 KB); admin/account progress covers package + preview/avatar/screenshot bytes from per-chunk XHR progress.
+- The Android manager no longer depends on `io.github.webrtc-sdk:android`; keep it out of the APK to avoid ~30 MB of native libraries.

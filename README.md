@@ -92,6 +92,58 @@ Rust 编写的主题镜像、投稿审核和账号系统，提供 Android 管理
 - `catalog.json`、HTML/JS 使用 `ETag` + `304`；主题包、预览图和截图按版本号返回长缓存头，重复访问可直接命中浏览器缓存（令牌保护资源使用 `private`，不进入共享缓存）。
 - 高流量部署建议：Caddy 保持 `encode zstd gzip`；`account.db` 放在本地 SSD，不要放 NFS/SMB；主题资源可以用 NAS/S3，但数据库必须本地；根据 CPU 和内存调整 `THEME_DB_POOL_SIZE`；系统文件描述符上限至少 4096。
 
+## 上传进度与并发
+
+- 管理后台和用户中心都使用服务端的 4 MB 分片会话（`/uploads/init`、`/uploads/{id}/{index}`），最多 4 路并发；每个分片用 XHR 的 `upload.onprogress` 上报实时字节数，不再等整块 4 MB 完成才跳一次。
+- 进度区显示百分比、已传/总字节、实时速度和预计剩余时间；总量是“主题包 + 预览图 + 头像 + 截图”的真实字节，预览图阶段的进度会继续推进，不再固定按 95% 切换。速度按最近 2.5 秒的滑动窗口计算。
+- 断点续传恢复时，服务端已收到的分片计入初始进度；单个分片失败最多重试 2 次，仍失败则保留已完成分片，重新提交可继续。
+- 管理器使用相同的分片会话，并对主题包做并行分片上传；最终表单（预览图、截图等）继续使用带进度的 multipart 请求。
+
+## 镜像选择与 302 跳转
+
+主题包下载可以交给其他 HTTP 镜像，管理器不需要 WebRTC、P2P 库或任何额外改动。服务端仍是权威主题源；只有在配置了健康镜像时，才会把首次下载重定向过去。
+
+- 配置文件：`THEME_MIRRORS_FILE`（默认 `/etc/sukisu-theme-web/mirrors.json`），每 30 秒自动重载，无需重启。
+- 仅对 `themes/...` 且**不带 `Range`** 的请求尝试镜像；断点续传始终留在本服务器，避免不同源的文件混在一起。
+- 选择顺序：按 `priority` 从小到大；同优先级之间轮询，避免所有下载压到同一台镜像；对候选镜像的同一路径做 `HEAD`（不支持 `HEAD` 时用 `Range: bytes=0-0`）探测，成功才重定向；4 秒总预算，全部失败则本地直接下载。
+- 探测结果缓存：成功 60 秒、失败 20 秒，避免每个分片/重试都重复探测。
+- 302 的 `Location` 带 `sukisu_mirror=1`；如果镜像误配成本服务器，第二次请求会识别该标记并本地服务，不会循环重定向。
+- 统计在 302 时计数一次；自指回退不会再计数。
+- 镜像必须提供相同的 `themes/<id>-v<version>.sukisu` 路径，并且文件与本服务器字节一致。管理器会跨域转发 `X-Sukisu-Theme-Token` 请求头，因此镜像要么接受同一个 token，要么公开可读。配置里的 `token` 只用于服务端探测，不会写入重定向 URL。
+- 镜像必须是公网可达的 HTTP/HTTPS 地址，不能是 AList/网盘的私有 API；可以是另一台部署了本服务并同步了主题的服务器。
+- 示例：
+
+  ```json
+  {
+    "mirrors": [
+      {
+        "name": "edge-a",
+        "baseUrl": "https://a.example.com/",
+        "token": "",
+        "priority": 10,
+        "enabled": true
+      },
+      {
+        "name": "edge-b",
+        "baseUrl": "https://b.example.com/",
+        "token": "",
+        "priority": 20,
+        "enabled": true
+      }
+    ]
+  }
+  ```
+
+- 验证：
+
+  ```bash
+  curl -sI -H "X-Sukisu-Theme-Token: $TOKEN" \
+    "https://<域名>/themes/<id>-v1.sukisu" | grep -iE 'HTTP|location'
+  ```
+
+  返回 `302` + 镜像地址说明选择成功；返回 `200` 说明没有可用镜像，正在本地服务。
+- 不需要开放额外端口，也不需要任何 P2P/WebSocket 路由。
+
 ## 依赖
 
 ### 构建
@@ -393,6 +445,7 @@ systemctl reload caddy
 - `/account/` 反代到 `http://127.0.0.1:8090`（保留前缀）。
 - `/i18n.js`、`/locales/*` 无需令牌即可访问。
 - `/themes/`、`/previews/`、`/screenshots/`、`/avatars/`、`/catalog.json` 校验 `X-Sukisu-Theme-Token`。
+- 镜像跳转由应用返回普通 `302`；镜像本身是独立的 HTTP(S) 服务，不需要经过本服务器的 Caddy。
 - `/health` 反代到 `http://127.0.0.1:8090/health`，返回 JSON 健康状态；数据库或存储不可用时返回 HTTP 503。
 - 旧的 Caddy 配置如果仍使用 `respond "ok" 200`，请改成上面的 `reverse_proxy` 才能拿到详细健康信息。
 

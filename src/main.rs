@@ -15,6 +15,7 @@ mod db;
 mod images;
 mod jobs;
 mod mailer;
+mod mirrors;
 mod models;
 mod network_api;
 mod oauth;
@@ -68,6 +69,15 @@ async fn main() -> anyhow::Result<()> {
         loop {
             interval.tick().await;
             flush_state.flush_downloads().await;
+        }
+    });
+    let mirror_state = state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            interval.tick().await;
+            mirror_state.mirrors.reload().await;
         }
     });
     let cleanup_state = state.clone();
