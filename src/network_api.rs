@@ -106,7 +106,6 @@ fn make_backup(paths: &config::Paths) -> anyhow::Result<PathBuf> {
     copy_if_exists(&paths.network_env, &directory.join("network.env"))?;
     copy_if_exists(&paths.admin_config, &directory.join("config.env"))?;
     copy_if_exists(&paths.account_env, &directory.join("account.env"))?;
-    copy_if_exists(&paths.caddyfile, &directory.join("Caddyfile"))?;
     Ok(directory)
 }
 
@@ -115,7 +114,6 @@ fn restore_backup(paths: &config::Paths, backup: &Path) {
         ("network.env", &paths.network_env),
         ("config.env", &paths.admin_config),
         ("account.env", &paths.account_env),
-        ("Caddyfile", &paths.caddyfile),
     ] {
         let source = backup.join(name);
         if source.is_file() {
@@ -126,18 +124,12 @@ fn restore_backup(paths: &config::Paths, backup: &Path) {
 
 async fn network_get(State(state): State<AppState>) -> Json<Value> {
     let settings = config::read_network_settings(&state.paths);
-    let caddy_upstream_found = std::fs::read_to_string(&state.paths.caddyfile)
-        .map(|text| text.contains(&format!("reverse_proxy {}", settings.upstream())))
-        .unwrap_or(false);
     Json(json!({
         "ok": true,
         "settings": settings,
         "upstream": settings.upstream(),
-        "caddyfile": state.paths.caddyfile.to_string_lossy(),
-        "caddyUpstreamFound": caddy_upstream_found,
         "systemctlDisabled": system::systemctl_disabled(),
         "adminService": system::service_state("sukisu-theme-web.service").await,
-        "caddy": system::service_state("caddy").await,
     }))
 }
 
@@ -176,21 +168,6 @@ async fn network_apply(
     }
 
     let backup = make_backup(&state.paths).map_err(ApiError::internal)?;
-    let old_upstream = current.upstream();
-    let new_upstream = settings.upstream();
-    let caddy_changed = old_upstream != new_upstream;
-    if caddy_changed {
-        let updated =
-            config::update_caddy_upstream(&state.paths.caddyfile, &old_upstream, &new_upstream)
-                .map_err(ApiError::internal)?;
-        if !updated && !system::systemctl_disabled() {
-            restore_backup(&state.paths, &backup);
-            return Err(ApiError::bad(
-                "Caddyfile 中没有找到当前管理服务上游，已取消修改",
-            ));
-        }
-    }
-
     if let Err(error) = config::write_network_settings(&state.paths, &settings) {
         restore_backup(&state.paths, &backup);
         return Err(ApiError::internal(error));
@@ -215,7 +192,6 @@ async fn network_apply(
         settings.port,
         current.port,
         &backup_text,
-        &state.paths.caddyfile.to_string_lossy(),
         &health_host(&settings),
     ) {
         restore_backup(&state.paths, &backup);

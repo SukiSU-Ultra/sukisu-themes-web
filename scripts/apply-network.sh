@@ -4,8 +4,7 @@ set -eu
 NEW_PORT="${1:?new port required}"
 OLD_PORT="${2:?old port required}"
 BACKUP="${3:?backup directory required}"
-CADDYFILE="${4:-/etc/caddy/Caddyfile}"
-HEALTH_HOST="${5:-127.0.0.1}"
+HEALTH_HOST="${4:-127.0.0.1}"
 CONFIG_DIR="/etc/sukisu-theme-web"
 
 sleep 2
@@ -23,13 +22,11 @@ while [ "$i" -lt 30 ]; do
 done
 
 if [ "$healthy" -eq 1 ]; then
-    if systemctl reload caddy; then
-        rm -rf "$BACKUP"
-        exit 0
-    fi
+    rm -rf "$BACKUP"
+    exit 0
 fi
 
-# Roll back all files and services if the new port or Caddy reload fails.
+# Roll back the config and restart if the service cannot serve the new port.
 if [ -d "$BACKUP" ]; then
     for name in network.env config.env account.env; do
         if [ -f "$BACKUP/$name" ]; then
@@ -38,13 +35,9 @@ if [ -d "$BACKUP" ]; then
             chmod 600 "$CONFIG_DIR/$name" 2>/dev/null || true
         fi
     done
-    if [ -f "$BACKUP/Caddyfile" ]; then
-        cp "$BACKUP/Caddyfile" "$CADDYFILE"
-    fi
 fi
 
 systemctl restart sukisu-theme-web.service || true
-systemctl reload caddy || true
 
 # Give the old service a moment to come back.
 sleep 1

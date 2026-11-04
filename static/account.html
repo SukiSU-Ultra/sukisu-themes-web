@@ -866,6 +866,16 @@ input:-webkit-autofill:focus {
           <div id="popularList"></div>
           <div class="empty hidden" id="popularEmpty">还没有下载记录</div>
         </div>
+        <div class="card" style="margin-bottom:14px">
+          <div class="discover-head">
+            <div>
+              <h3>作者喜爱度排行榜</h3>
+              <p class="hint">喜爱度 = 粉丝数 × 10 + 主题热度合计。</p>
+            </div>
+          </div>
+          <div id="leaderboardList"></div>
+          <div class="empty hidden" id="leaderboardEmpty">暂时还没有可排名的作者。</div>
+        </div>
         <div class="card">
           <div class="discover-head">
             <div>
@@ -938,6 +948,7 @@ input:-webkit-autofill:focus {
   let discoverLoaded = false;
   let discoverBusy = false;
   let popularThemes = [];
+  let leaderboardAuthors = [];
   let followedAuthors = new Set();
   let followsLoaded = false;
   let commentTheme = null;
@@ -1254,6 +1265,7 @@ input:-webkit-autofill:focus {
     if (name === 'preferences') loadPreferences();
     if (name === 'discover') {
       loadPopular();
+      loadLeaderboard();
       if (!discoverLoaded) loadDiscover();
     }
     if (name === 'messages') loadMessages(true);
@@ -1882,6 +1894,45 @@ input:-webkit-autofill:focus {
         button.addEventListener('click', event => {
           event.stopPropagation();
           toggleFollowAuthor(theme.authorHash, button);
+        });
+      }
+      list.appendChild(row);
+    });
+  }
+
+  async function loadLeaderboard() {
+    try {
+      await ensureFollows();
+      const data = await api('/follows/leaderboard?limit=10');
+      leaderboardAuthors = data.authors || [];
+      renderLeaderboard();
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  function renderLeaderboard() {
+    const list = $('leaderboardList');
+    if (!list) return;
+    list.innerHTML = '';
+    $('leaderboardEmpty').classList.toggle('hidden', leaderboardAuthors.length > 0);
+    leaderboardAuthors.forEach((author, index) => {
+      const row = document.createElement('div');
+      row.className = 'popular-theme';
+      const avatar = author.avatarUrl
+        ? '<img src="' + escapeHtml(author.avatarUrl) + '" alt="" loading="lazy">'
+        : '';
+      row.innerHTML = '<span class="popular-rank">' + (index + 1) + '</span>' + avatar +
+        '<div class="popular-body"><b>' + escapeHtml(author.name || '未知作者') + '</b>' +
+        '<span>粉丝 ' + formatCount(author.fans) + ' · 热度 ' + formatCount(author.heat) +
+        ' · 主题 ' + formatCount(author.themes) + '</span></div>' +
+        followButton(author);
+      row.addEventListener('click', () => filterDiscoverByAuthor(author.name));
+      const button = row.querySelector('.follow-btn');
+      if (button) {
+        button.addEventListener('click', event => {
+          event.stopPropagation();
+          toggleFollowAuthor(author.authorHash, button);
         });
       }
       list.appendChild(row);

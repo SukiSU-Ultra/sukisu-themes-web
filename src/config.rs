@@ -89,7 +89,6 @@ pub struct Paths {
     pub account_env: PathBuf,
     pub network_env: PathBuf,
     pub sources_file: PathBuf,
-    pub caddyfile: PathBuf,
     pub db: PathBuf,
 }
 
@@ -156,7 +155,6 @@ pub fn load_paths(settings: &StorageSettings) -> Paths {
         account_env: env_path("THEME_ACCOUNT_ENV", "/etc/sukisu-theme-web/account.env"),
         network_env: env_path("THEME_NETWORK_ENV", "/etc/sukisu-theme-web/network.env"),
         sources_file: env_path("THEME_SOURCES_FILE", "/etc/sukisu-theme-web/sources.json"),
-        caddyfile: env_path("THEME_CADDYFILE", "/etc/caddy/Caddyfile"),
         db: env_path("THEME_DB_PATH", "/var/lib/sukisu-theme-web/account.db"),
     }
 }
@@ -640,7 +638,7 @@ pub fn read_network_settings(paths: &Paths) -> NetworkSettings {
                 .ok()
                 .and_then(|value| value.parse().ok())
         })
-        .unwrap_or(8090);
+        .unwrap_or(8080);
     let public_url = config
         .get("PUBLIC_URL")
         .map(|value| value.trim().to_string())
@@ -773,19 +771,6 @@ pub fn write_network_settings(paths: &Paths, settings: &NetworkSettings) -> Resu
         &settings.github_callback,
     )?;
     Ok(())
-}
-
-pub fn update_caddy_upstream(path: &Path, old: &str, new: &str) -> Result<bool> {
-    let text = fs::read_to_string(path)
-        .with_context(|| format!("无法读取 Caddyfile {}", path.display()))?;
-    let old_line = format!("reverse_proxy {old}");
-    let new_line = format!("reverse_proxy {new}");
-    if !text.contains(&old_line) {
-        return Ok(false);
-    }
-    let updated = text.replace(&old_line, &new_line);
-    write_atomic(path, updated.as_bytes(), 0o644)?;
-    Ok(true)
 }
 
 #[cfg(test)]

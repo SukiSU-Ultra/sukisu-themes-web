@@ -7,11 +7,10 @@
 | SSH | `root@ssh.neko.shirkneko.top` |
 | 架构 | `linux-aarch64`（Armbian） |
 | 公网入口 | `https://themes.neko.shirkneko.top:8443/` |
-| 链路 | Lucky TLS → Caddy `127.0.0.1:8080` → app `127.0.0.1:8090` |
+| 链路 | Lucky TLS → app `127.0.0.1:8080`（应用内置路由，无 Caddy） |
 | systemd | `sukisu-theme-web.service` |
 | 二进制 | `/opt/sukisu-theme-web/sukisu-theme-web-rs` |
 | 导入来源 | `/etc/sukisu-theme-web/sources.json`（`THEME_SOURCES_FILE`） |
-| Caddyfile | `/etc/caddy/Caddyfile` |
 | 密钥 | `~/.ssh/id_ed25519`（有口令） |
 
 `THEME_STATIC_DIR` 未设置，`index.html`、`account.html`、`i18n.js`、`locales/en.json`、`logo.svg` 等全部通过 `include_str!` / `include_bytes!` 打进二进制。改静态文件也必须重新构建并替换二进制。
@@ -127,22 +126,31 @@ systemctl is-active "$UNIT"
 
 若 `systemctl is-active` 不是 `active`，从 `$BACKUP` 恢复旧二进制并重启，不要继续。
 
-## Caddy 配置
+## 内置路由与 Lucky
 
-新版语言资源必须能绕过主题 token 校验。`/etc/caddy/Caddyfile` 中，
-在 token 校验之前保留：
+应用直接监听 `127.0.0.1:8080`，内置原先 Caddy 的职责：
 
-```caddy
-# Shared UI assets (language runtime and locale dictionaries).
-@ui_assets path /i18n.js /locales/*
-handle @ui_assets {
-	reverse_proxy 127.0.0.1:8090
-}
+- 静态资源与页面由二进制提供，`/i18n.js`、`/locales/*` 公开。
+- `/admin*` 在应用内去掉前缀；`/account*` 保持原样。
+- `/` 返回 `302` 到 `/account/login`。
+- `/themes/*`、`/previews/*`、`/screenshots/*`、`/avatars/*`、`/catalog.json` 校验 `X-Sukisu-Theme-Token`。
+- 响应带 `Access-Control-Allow-Origin: *` 和 `X-Content-Type-Options: nosniff`。
+
+Lucky 只需把站点反代到 `http://127.0.0.1:8080`，保留 Host 和路径，不需要改写 `/admin`。
+
+迁移到内置监听时，先确认端口为空并停用 Caddy：
+
+```bash
+# 生产环境的 network.env 里如有 ADMIN_PORT=8090，改为 8080
+sed -i 's/^ADMIN_PORT=.*/ADMIN_PORT=8080/' /etc/sukisu-theme-web/network.env
+# 可选：清理不再使用的 QQ 互联凭据
+sed -i '/^QQ_APP_ID=/d;/^QQ_APP_KEY=/d;/^QQ_CALLBACK_URL=/d' /etc/sukisu-theme-web/account.env
+systemctl disable --now caddy
+ss -lntp | grep ':8080' || true
+systemctl restart sukisu-theme-web.service
 ```
 
-不要移除；否则 `/i18n.js` 和 `/locales/en.json` 会返回 401，页面 HTML 是新版但语言切换不出现。
-
-镜像选择（`THEME_MIRRORS_FILE`）不需要修改 Caddy：302 是普通 HTTP 响应，管理器会自动跟随到独立镜像。部署后确认：
+镜像选择（`THEME_MIRRORS_FILE`）不经过 Lucky 配置：302 是普通 HTTP 响应，管理器会自动跟随到独立镜像。部署后确认：
 
 ```bash
 curl -sI -H "X-Sukisu-Theme-Token: $THEME_STORE_TOKEN" \
@@ -154,47 +162,26 @@ curl -sI -H "X-Sukisu-Theme-Token: $THEME_STORE_TOKEN" \
 - 带 `Range` 的续传请求应返回 `200/206`，不应返回 `302`。
 - 详见 [`docs/MIRRORS.md`](MIRRORS.md)。
 
-Caddy 校验需要运行中进程的环境变量：
-
-```bash
-PID=$(systemctl show -p MainPID --value caddy)
-while IFS= read -r -d '' entry; do
-  case "$entry" in
-    THEME_STORE_TOKEN=*|THEME_STORAGE_ROOT=*) export "$entry" ;;
-  esac
-done < "/proc/$PID/environ"
-
-caddy validate --config /etc/caddy/Caddyfile
-systemctl reload caddy
-```
-
-修改前备份：
-
-```bash
-cp -a /etc/caddy/Caddyfile /root/caddy-deploy-backup/Caddyfile.$(date +%Y%m%d-%H%M%S)
-```
-
 ## 部署后验证
 
 服务端：
 
 ```bash
 systemctl status sukisu-theme-web.service --no-pager -l
-ss -lntp | grep 8090
+ss -lntp | grep 8080
 journalctl -u sukisu-theme-web.service -n 30 --no-pager
 ```
 
 本机端口（当前构建的参考字节数）：
 
 ```bash
-for p in / /account/login /i18n.js /locales/en.json /logo.svg; do
-  curl -sS -o /dev/null -w "$p %{http_code} %{size_download}\n" "http://127.0.0.1:8090$p"
+for p in /account/login /i18n.js /locales/en.json /logo.svg; do
+  curl -sS -o /dev/null -w "$p %{http_code}\n" "http://127.0.0.1:8080$p"
 done
-# / 200 182710
-# /account/login 200 36894
-# /i18n.js 200 13757
-# /locales/en.json 200 78490
-# /logo.svg 200 189417
+# 以上均为 200
+
+curl -sS -o /dev/null -w '/ %{http_code}\n' "http://127.0.0.1:8080/"
+# / 302
 ```
 
 公网：
@@ -225,18 +212,11 @@ cp -a /root/sukisu-deploy-backup/<timestamp>/sukisu-theme-web-rs \
 systemctl restart sukisu-theme-web.service
 ```
 
-Caddy：
-
-```bash
-cp -a /root/caddy-deploy-backup/Caddyfile.<timestamp> /etc/caddy/Caddyfile
-systemctl reload caddy
-```
-
 ## 常见问题
 
-- **页面 HTML 是新版，但没有语言下拉框**：检查 `/i18n.js` 和 `/locales/en.json` 是否 401；需要在 Caddy 中保留 `@ui_assets` 放行。
+- **页面 HTML 是新版，但没有语言下拉框**：应用已公开 `/i18n.js` 和 `/locales/en.json`；若仍 401，检查 Lucky 是否额外加了鉴权。
 - **`ssh -M` 后执行命令报 mux / fd 错误**：Windows OpenSSH 多路复用不可用，改用单次 SSH 或 stdin 流式上传。
 - **远端执行脚本报 `$'\r'` 或 `set: pipefail: 无效的选项名`**：脚本是 CRLF。用 `sed -i 's/\r$//'` 转成 LF 再上传。
-- **`caddy validate` 报 `root` 参数数量错误**：校验进程没有 `THEME_STORAGE_ROOT`。从运行中的 Caddy `/proc/<pid>/environ` 读取后再校验。
+- **Lucky 502 / 服务无法访问**：确认 `network.env` 的 `ADMIN_PORT` 是 8080，`ss -lntp | grep 8080` 有监听，Lucky 上游指向 `127.0.0.1:8080`。
 - **修改了 HTML/JS 但线上没变**：静态资源在二进制内部，必须重新构建 `scripts/build-aarch64.ps1` 并替换二进制；不是改远端 static 目录。
 - **浏览器“选择文件 / 未选择任何文件”仍是中文**：这是浏览器原生控件文案，跟随浏览器/系统语言，不受页面 i18n 控制；按需求保持原生。

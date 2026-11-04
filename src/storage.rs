@@ -1150,7 +1150,6 @@ mod tests {
             account_env: primary.path().join("account.env"),
             network_env: primary.path().join("network.env"),
             sources_file: primary.path().join("sources.json"),
-            caddyfile: primary.path().join("Caddyfile"),
             db: primary.path().join("account.db"),
         };
         std::fs::create_dir_all(&paths.meta).unwrap();

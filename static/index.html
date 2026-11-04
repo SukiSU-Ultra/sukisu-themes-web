@@ -1447,7 +1447,7 @@ input:-webkit-autofill:focus {
         <div class="stat"><div class="label">主题数量</div><div class="value" id="themeCount">–</div><div class="sub">当前 catalog.json</div></div>
         <div class="stat"><div class="label">总下载量</div><div class="value" id="downloadsStat">–</div><div class="sub" id="downloadsSub">近 7 天下载 –</div></div>
         <div class="stat"><div class="label">访问令牌</div><div class="value" id="tokenState">–</div><div class="sub" id="tokenSub">未设置</div></div>
-        <div class="stat"><div class="label">Caddy</div><div class="value" id="caddyState">–</div><div class="sub">TLS / 反向代理</div></div>
+        <div class="stat"><div class="label">服务状态</div><div class="value" id="serviceState">–</div><div class="sub">sukisu-theme-web.service</div></div>
         <div class="stat"><div class="label">存储模式</div><div class="value" id="storageMode">本地</div><div class="sub" id="storageSub">正在读取配额</div></div>
       </div>
 
@@ -1467,10 +1467,9 @@ input:-webkit-autofill:focus {
         </div>
         <div class="card">
           <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg>快捷操作</h4>
-          <p class="hint">上传或删除主题后重建本地 catalog；重载只刷新 Caddy 配置。</p>
+          <p class="hint">上传或删除主题后重建本地 catalog。</p>
           <div class="row">
             <button class="primary" id="syncBtn"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>重建目录</button>
-            <button id="reloadBtn">重载 Caddy</button>
           </div>
           <div class="meta" style="margin-top:16px">
             <div class="kv"><span>目录更新时间</span><b id="catalogTime">–</b></div>
@@ -1767,7 +1766,7 @@ input:-webkit-autofill:focus {
         </div>
         <div class="row">
           <button class="primary" id="storageRootApply">保存并迁移</button>
-          <span class="pill" id="storageRootHint">会重启管理服务与 Caddy</span>
+          <span class="pill" id="storageRootHint">会重启管理服务</span>
         </div>
       </div>
       <div class="card" style="margin-top:14px">
@@ -1883,11 +1882,10 @@ input:-webkit-autofill:focus {
     </section>
 
     <section id="auth" class="page">
-      <div class="section-head"><div><h3>认证与邮件</h3><p>配置邮箱验证、SMTP 发件服务、GitHub 与 QQ 登录。</p></div><span class="pill" id="authPill">–</span></div>
+      <div class="section-head"><div><h3>认证与邮件</h3><p>配置邮箱验证、SMTP 发件服务与 GitHub 登录。</p></div><span class="pill" id="authPill">–</span></div>
       <div class="stats">
         <div class="stat"><div class="label">邮件验证</div><div class="value" id="authMailState">–</div><div class="sub">SMTP 发件服务</div></div>
         <div class="stat"><div class="label">GitHub 登录</div><div class="value" id="authGithubState">–</div><div class="sub">OAuth App</div></div>
-        <div class="stat"><div class="label">QQ 登录</div><div class="value" id="authQqState">–</div><div class="sub">QQ 互联</div></div>
         <div class="stat"><div class="label">用户中心</div><div class="value" id="authAccountState">–</div><div class="sub" id="authAccountUrl">–</div></div>
         <div class="stat"><div class="label">生效方式</div><div class="value">即时</div><div class="sub">保存后无需重启</div></div>
       </div>
@@ -1927,20 +1925,6 @@ input:-webkit-autofill:focus {
         <p class="field-hint">回调地址必须与 GitHub OAuth App 中填写的一致；修改后立即生效。</p>
       </div>
       <div class="card" style="margin-top:14px">
-        <h4>QQ 互联</h4>
-        <p class="hint">用于用户中心 QQ 快捷登录。App Key 留空表示保持现有。</p>
-        <div class="form-grid">
-          <div><label for="qqAppId">App ID</label><input id="qqAppId" spellcheck="false"></div>
-          <div><label for="qqAppKey">App Key</label><input id="qqAppKey" type="password" autocomplete="new-password" placeholder="留空保持现有"></div>
-          <div class="full"><label for="qqCallback">回调地址</label><input id="qqCallback" spellcheck="false" placeholder="https://example.com/account/api/auth/qq/callback"></div>
-        </div>
-        <label class="check"><input id="clearQqKey" type="checkbox"> 清除已保存的 QQ App Key</label>
-        <div class="row">
-          <button class="primary" id="saveQq">保存 QQ 配置</button>
-        </div>
-        <p class="field-hint">回调地址必须与 QQ 互联应用登记的一致。QQ 账号没有邮箱，用户可在用户中心补充邮箱后使用找回密码。</p>
-      </div>
-      <div class="card" style="margin-top:14px">
         <h4>网页会话时长</h4>
         <p class="hint">仅管理员可修改。作用于用户中心和管理后台的新登录会话；修改后需要重新登录才会应用新的时长，App 令牌固定为 30 天。</p>
         <div class="form-grid">
@@ -1957,21 +1941,20 @@ input:-webkit-autofill:focus {
       <div class="section-head"><div><h3>网络</h3><p>配置管理服务监听地址、端口、公开域名和访问地址。</p></div><span class="pill" id="networkPill">–</span></div>
       <div class="stats">
         <div class="stat"><div class="label">管理服务</div><div class="value" id="networkService">–</div><div class="sub">sukisu-theme-web.service</div></div>
-        <div class="stat"><div class="label">Caddy</div><div class="value" id="networkCaddy">–</div><div class="sub">反向代理</div></div>
-        <div class="stat"><div class="label">监听</div><div class="value" id="networkListen">–</div><div class="sub">管理服务内部地址</div></div>
-        <div class="stat"><div class="label">Caddy 上游</div><div class="value" id="networkUpstream">–</div><div class="sub">反向代理目标</div></div>
+        <div class="stat"><div class="label">监听</div><div class="value" id="networkListen">–</div><div class="sub">直接对外提供服务</div></div>
+        <div class="stat"><div class="label">反代目标</div><div class="value" id="networkUpstream">–</div><div class="sub">Lucky 等反向代理指向此地址</div></div>
       </div>
       <div class="card">
         <h4>监听地址</h4>
-        <p class="hint">修改端口后 Caddy 上游会同步更新并自动重启。建议保持 127.0.0.1，由 Caddy/反向代理对外提供服务。</p>
+        <p class="hint">服务直接监听该地址与端口。修改后会自动重启；Lucky 等反向代理需要指向同一端口。绑定 127.0.0.1 时仅本机反代可访问，绑定 0.0.0.0 可对外提供服务。</p>
         <div class="form-grid">
           <div><label for="networkBind">监听 IP</label><input id="networkBind" placeholder="127.0.0.1" spellcheck="false"><div class="field-hint">可填 127.0.0.1、0.0.0.0、::1 或服务器具体 IP</div></div>
-          <div><label for="networkPort">端口</label><input id="networkPort" type="number" min="1" max="65535" step="1" placeholder="8090"></div>
+          <div><label for="networkPort">端口</label><input id="networkPort" type="number" min="1" max="65535" step="1" placeholder="8080"></div>
         </div>
       </div>
       <div class="card" style="margin-top:14px">
         <h4>公开域名与地址</h4>
-        <p class="hint">域名每行一个，可包含端口。DNS、证书和 TLS 终止仍需在 Caddy/Lucky/域名服务中配置。</p>
+        <p class="hint">域名每行一个，可包含端口。DNS、证书和 TLS 终止仍需在 Lucky/域名服务中配置。</p>
         <div class="form-grid">
           <div class="full"><label for="networkDomains">公开域名</label><textarea id="networkDomains" placeholder="themes.example.com&#10;themes.example.com:8443"></textarea></div>
           <div class="full"><label for="networkPublicUrl">镜像公开地址</label><input id="networkPublicUrl" placeholder="https://themes.example.com/" spellcheck="false"></div>
@@ -1984,7 +1967,7 @@ input:-webkit-autofill:focus {
           <button id="networkTest">测试地址</button>
           <span class="pill" id="networkHint">自动更新配置并重启</span>
         </div>
-        <p class="field-hint">保存后会备份配置、更新 Caddyfile、2 秒后重启管理服务；新端口或 Caddy 启动失败会自动回滚。</p>
+        <p class="field-hint">保存后会备份配置、2 秒后重启管理服务；新端口启动失败会自动回滚。</p>
       </div>
       <div class="card" style="margin-top:14px">
         <h4>网络诊断</h4>
@@ -2038,7 +2021,7 @@ input:-webkit-autofill:focus {
         </div>
         <div class="card">
           <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15 7a4 4 0 1 1-3.8 5.2L4 19.4V21h2.6l1.4-1.4V18h1.6l1.2-1.2v-1.4h1.4l.8-.8A4 4 0 0 1 15 7Z"/><circle cx="16.5" cy="7.5" r="1"/></svg>访问令牌</h4>
-          <p class="hint">当前令牌不会显示在页面上。输入或生成一个新令牌后保存；保存后 Caddy 会自动重启，所有客户端需要同步更新令牌。</p>
+          <p class="hint">当前令牌不会显示在页面上。输入或生成一个新令牌后保存；保存后立即生效，所有客户端需要同步更新令牌。</p>
           <label for="tokenInput">新令牌</label>
           <div class="field">
             <input id="tokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="输入或生成新令牌">
@@ -2626,7 +2609,7 @@ function render(status) {
   $('tokenState').textContent = status.tokenSet ? '已设置' : '未设置';
   $('tokenState').style.color = status.tokenSet ? 'var(--ok)' : 'var(--bad)';
   $('tokenSub').textContent = status.tokenSet ? '通过请求头校验' : '镜像当前无保护';
-  setState('caddyState', status.caddy);
+  setState('serviceState', status.adminService);
   setState('adminState', status.adminService);
   $('sideAdmin').textContent = stateText(status.adminService);
   const storage = status.storage || {};
@@ -2671,10 +2654,10 @@ function render(status) {
     $('storageLimitInput').value = Math.round(limit / (1024 * 1024));
   }
   $('storageLimitUsed').value = formatStorage(used);
-  $('sideStatus').textContent = status.caddy === 'active' ? '镜像运行中' : (status.caddy === 'inactive' ? '镜像已停止' : '镜像状态未知');
-  setDot($('sideDot'), status.caddy);
-  setDot($('topDot'), status.caddy);
-  $('topStatus').textContent = status.caddy === 'active' ? '镜像运行中' : 'Caddy ' + stateText(status.caddy);
+  $('sideStatus').textContent = status.adminService === 'active' ? '镜像运行中' : (status.adminService === 'inactive' ? '镜像已停止' : '镜像状态未知');
+  setDot($('sideDot'), status.adminService);
+  setDot($('topDot'), status.adminService);
+  $('topStatus').textContent = status.adminService === 'active' ? '镜像运行中' : '服务 ' + stateText(status.adminService);
   $('catalogTime').textContent = formatTime(catalog.updatedAt);
   $('generatedAt').textContent = formatGenerated(catalog.generatedAt);
   $('publicUrl').textContent = status.publicUrl || '–';
@@ -4278,17 +4261,15 @@ async function loadNetwork() {
     $('networkAccountUrl').value = settings.accountUrl || '';
     $('networkGithubCallback').value = settings.githubCallback || '';
     $('networkService').textContent = stateText(data.adminService);
-    $('networkCaddy').textContent = stateText(data.caddy);
     $('networkListen').textContent = `${settings.bind || '–'}:${settings.port || '–'}`;
     $('networkUpstream').textContent = data.upstream || '–';
     $('networkPill').textContent = data.systemctlDisabled ? '本地模式' : '已连接';
     $('networkDiag').innerHTML = [
-      `<div class="kv"><span>Caddyfile</span><b class="url">${escapeHtml(data.caddyfile || '–')}</b></div>`,
-      `<div class="kv"><span>Caddy 上游匹配</span><b>${data.caddyUpstreamFound ? '是' : '否'}</b></div>`,
+      `<div class="kv"><span>监听地址</span><b class="url">${escapeHtml(`${settings.bind || '–'}:${settings.port || '–'}`)}</b></div>`,
+      `<div class="kv"><span>反代目标</span><b class="url">${escapeHtml(data.upstream || '–')}</b></div>`,
       `<div class="kv"><span>systemctl</span><b>${data.systemctlDisabled ? '已禁用' : '可用'}</b></div>`,
       `<div class="kv"><span>公开域名</span><b>${escapeHtml((settings.domains || []).join(', ') || '–')}</b></div>`,
       `<div class="kv"><span>管理服务</span><b>${escapeHtml(stateText(data.adminService))}</b></div>`,
-      `<div class="kv"><span>Caddy</span><b>${escapeHtml(stateText(data.caddy))}</b></div>`,
     ].join('');
   } catch (error) {
     toast('网络状态读取失败：' + error.message, 'bad');
@@ -4354,17 +4335,11 @@ async function loadAuthSettings() {
     $('githubClientSecret').value = '';
     $('githubClientSecret').placeholder = data.githubClientSecretConfigured ? '已保存，留空保持现有' : 'GitHub Client Secret';
     $('githubCallback').value = data.githubCallback || '';
-    $('qqAppId').value = data.qqAppId || '';
-    $('qqAppKey').value = '';
-    $('qqAppKey').placeholder = data.qqAppKeyConfigured ? '已保存，留空保持现有' : 'QQ App Key';
-    $('qqCallback').value = data.qqCallback || '';
     $('sessionTtlDays').value = data.sessionTtlDays || 30;
     $('authMailState').textContent = data.smtpConfigured ? '已配置' : '未配置';
     $('authMailState').style.color = data.smtpConfigured ? 'var(--ok)' : 'var(--bad)';
     $('authGithubState').textContent = data.githubConfigured ? '已配置' : '未配置';
     $('authGithubState').style.color = data.githubConfigured ? 'var(--ok)' : 'var(--bad)';
-    $('authQqState').textContent = data.qqConfigured ? '已配置' : '未配置';
-    $('authQqState').style.color = data.qqConfigured ? 'var(--ok)' : 'var(--bad)';
     $('authAccountState').textContent = '用户中心';
     $('authAccountUrl').textContent = data.accountUrl || '–';
     $('authPill').textContent = data.smtpConfigured && data.githubConfigured ? '全部已配置' : '部分配置';
@@ -4374,7 +4349,7 @@ async function loadAuthSettings() {
   }
 }
 
-function authPayload(clearSmtp, clearGithub, clearQq) {
+function authPayload(clearSmtp, clearGithub) {
   return {
     smtpHost: $('smtpHost').value.trim(),
     smtpPort: Number($('smtpPort').value) || 587,
@@ -4385,29 +4360,23 @@ function authPayload(clearSmtp, clearGithub, clearQq) {
     githubClientId: $('githubClientId').value.trim(),
     githubClientSecret: $('githubClientSecret').value,
     githubCallback: $('githubCallback').value.trim(),
-    qqAppId: $('qqAppId').value.trim(),
-    qqAppKey: $('qqAppKey').value,
-    qqCallback: $('qqCallback').value.trim(),
     sessionTtlDays: Number($('sessionTtlDays').value) || 30,
     clearSmtpPassword: clearSmtp,
     clearGithubSecret: clearGithub,
-    clearQqKey: clearQq,
   };
 }
 
-async function saveAuthSettings(clearSmtp, clearGithub, clearQq) {
+async function saveAuthSettings(clearSmtp, clearGithub) {
   try {
     const data = await api('/auth-settings', {
       method: 'POST',
-      body: JSON.stringify(authPayload(clearSmtp, clearGithub, clearQq)),
+      body: JSON.stringify(authPayload(clearSmtp, clearGithub)),
     });
     toast(data.message || '认证配置已保存');
     $('smtpPassword').value = '';
     $('githubClientSecret').value = '';
-    $('qqAppKey').value = '';
     $('clearSmtpPassword').checked = false;
     $('clearGithubSecret').checked = false;
-    $('clearQqKey').checked = false;
     await loadAuthSettings();
     await refresh(true);
   } catch (error) {
@@ -4415,10 +4384,9 @@ async function saveAuthSettings(clearSmtp, clearGithub, clearQq) {
   }
 }
 
-$('saveAuth').addEventListener('click', () => saveAuthSettings($('clearSmtpPassword').checked, false, false));
-$('saveGithub').addEventListener('click', () => saveAuthSettings(false, $('clearGithubSecret').checked, false));
-$('saveQq').addEventListener('click', () => saveAuthSettings(false, false, $('clearQqKey').checked));
-$('saveSessionTtl').addEventListener('click', () => saveAuthSettings(false, false, false));
+$('saveAuth').addEventListener('click', () => saveAuthSettings($('clearSmtpPassword').checked, false));
+$('saveGithub').addEventListener('click', () => saveAuthSettings(false, $('clearGithubSecret').checked));
+$('saveSessionTtl').addEventListener('click', () => saveAuthSettings(false, false));
 
 $('testEmailBtn').addEventListener('click', async () => {
   const to = $('testEmailTo').value.trim();
@@ -4696,7 +4664,7 @@ $('storageRootApply').addEventListener('click', async () => {
     toast('请填写存储目录', 'bad');
     return;
   }
-  if (!confirm('保存存储目录并复制现有数据？管理服务与 Caddy 会重启。')) return;
+  if (!confirm('保存存储目录并复制现有数据？管理服务会重启。')) return;
   try {
     const data = await api('/storage/root', {
       method: 'POST',
@@ -5532,14 +5500,6 @@ $('syncBtn').addEventListener('click', async () => {
     setTimeout(() => refresh(true), 1024);
   } catch (error) {
     toast('重建失败：' + error.message, 'bad');
-  }
-});
-$('reloadBtn').addEventListener('click', async () => {
-  try {
-    const data = await api('/reload', { method: 'POST', body: '{}' });
-    toast(data.message || 'Caddy 已重载');
-  } catch (error) {
-    toast('重载失败：' + error.message, 'bad');
   }
 });
 $('testCatalog').addEventListener('click', async () => {

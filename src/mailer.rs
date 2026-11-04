@@ -115,7 +115,7 @@ pub fn account_base_url(paths: &Paths) -> String {
         .map(|value| value.trim().to_string())
         .unwrap_or_default();
     if public.is_empty() {
-        "http://127.0.0.1:8090/account/".to_string()
+        "http://127.0.0.1:8080/account/".to_string()
     } else if public.ends_with('/') {
         format!("{public}account/")
     } else {

@@ -1,6 +1,6 @@
 use std::process::Stdio;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Context};
 use tokio::process::Command;
 
 pub fn systemctl_disabled() -> bool {
@@ -40,7 +40,6 @@ pub fn schedule_network_apply(
     new_port: u16,
     old_port: u16,
     backup_dir: &str,
-    caddyfile: &str,
     health_host: &str,
 ) -> anyhow::Result<()> {
     if cfg!(not(target_os = "linux")) || systemctl_disabled() {
@@ -58,7 +57,6 @@ pub fn schedule_network_apply(
             &new_port.to_string(),
             &old_port.to_string(),
             backup_dir,
-            caddyfile,
             health_host,
         ])
         .stdin(Stdio::null())
@@ -78,10 +76,6 @@ pub fn schedule_admin_restart() {
         2,
         "systemctl restart sukisu-theme-web",
     );
-}
-
-pub fn schedule_caddy_restart() {
-    detached("sukisu-caddy-restart", 1, "systemctl restart caddy");
 }
 
 pub async fn service_state(unit: &str) -> String {
@@ -104,21 +98,4 @@ pub async fn service_state(unit: &str) -> String {
         }
         _ => "unknown".to_string(),
     }
-}
-
-pub async fn reload_caddy() -> Result<()> {
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(20),
-        Command::new("systemctl").args(["reload", "caddy"]).output(),
-    )
-    .await
-    .context("systemctl reload timed out")?
-    .context("failed to run systemctl")?;
-    if !output.status.success() {
-        bail!(
-            "systemctl reload caddy failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    Ok(())
 }

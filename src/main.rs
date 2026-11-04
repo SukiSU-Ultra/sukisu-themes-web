@@ -21,7 +21,6 @@ mod models;
 mod network_api;
 mod oauth;
 mod package;
-mod qq;
 mod resumable;
 mod sources;
 mod sources_api;

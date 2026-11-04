@@ -1001,7 +1001,6 @@ mod tests {
             account_env: root.join("account.env"),
             network_env: root.join("network.env"),
             sources_file: root.join("sources.json"),
-            caddyfile: root.join("Caddyfile"),
             db: root.join("account.db"),
         }
     }

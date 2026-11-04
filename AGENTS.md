@@ -3,7 +3,7 @@
 ## Production deployment
 
 - SSH: `root@ssh.neko.shirkneko.top` (Armbian, `linux-aarch64`), key `~/.ssh/id_ed25519`.
-- Public entry: `https://themes.neko.shirkneko.top:8443/` → Lucky TLS → Caddy `127.0.0.1:8080` → app `127.0.0.1:8090`.
+- Public entry: `https://themes.neko.shirkneko.top:8443/` → Lucky TLS → app `127.0.0.1:8080`. No Caddy in the chain.
 - The SSH key has a passphrase. Never write the passphrase, tokens, or `store.env` contents into this repo. Ask the user to unlock the key, or use a session-only `SUKISU_SSH_PASS` with an askpass helper.
 - Windows OpenSSH multiplexing (`ControlMaster` / `ControlPath`) is broken against this host (`mux_master_process_new_session: failed to receive fd 0`). Do not rely on it. Use one SSH invocation per operation, or stream a tar/script over stdin.
 - Build: `powershell -ExecutionPolicy Bypass -File scripts/build-aarch64.ps1`
@@ -11,7 +11,7 @@
 - Service: `sukisu-theme-web.service`
   - Unit: `/etc/systemd/system/sukisu-theme-web.service`
   - Binary: `/opt/sukisu-theme-web/sukisu-theme-web-rs`
-  - Listens on `127.0.0.1:8090`
+  - Listens on `127.0.0.1:8080` (override with `ADMIN_PORT` in `network.env`).
   - `THEME_STATIC_DIR` is not set; HTML/CSS/JS/locales/logo are embedded in the binary. Any static change requires a rebuild and binary replacement.
 - Storage locations: `/etc/sukisu-theme-web/sources.json` (`THEME_SOURCES_FILE` override), mode 0600.
   - Types: `local` (including OS-mounted NAS) and `alist` (OpenList/AList v3-compatible API, read/write).
@@ -20,18 +20,14 @@
   - Import copies the `.sukisu` package, preview, optional avatar/screenshots into the selected primary/overflow location and publishes through the existing upload pipeline.
   - AList must already have the cloud drive/share mounted; do not implement share-link scraping or rate-limit bypass.
   - Back up `sources.json` together with the storage config; it contains the AList token.
-- Caddy: `/etc/caddy/Caddyfile`
-  - Keep `@ui_assets path /i18n.js /locales/*` + `handle @ui_assets` before the token gate, otherwise language assets return 401.
-  - Root `/logo.svg` is still token-protected; pages use `/admin/logo.svg` or `/account/logo.svg`. Add any new public asset to `@ui_assets`.
-  - `/admin*` is proxied with the prefix stripped; `/account*` is proxied unchanged.
-  - Validate with the running Caddy environment (`/proc/<MainPID>/environ`) before `systemctl reload caddy`.
-- Backups: `/root/sukisu-deploy-backup/<timestamp>` (binary) and `/root/caddy-deploy-backup/Caddyfile.<timestamp>`.
+- Built-in HTTP routing replaces the old Caddy layer: the app serves embedded UI assets, strips `/admin`, redirects `/` to `/account/login`, adds CORS/nosniff headers, and enforces `X-Sukisu-Theme-Token` for `/themes/*`, `/previews/*`, `/screenshots/*`, `/avatars/*` and `/catalog.json`. `/i18n.js` and `/locales/*` stay public.
+- Backups: `/root/sukisu-deploy-backup/<timestamp>` (binary).
 - Full runbook, verification commands, and rollback: `docs/DEPLOYMENT.md`.
 - Mirror redirect configuration and verification: `docs/MIRRORS.md`.
 
 ## Auth and follow notes
 
-- `account.env` also holds `QQ_APP_ID`, `QQ_APP_KEY`, `QQ_CALLBACK_URL` for QQ 互联 login. QQ accounts are created without an email; users can set a password and bind an email from the account center.
+- `account.env` holds `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_CALLBACK_URL` for GitHub OAuth. GitHub accounts may start without a password; users can set one and bind an email from the account center.
 - Web user/admin sessions default to 30 days. The admin-only "网页会话时长" control on the Auth page writes `WEB_SESSION_TTL_SECS` (1-365 days) to `account.env`; App tokens stay at 30 days and existing sessions keep their old expiry until re-login.
 - One-time key (device login) uses `device_login_codes`: the manager polls `account/api/auth/device/poll`, and the web page `account/device?code=...` must be confirmed while signed in. Codes expire after 10 minutes and are single-use.
 - Follow relations live in `user_follows` (follower user → author hash) and are exposed through `account/api/follows` plus the admin `api/follows` page. Catalog entries now expose `authorHash`; rebuild `catalog.json` after deploying so old entries gain it.
@@ -41,7 +37,7 @@
 
 - `MAINTENANCE=1` in `config.env` is the source of truth; `AppState.maintenance` mirrors it and `api/maintenance` toggles it, rebuilds `catalog.json` and writes an audit entry.
 - The maintenance middleware allows the admin console (`/api*`, `/admin*`), health, setup, the login/recovery pages and their auth API paths, plus valid admin cookies/user sessions. Everything else gets a 503 maintenance page or JSON.
-- `catalog.json` stays reachable and carries `"maintenance": true`, so managers can stop pulling themes even when Caddy `file_server` serves the catalog. Theme package assets are still served directly by Caddy; proxy `/themes/*` to the app if those must be blocked too.
+- `catalog.json` stays reachable and carries `"maintenance": true`, so managers can stop pulling themes. Theme package assets are served by the app and follow the same maintenance rules.
 
 ## Product notes
 

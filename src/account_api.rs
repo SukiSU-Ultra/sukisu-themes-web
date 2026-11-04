@@ -8,9 +8,9 @@ use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use bytes::Bytes;
-use rusqlite::{params, OptionalExtension};
 use rand::seq::SliceRandom;
 use rand::Rng;
+use rusqlite::{params, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -23,7 +23,6 @@ use crate::follows;
 use crate::images;
 use crate::mailer;
 use crate::oauth;
-use crate::qq;
 use crate::util::{
     author_fingerprint, author_key, content_type_for, now_iso, quote_query, random_hex, sha256_hex,
     unix_now, valid_author_hash, valid_author_id, valid_theme_id,
@@ -48,8 +47,6 @@ const PUBLIC_PATHS: &[&str] = &[
     "/auth/device/start",
     "/auth/device/poll",
     "/auth/device/info",
-    "/auth/qq/start",
-    "/auth/qq/callback",
 ];
 
 pub fn router(state: AppState) -> Router<AppState> {
@@ -70,12 +67,14 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/auth/device/poll", get(device_poll))
         .route("/auth/device/info", get(device_info))
         .route("/auth/device/approve", post(device_approve))
-        .route("/auth/qq/start", get(qq_start))
-        .route("/auth/qq/callback", get(qq_callback))
         .route("/follows", get(my_follows))
         .route("/follows/follow", post(follow_author))
         .route("/follows/unfollow", post(unfollow_author))
-        .route("/preferences", get(get_preferences).post(update_preferences))
+        .route("/follows/leaderboard", get(author_leaderboard))
+        .route(
+            "/preferences",
+            get(get_preferences).post(update_preferences),
+        )
         .route("/profile", get(profile).post(update_profile))
         .route("/password", post(change_password))
         .route("/email", post(change_email))
@@ -311,7 +310,6 @@ async fn config(State(state): State<AppState>) -> Json<Value> {
         "ok": true,
         "email": mailer::configured(&state.paths),
         "github": oauth::GithubSettings::load(&state.paths).is_some(),
-        "qq": qq::QqSettings::load(&state.paths).is_some(),
         "registration": true,
         "accountUrl": mailer::account_base_url(&state.paths),
     }))
@@ -474,7 +472,9 @@ async fn login(
         .map_err(ApiError::internal)?
         .filter(|hash| !hash.trim().is_empty());
     let Some(hash) = hash else {
-        return Err(ApiError::bad("该账号尚未设置密码，请使用第三方登录或先在用户中心设置密码"));
+        return Err(ApiError::bad(
+            "该账号尚未设置密码，请使用第三方登录或先在用户中心设置密码",
+        ));
     };
     let pass = password.clone();
     let verified = tokio::task::spawn_blocking(move || bcrypt::verify(pass, &hash))
@@ -599,7 +599,6 @@ async fn session_info(State(state): State<AppState>, headers: HeaderMap) -> Json
         "author": author,
         "email": mailer::configured(&state.paths),
         "github": oauth::GithubSettings::load(&state.paths).is_some(),
-        "qq": qq::QqSettings::load(&state.paths).is_some(),
     }))
 }
 
@@ -1081,7 +1080,10 @@ async fn update_preferences(
     body: Bytes,
 ) -> ApiResult<Json<Value>> {
     let value = json_body(body).await?;
-    let show_r18 = value.get("showR18").and_then(Value::as_bool).map(|value| value as i64);
+    let show_r18 = value
+        .get("showR18")
+        .and_then(Value::as_bool)
+        .map(|value| value as i64);
     let consent_version = value
         .get("consentVersion")
         .and_then(Value::as_i64)
@@ -1091,7 +1093,9 @@ async fn update_preferences(
     }
     let user_id = session.user_id.clone();
     let now = now_iso();
-    let consent_at = consent_version.filter(|value| *value > 0).map(|_| now.clone());
+    let consent_at = consent_version
+        .filter(|value| *value > 0)
+        .map(|_| now.clone());
     state
         .db
         .call(move |conn| {
@@ -1184,6 +1188,192 @@ async fn unfollow_author(
     })))
 }
 
+const LEADERBOARD_FOLLOWER_WEIGHT: i64 = 10;
+
+#[derive(Debug, Deserialize, Default)]
+struct LeaderboardQuery {
+    limit: Option<usize>,
+}
+
+/// Author love leaderboard for the user center: followers × 10 + the summed
+/// heat of every theme owned by the account's active author identities. Theme
+/// heat is attributed through the catalog `authorHash`, so themes under an
+/// unlinked identity never rank, and R18 themes only count for viewers who
+/// opted into R18 — the same visibility rule as the discover pool.
+async fn author_leaderboard(
+    State(state): State<AppState>,
+    Extension(session): Extension<SessionInfo>,
+    Query(query): Query<LeaderboardQuery>,
+) -> ApiResult<Json<Value>> {
+    let limit = query.limit.unwrap_or(10).clamp(1, 20);
+    let users = follows::leaderboard_users(&state.db)
+        .await
+        .map_err(ApiError::internal)?;
+    if users.is_empty() {
+        return Ok(Json(json!({
+            "ok": true,
+            "rule": "粉丝数 × 10 + 主题热度合计",
+            "limit": limit,
+            "authors": [],
+        })));
+    }
+    let author_rows = follows::leaderboard_authors(&state.db)
+        .await
+        .map_err(ApiError::internal)?;
+    let author_info: HashMap<&str, &follows::LeaderboardAuthor> = author_rows
+        .iter()
+        .map(|author| (author.hash.as_str(), author))
+        .collect();
+
+    #[derive(Default)]
+    struct HashAgg {
+        heat: i64,
+        themes: i64,
+        avatar_path: Option<String>,
+    }
+    let mut per_hash: HashMap<String, HashAgg> = HashMap::new();
+    if let Some(catalog) = crate::catalog::read_catalog(&state.paths) {
+        let show_r18 = user_show_r18(&state, &session.user_id).await?;
+        let stats = state.theme_stats();
+        for theme in &catalog.themes {
+            let Some(hash) = theme.author_hash.as_deref() else {
+                continue;
+            };
+            if !author_info.contains_key(hash) {
+                continue;
+            }
+            if !show_r18 && (theme.r18 || crate::catalog::tags_mark_r18(&theme.tags)) {
+                continue;
+            }
+            let heat = stats
+                .get(&theme.id)
+                .map(|item| item.heat as i64)
+                .unwrap_or(theme.heat as i64);
+            let agg = per_hash.entry(hash.to_string()).or_default();
+            agg.heat += heat;
+            agg.themes += 1;
+            if agg.avatar_path.is_none() {
+                agg.avatar_path = theme
+                    .avatar_path
+                    .as_deref()
+                    .filter(|path| !path.is_empty())
+                    .map(str::to_string);
+            }
+        }
+    }
+
+    let mut rows: Vec<Value> = Vec::new();
+    for user in users {
+        let mut heat = 0i64;
+        let mut themes = 0i64;
+        let mut avatar_path: Option<String> = None;
+        let mut follow_hash: Option<&String> = None;
+        for hash in &user.author_hashes {
+            if let Some(agg) = per_hash.get(hash) {
+                heat += agg.heat;
+                themes += agg.themes;
+                if avatar_path.is_none() {
+                    avatar_path = agg.avatar_path.clone();
+                }
+            }
+            // The follow button targets one identity: prefer the one carrying
+            // the most themes, falling back to the oldest identity.
+            match follow_hash {
+                None => follow_hash = Some(hash),
+                Some(current) => {
+                    let current_themes = per_hash.get(current).map(|item| item.themes).unwrap_or(0);
+                    let current_created = author_info
+                        .get(current.as_str())
+                        .map(|item| item.created_at.as_str())
+                        .unwrap_or("");
+                    let candidate_themes = per_hash.get(hash).map(|item| item.themes).unwrap_or(0);
+                    let candidate_created = author_info
+                        .get(hash.as_str())
+                        .map(|item| item.created_at.as_str())
+                        .unwrap_or("");
+                    if candidate_themes > current_themes
+                        || (candidate_themes == current_themes
+                            && candidate_created < current_created)
+                    {
+                        follow_hash = Some(hash);
+                    }
+                }
+            }
+        }
+        if user.followers == 0 && heat == 0 {
+            continue;
+        }
+        let selected = follow_hash.map(|hash| hash.as_str());
+        let name = selected
+            .and_then(|hash| {
+                author_info
+                    .get(hash)
+                    .and_then(|item| item.display_name.as_deref())
+            })
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                if user.display_name.trim().is_empty() {
+                    user.username.clone()
+                } else {
+                    user.display_name.clone()
+                }
+            });
+        let avatar_url = user
+            .avatar
+            .as_deref()
+            .filter(|value| value.starts_with("avatars/users/"))
+            .map(|_| format!("/account/api/users/{}/avatar", user.user_id))
+            .or_else(|| {
+                avatar_path.map(|path| format!("/account/api/preview?path={}", quote_query(&path)))
+            })
+            .unwrap_or_default();
+        rows.push(json!({
+            "userId": user.user_id,
+            "name": name,
+            "authorHash": selected.unwrap_or(""),
+            "avatarUrl": avatar_url,
+            "fans": user.followers,
+            "themes": themes,
+            "heat": heat,
+            "score": user.followers * LEADERBOARD_FOLLOWER_WEIGHT + heat,
+        }));
+    }
+    rows.sort_by(|left, right| {
+        let score = right["score"]
+            .as_i64()
+            .unwrap_or(0)
+            .cmp(&left["score"].as_i64().unwrap_or(0));
+        score
+            .then_with(|| {
+                right["fans"]
+                    .as_i64()
+                    .unwrap_or(0)
+                    .cmp(&left["fans"].as_i64().unwrap_or(0))
+            })
+            .then_with(|| {
+                right["heat"]
+                    .as_i64()
+                    .unwrap_or(0)
+                    .cmp(&left["heat"].as_i64().unwrap_or(0))
+            })
+            .then_with(|| {
+                left["name"]
+                    .as_str()
+                    .unwrap_or("")
+                    .cmp(right["name"].as_str().unwrap_or(""))
+            })
+    });
+    rows.truncate(limit);
+    Ok(Json(json!({
+        "ok": true,
+        "rule": "粉丝数 × 10 + 主题热度合计",
+        "limit": limit,
+        "authors": rows,
+    })))
+}
+
 const DEVICE_CODE_TTL_SECS: u64 = 10 * 60;
 const DEVICE_CODE_INTERVAL_SECS: u64 = 2;
 
@@ -1227,7 +1417,9 @@ async fn device_start(
     if !rate_allowed(&state, &format!("device-start:{ip}"), 10, 300) {
         return Err(ApiError::too_many("操作过于频繁，请稍后再试"));
     }
-    let value = json_body(body).await.unwrap_or_else(|_| Value::Object(Default::default()));
+    let value = json_body(body)
+        .await
+        .unwrap_or_else(|_| Value::Object(Default::default()));
     let device_name = value
         .get("deviceName")
         .and_then(Value::as_str)
@@ -1260,7 +1452,14 @@ async fn device_start(
                 "INSERT INTO device_login_codes(
                     device_code_hash, user_code, status, user_agent, ip, created_at, expires_at
                  ) VALUES (?1, ?2, 'pending', ?3, ?4, ?5, ?6)",
-                params![hash_for_db, code_for_db, agent_for_db, ip_for_db, now, expires_at],
+                params![
+                    hash_for_db,
+                    code_for_db,
+                    agent_for_db,
+                    ip_for_db,
+                    now,
+                    expires_at
+                ],
             )?;
             Ok(())
         })
@@ -1504,159 +1703,6 @@ async fn device_approve(
     })))
 }
 
-#[derive(Deserialize)]
-struct QqCallbackQuery {
-    code: Option<String>,
-    state: Option<String>,
-    error: Option<String>,
-}
-
-async fn qq_start(State(state): State<AppState>) -> Response {
-    let Some(settings) = qq::QqSettings::load(&state.paths) else {
-        return Redirect::to("/account/login?qq=unconfigured").into_response();
-    };
-    let state_value = match oauth::create_state(&state.db, None, None).await {
-        Ok(value) => value,
-        Err(error) => {
-            tracing::warn!("qq oauth state failed: {error:#}");
-            return Redirect::to("/account/login?qq=error").into_response();
-        }
-    };
-    match settings.authorize_url(&state_value) {
-        Ok(url) => Redirect::to(&url).into_response(),
-        Err(error) => {
-            tracing::warn!("qq authorize url failed: {error:#}");
-            Redirect::to("/account/login?qq=error").into_response()
-        }
-    }
-}
-
-async fn qq_callback(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Query(query): Query<QqCallbackQuery>,
-) -> Response {
-    if query.error.is_some() {
-        return Redirect::to("/account/login?qq=denied").into_response();
-    }
-    let Some(code) = query.code else {
-        return Redirect::to("/account/login?qq=error").into_response();
-    };
-    let Some(state_value) = query.state else {
-        return Redirect::to("/account/login?qq=state").into_response();
-    };
-    let Some(settings) = qq::QqSettings::load(&state.paths) else {
-        return Redirect::to("/account/login?qq=unconfigured").into_response();
-    };
-    if oauth::consume_state(&state.db, &state_value)
-        .await
-        .ok()
-        .flatten()
-        .is_none()
-    {
-        return Redirect::to("/account/login?qq=state").into_response();
-    }
-    let profile = match qq::exchange(&state.http, &settings, &code).await {
-        Ok(profile) => profile,
-        Err(error) => {
-            tracing::warn!("qq oauth failed: {error:#}");
-            return Redirect::to("/account/login?qq=exchange").into_response();
-        }
-    };
-
-    let mut user = match qq::identity_user_id(&state.db, &profile.openid)
-        .await
-        .ok()
-        .flatten()
-    {
-        Some(user_id) => accounts::user_by_id(&state.db, &user_id)
-            .await
-            .ok()
-            .flatten(),
-        None => None,
-    };
-    let user = if user.is_none() {
-        let base = sanitize_username(&profile.nickname);
-        let base = if base == "user" {
-            format!(
-                "qq-{}",
-                profile.openid.chars().take(10).collect::<String>()
-            )
-        } else {
-            base
-        };
-        let username = match unique_username(&state, &base).await {
-            Ok(value) => value,
-            Err(_) => return Redirect::to("/account/login?qq=error").into_response(),
-        };
-        let display_name: String = profile.nickname.chars().take(40).collect();
-        match accounts::create_user(
-            &state.db,
-            accounts::NewUser {
-                username: &username,
-                display_name: &display_name,
-                email: None,
-                password_hash: None,
-                role: "user",
-                status: "pending",
-                email_verified: true,
-            },
-        )
-        .await
-        {
-            Ok(created) => {
-                let _ = qq::link_identity(&state.db, &created.id, &profile).await;
-                created
-            }
-            Err(error) => {
-                tracing::warn!("qq user creation failed: {error:#}");
-                return Redirect::to("/account/login?qq=error").into_response();
-            }
-        }
-    } else {
-        let user = user.take().unwrap();
-        if let Err(error) = qq::link_identity(&state.db, &user.id, &profile).await {
-            tracing::warn!("qq identity link failed: {error:#}");
-            return Redirect::to("/account/login?qq=error").into_response();
-        }
-        user
-    };
-    if user.status == "disabled" || user.status == "rejected" {
-        return Redirect::to("/account/login?qq=disabled").into_response();
-    }
-    let ip = request_ip(&headers);
-    let token = match state
-        .sessions
-        .create(
-            &user.id,
-            "user",
-            crate::config::web_session_ttl_secs(&state.paths),
-            &header_text(&headers, "user-agent"),
-            &ip,
-        )
-        .await
-    {
-        Ok(token) => token,
-        Err(error) => {
-            tracing::warn!("qq session failed: {error:#}");
-            return Redirect::to("/account/login?qq=error").into_response();
-        }
-    };
-    let cookie = auth::session_cookie(
-        auth::USER_SESSION_COOKIE,
-        &token,
-        "/account",
-        crate::config::web_session_ttl_secs(&state.paths),
-        auth::request_is_secure(&headers),
-    );
-    Response::builder()
-        .status(StatusCode::SEE_OTHER)
-        .header("Location", "/account/?qq=1")
-        .header("Set-Cookie", cookie)
-        .body(axum::body::Body::empty())
-        .unwrap_or_else(|_| Redirect::to("/account/").into_response())
-}
-
 async fn profile(
     State(state): State<AppState>,
     Extension(session): Extension<SessionInfo>,
@@ -1714,7 +1760,6 @@ async fn profile(
         "passwordConfigured": password_configured,
         "mailConfigured": mailer::configured(&state.paths),
         "githubConfigured": oauth::GithubSettings::load(&state.paths).is_some(),
-        "qqConfigured": qq::QqSettings::load(&state.paths).is_some(),
         "managerVersionCode": crate::config::manager_version_code(&state.paths),
     })))
 }
@@ -1798,7 +1843,7 @@ async fn change_password(
             ))
         }
         None => {
-            // Accounts created through GitHub/QQ have no password yet. A signed-in session is
+            // Accounts created through GitHub have no password yet. A signed-in session is
             // enough to set the first one, and the current session stays usable.
             accounts::update_password(&state.db, &session.user_id, &new_hash)
                 .await
@@ -2336,9 +2381,7 @@ async fn discover_themes(
         .themes
         .iter()
         .filter(|theme| include_own || !owned.contains(&theme.id))
-        .filter(|theme| {
-            show_r18 || !(theme.r18 || crate::catalog::tags_mark_r18(&theme.tags))
-        })
+        .filter(|theme| show_r18 || !(theme.r18 || crate::catalog::tags_mark_r18(&theme.tags)))
         .filter(|theme| {
             author_filter
                 .map(|author| theme.author.trim().eq_ignore_ascii_case(author))

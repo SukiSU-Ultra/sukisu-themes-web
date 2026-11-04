@@ -93,7 +93,7 @@ Rust 编写的主题镜像、投稿审核和账号系统，提供 Android 管理
 - 登录会话有 5 秒正向缓存，避免每个已登录请求都查询 SQLite；登出和会话撤销会立即清理缓存，禁用账号最多延迟 5 秒生效。
 - SQLite 使用 `synchronous=NORMAL`：断电时可能丢失最后少量已提交事务，但数据库完整性不受影响。下载计数在崩溃时最多丢失约 3 秒缓冲。
 - `catalog.json`、HTML/JS 使用 `ETag` + `304`；主题包、预览图和截图按版本号返回长缓存头，重复访问可直接命中浏览器缓存（令牌保护资源使用 `private`，不进入共享缓存）。
-- 高流量部署建议：Caddy 保持 `encode zstd gzip`；`account.db` 放在本地 SSD，不要放 NFS/SMB；主题资源可以用 NAS/S3，但数据库必须本地；根据 CPU 和内存调整 `THEME_DB_POOL_SIZE`；系统文件描述符上限至少 4096。
+- 高流量部署建议：`account.db` 放在本地 SSD，不要放 NFS/SMB；主题资源可以用 NAS/S3，但数据库必须本地；根据 CPU 和内存调整 `THEME_DB_POOL_SIZE`；系统文件描述符上限至少 4096。
 
 ## 上传进度与并发
 
@@ -157,10 +157,8 @@ Rust 编写的主题镜像、投稿审核和账号系统，提供 Android 管理
 
   ```bash
   sudo apt update
-  sudo apt install -y build-essential pkg-config ca-certificates curl caddy
+  sudo apt install -y build-essential pkg-config ca-certificates curl
   ```
-
-  如果发行版仓库没有 Caddy，按 Caddy 官方文档安装。
 - 交叉编译 `aarch64-unknown-linux-musl`：
   - `rustup target add aarch64-unknown-linux-musl`
   - Zig 0.16（`scripts/zigcc-aarch64-musl.bat`、`scripts/ar-aarch64-musl.bat` 会调用 `zig cc` / `zig ar`）
@@ -168,7 +166,7 @@ Rust 编写的主题镜像、投稿审核和账号系统，提供 Android 管理
 
 ### 运行
 
-- Linux + systemd；Caddy/Nginx/Lucky 等反向代理负责 TLS 和路由。
+- Linux + systemd；Lucky/Nginx 等反向代理可选，仅用于 TLS 和统一入口。
 - SQLite 已静态编译，不需要单独安装数据库；也不需要 OpenSSL 开发包。
 - 可选：SMTP 服务、GitHub OAuth App、S3 兼容对象存储（AWS S3 / R2 / MinIO / B2）。
 
@@ -184,10 +182,10 @@ THEME_STORAGE_ROOT=$PWD/dev-data
 THEME_STORAGE_LIMIT_BYTES=1258291200
 EOF
 THEME_STORAGE_ENV="$PWD/dev-storage.env" THEME_DB_PATH="$PWD/dev-account.db" \
-  ADMIN_BIND=127.0.0.1 ADMIN_PORT=8090 ./target/release/sukisu-theme-web
+  ADMIN_BIND=127.0.0.1 ADMIN_PORT=8080 ./target/release/sukisu-theme-web
 ```
 
-打开 `http://127.0.0.1:8090/admin/setup` 创建管理员并设置存储配额。
+打开 `http://127.0.0.1:8080/admin/setup` 创建管理员并设置存储配额。
 
 Windows 本地开发（先创建 `dev-storage.env`，内容见下方）：
 
@@ -197,7 +195,7 @@ $env:THEME_DB_PATH="$PWD\dev-account.db"
 $env:THEME_STATIC_DIR="$PWD\static"
 $env:THEME_DISABLE_SYSTEMCTL="1"
 $env:ADMIN_BIND="127.0.0.1"
-$env:ADMIN_PORT="8090"
+$env:ADMIN_PORT="8080"
 cargo run
 ```
 
@@ -212,7 +210,7 @@ THEME_STORAGE_LIMIT_BYTES=1258291200
 
 - `THEME_STATIC_DIR=static`：直接从磁盘读取 HTML/JS/语言文件，改完刷新即可，不用重编译。
 - `THEME_DEV_MODE=1`：邮件链接写入日志，不真正发信。
-- `THEME_DISABLE_SYSTEMCTL=1`：不调用 systemctl/caddy（非 systemd 环境）。
+- `THEME_DISABLE_SYSTEMCTL=1`：不调用 systemctl（非 systemd 环境）。
 
 ### 交叉编译 aarch64
 
@@ -243,7 +241,7 @@ target/aarch64-unknown-linux-musl/release/sukisu-theme-web
 | `/etc/sukisu-theme-web/sources.json` | 导入/可写存储位置（本地/NAS、OpenList/AList Token、配额） |
 | `/var/lib/sukisu-theme-web/account.db` | SQLite 账号数据库 |
 
-可以用 `THEME_STORAGE_ENV`、`THEME_DB_PATH`、`THEME_ADMIN_ENV`、`THEME_ADMIN_CONFIG`、`THEME_NETWORK_ENV`、`THEME_ACCOUNT_ENV`、`THEME_CADDYFILE`、`THEME_STATIC_DIR` 覆盖路径；`THEME_TOKEN_ENV`、`THEME_AUTHORS_FILE`、`THEME_ADMIN_PASSWORD_FILE`、`THEME_SOURCES_FILE` 分别覆盖令牌、作者、密码和导入/可写来源文件。`THEME_DB_POOL_SIZE`（默认 4，范围 1-32）控制 SQLite 连接池大小。
+可以用 `THEME_STORAGE_ENV`、`THEME_DB_PATH`、`THEME_ADMIN_ENV`、`THEME_ADMIN_CONFIG`、`THEME_NETWORK_ENV`、`THEME_ACCOUNT_ENV`、`THEME_STATIC_DIR` 覆盖路径；`THEME_TOKEN_ENV`、`THEME_AUTHORS_FILE`、`THEME_ADMIN_PASSWORD_FILE`、`THEME_SOURCES_FILE` 分别覆盖令牌、作者、密码和导入/可写来源文件。`THEME_DB_POOL_SIZE`（默认 4，范围 1-32）控制 SQLite 连接池大小。
 
 ### `storage.env`
 
@@ -273,14 +271,14 @@ openssl rand -hex 32
 THEME_STORE_TOKEN=<上面生成的 64 位十六进制>
 ```
 
-管理器配置和 Caddy 必须使用同一个令牌。
+管理器配置和应用必须使用同一个令牌。
 
 ### `network.env` / `config.env`
 
 ```ini
 # network.env
 ADMIN_BIND=127.0.0.1
-ADMIN_PORT=8090
+ADMIN_PORT=8080
 PUBLIC_DOMAINS=themes.example.com
 
 # config.env
@@ -297,9 +295,6 @@ ACCOUNT_URL=https://themes.example.com/account/
 GITHUB_CALLBACK_URL=https://themes.example.com/account/api/auth/github/callback
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
-QQ_APP_ID=
-QQ_APP_KEY=
-QQ_CALLBACK_URL=https://themes.example.com/account/api/auth/qq/callback
 # Web 用户中心/管理后台会话时长（秒），也可在管理后台「认证」页修改；默认 30 天
 WEB_SESSION_TTL_SECS=2592000
 SMTP_HOST=
@@ -310,7 +305,7 @@ SMTP_FROM=
 SMTP_TLS=starttls
 ```
 
-未配置 SMTP 时无法注册邮箱账号；未配置 GitHub/QQ 时对应登录按钮隐藏。管理员也可以登录后在「认证」页修改这些配置。QQ 登录需要在 QQ 互联创建应用，并把回调地址登记为 `QQ_CALLBACK_URL`；QQ 不返回邮箱，账号创建后可在用户中心补充邮箱并设置密码。
+未配置 SMTP 时无法注册邮箱账号；未配置 GitHub 时 GitHub 登录按钮隐藏。管理员也可以登录后在「认证」页修改这些配置。GitHub 登录需要在 GitHub 创建 OAuth App，并把回调地址登记为 `GITHUB_CALLBACK_URL`。
 
 ### 站点维护模式
 
@@ -320,7 +315,7 @@ SMTP_TLS=starttls
 - 普通访客的页面请求返回 `503` 维护页；账号中心 API 返回 `503` JSON（`maintenance: true`）。
 - 健康检查、登录/找回密码页面及其所需的认证 API 保持可用，避免管理员被锁在维护模式之外。
 - `/catalog.json` 保持可读，并写入 `"maintenance": true`；管理器读取后显示维护提示，不再展示主题列表。
-- 维护期间主题包资源仍可能被 Caddy 直接下发。若需要连资源下载也严格阻断，请把 `/themes/*`、`/previews/*` 等资源路径改为反代到应用（应用会返回维护页），而不是使用 Caddy `file_server`；`/catalog.json` 会继续返回维护标记供管理器识别。
+- 维护期间主题包资源由应用统一返回维护页，不再有绕过应用的静态文件服务。
 
 ### 存储位置、溢出与导入
 
@@ -334,7 +329,7 @@ SMTP_TLS=starttls
 - 每个主题在 `meta` 中记录 `storageId`，资源 key 使用 `_loc/<sourceId>` 段；删除、撤回、预览和下载会按 key 解析回原位置。
 - `sources.json` 保存来源、Token 和配额（权限 0600）；备份时需要包含该文件。
 
-## 部署（Linux + systemd + Caddy）
+## 部署（Linux + systemd + Lucky）
 
 ### 1. 安装二进制和目录
 
@@ -373,103 +368,29 @@ EnvironmentFile=-/etc/sukisu-theme-web/network.env
 WantedBy=multi-user.target
 ```
 
-服务默认以 root 运行，因为需要写存储目录、SQLite 和 `/etc/sukisu-theme-web`，并调用 `systemctl`/Caddy。
+服务默认以 root 运行，因为需要写存储目录、SQLite 和 `/etc/sukisu-theme-web`，并调用 `systemctl`。
 
 ```bash
 systemctl daemon-reload
 systemctl enable --now sukisu-theme-web
 ```
 
-### 4. Caddy
+### 4. 直接监听与 Lucky
 
-给 Caddy 提供令牌和存储根目录：
+服务内置静态资源、令牌门禁、`/admin` 前缀处理和根路径跳转，默认直接监听 `127.0.0.1:8080`。前置 Lucky 只需终止 TLS 并把站点反代到该地址：
 
-`/etc/systemd/system/caddy.service.d/theme-store.conf`：
+- Lucky 目标填写 `http://127.0.0.1:8080`；保留原始 Host 和路径，不需要改写 `/admin`。
+- 根路径 `/` 返回 `302` 到 `/account/login`，管理后台在 `/admin/`。
+- `/themes/*`、`/previews/*`、`/screenshots/*`、`/avatars/*`、`/catalog.json` 校验 `X-Sukisu-Theme-Token`；`/i18n.js`、`/locales/*` 公开。
+- 如果 Lucky 与服务不在同一台机器，或需要直接对外，可把 `ADMIN_BIND` 改为 `0.0.0.0` 并自行配置防火墙。
+- 修改端口或监听地址后，管理服务会重启；管理后台「网络」页会自动处理并回滚失败配置。
 
 ```ini
-[Service]
-EnvironmentFile=/etc/sukisu-themes/store.env
-EnvironmentFile=/etc/sukisu-theme-web/storage.env
+# /etc/sukisu-theme-web/network.env
+ADMIN_BIND=127.0.0.1
+ADMIN_PORT=8080
+PUBLIC_DOMAINS=themes.example.com
 ```
-
-`/etc/caddy/Caddyfile`（最小可用配置，假设 TLS 由前置 Lucky/Nginx 终止；如果 Caddy 直接对外，改成域名站点并配置证书）：
-
-```caddyfile
-http://:8080 {
-	bind 127.0.0.1
-	root * {$THEME_STORAGE_ROOT}
-	encode zstd gzip
-
-	header {
-		Access-Control-Allow-Origin "*"
-		X-Content-Type-Options "nosniff"
-	}
-
-	handle_path /admin* {
-		reverse_proxy 127.0.0.1:8090
-	}
-	handle /account* {
-		reverse_proxy 127.0.0.1:8090
-	}
-	handle /submit {
-		reverse_proxy 127.0.0.1:8090
-	}
-	handle /health {
-		reverse_proxy 127.0.0.1:8090
-	}
-
-	# 公共 UI 资源，必须在 token 校验之前
-	handle /i18n.js {
-		reverse_proxy 127.0.0.1:8090
-	}
-	handle /locales/* {
-		reverse_proxy 127.0.0.1:8090
-	}
-
-	handle / {
-		redir * /account/login 302
-	}
-
-	@authorized header X-Sukisu-Theme-Token {$THEME_STORE_TOKEN}
-	handle @authorized {
-		@assets path /themes/* /previews/* /screenshots/* /avatars/*
-		handle @assets {
-			reverse_proxy 127.0.0.1:8090
-		}
-		handle {
-			file_server
-		}
-	}
-
-	handle {
-		respond "Unauthorized" 401
-	}
-}
-```
-
-```bash
-systemctl daemon-reload
-
-# Caddyfile 使用 {$THEME_STORE_TOKEN} 和 {$THEME_STORAGE_ROOT}，校验前先导出
-export THEME_STORE_TOKEN="$(sed -n 's/^THEME_STORE_TOKEN=//p' /etc/sukisu-themes/store.env | tail -1)"
-export THEME_STORAGE_ROOT="$(sed -n 's/^THEME_STORAGE_ROOT=//p' /etc/sukisu-theme-web/storage.env | tail -1)"
-
-caddy validate --config /etc/caddy/Caddyfile
-systemctl enable --now caddy
-systemctl reload caddy
-```
-
-如果不用 Caddy，Nginx 等价规则：
-
-- `/admin/` 反代到 `http://127.0.0.1:8090/`（去掉 `/admin` 前缀）。
-- `/account/` 反代到 `http://127.0.0.1:8090`（保留前缀）。
-- `/i18n.js`、`/locales/*` 无需令牌即可访问。
-- `/themes/`、`/previews/`、`/screenshots/`、`/avatars/`、`/catalog.json` 校验 `X-Sukisu-Theme-Token`。
-- 镜像跳转由应用返回普通 `302`；镜像本身是独立的 HTTP(S) 服务，不需要经过本服务器的 Caddy。
-- `/health` 反代到 `http://127.0.0.1:8090/health`，返回 JSON 健康状态；数据库或存储不可用时返回 HTTP 503。
-- 旧的 Caddy 配置如果仍使用 `respond "ok" 200`，请改成上面的 `reverse_proxy` 才能拿到详细健康信息。
-
-管理后台的「网络」页会改写 `THEME_CADDYFILE`（默认 `/etc/caddy/Caddyfile`）并重启服务；不使用 Caddy 时可设置 `THEME_DISABLE_SYSTEMCTL=1`，改用其他方式维护代理配置。
 
 ### 5. 初始化
 
@@ -485,7 +406,7 @@ https://<域名>/admin/setup
 
 ```bash
 curl -fsS http://127.0.0.1:8080/health
-curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8090/account/login
+curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/account/login
 curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/i18n.js
 curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/themes/missing
 ```
@@ -515,7 +436,6 @@ systemctl is-active sukisu-theme-web
 | `/var/lib/sukisu-theme-web/account.db` | SQLite（含 `-wal` / `-shm`） |
 | `/etc/sukisu-theme-web`、`/etc/sukisu-themes` | 配置和访问令牌 |
 | `/etc/sukisu-theme-web/sources.json` | 存储位置、配额和 AList Token |
-| `/etc/caddy/Caddyfile` | 反向代理配置 |
 
 ## 多语言
 
@@ -525,10 +445,10 @@ systemctl is-active sukisu-theme-web
 
 ## 常见问题
 
-- **页面没有语言下拉框**：检查 `/i18n.js`、`/locales/en.json` 是否被反向代理 401；Caddy 需保留 `handle /i18n.js` 和 `handle /locales/*`。
+- **页面没有语言下拉框**：应用已公开 `/i18n.js` 和 `/locales/*`；若仍 401，检查 Lucky/Nginx 是否额外加了鉴权。
 - **`/account/i18n.js` 404**：正确路径是根路径 `/i18n.js`；不要加 `/account` 前缀。
 - **改了 HTML/JS 线上没变化**：生产环境未设置 `THEME_STATIC_DIR`，资源在二进制里，重新构建并替换二进制。
-- **Caddy 启动后 502**：确认服务监听 `127.0.0.1:8090`，`/admin*` 需要去前缀，`/account*` 保留前缀。
+- **页面 502 / 无法访问**：确认服务监听 `127.0.0.1:8080`，Lucky 目标端口一致；`/admin` 前缀由应用内部处理，不需要反代改写。
 - **首次打不开初始化页**：确认没有预置 `admin.env`；已有管理员时请走 `/account/login`。
 - **浏览器显示旧页面**：`Ctrl + F5` 强制刷新。
 
@@ -540,4 +460,4 @@ cargo test
 cargo build --release
 ```
 
-完整生产部署、Caddy 验证、回滚和真实主机信息见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
+完整生产部署、Lucky 反代、回滚和真实主机信息见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。

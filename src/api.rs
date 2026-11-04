@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, Extension, Multipart, OriginalUri, Query, Request, State};
-use axum::http::{HeaderMap, Method, StatusCode, Uri};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -22,9 +22,9 @@ use crate::auth;
 use crate::catalog;
 use crate::config::{
     self, read_env, set_env_key, validate_s3_settings, validate_storage_root, write_storage_config,
-    Backend, Paths, StorageSettings, CSRF_HEADER, CSRF_VALUE, CURRENT_FORMAT_VERSION,
-    MAX_BODY_BYTES, MAX_PENDING_SUBMISSIONS, MAX_SUBMISSIONS_PER_HOUR, MIN_FORMAT_VERSION,
-    TOKEN_HEADER,
+    Backend, Paths, StorageSettings, ASSET_PREFIXES, CSRF_HEADER, CSRF_VALUE,
+    CURRENT_FORMAT_VERSION, MAX_BODY_BYTES, MAX_PENDING_SUBMISSIONS, MAX_SUBMISSIONS_PER_HOUR,
+    MIN_FORMAT_VERSION, TOKEN_HEADER,
 };
 use crate::jobs::JobManager;
 use crate::storage::{self, AssetStore, ServeBody, ServeError};
@@ -331,7 +331,6 @@ pub fn router(state: AppState) -> Router {
         .route("/author/restrictions", post(author_restrictions_save))
         .route("/sync", post(sync_catalog))
         .route("/test-catalog", post(test_catalog))
-        .route("/reload", post(reload_caddy))
         .route("/storage/test", post(storage_test))
         .route("/storage/root", post(storage_root))
         .route("/storage/backend", post(storage_backend))
@@ -365,9 +364,59 @@ pub fn router(state: AppState) -> Router {
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .layer(middleware::from_fn_with_state(
             state.clone(),
+            store_token_guard,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
             maintenance_guard,
         ))
+        .layer(middleware::from_fn(public_headers))
         .with_state(state)
+}
+
+/// Static assets and the catalog used to sit behind Caddy's token gate. The
+/// service now listens directly, so enforce the same header check here.
+fn store_path_is_protected(path: &str) -> bool {
+    path == "/catalog.json"
+        || path
+            .strip_prefix('/')
+            .map(|relative| {
+                ASSET_PREFIXES
+                    .iter()
+                    .any(|prefix| relative.starts_with(prefix))
+            })
+            .unwrap_or(false)
+}
+
+async fn store_token_guard(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if store_path_is_protected(request.uri().path()) {
+        let expected = read_token(&state.paths);
+        let provided = request
+            .headers()
+            .get(TOKEN_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("");
+        if expected.is_empty() || !token_matches(&expected, provided) {
+            return ApiError::unauthorized("访问令牌无效").into_response();
+        }
+    }
+    next.run(request).await
+}
+
+/// CORS and sniffing headers that Caddy used to add in front of the service.
+async fn public_headers(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    headers.insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
+    headers.insert(
+        "X-Content-Type-Options",
+        HeaderValue::from_static("nosniff"),
+    );
+    response
 }
 
 async fn csrf_guard(request: Request, next: Next) -> Response {
@@ -396,8 +445,6 @@ const MAINTENANCE_AUTH_API_PATHS: &[&str] = &[
     "/auth/reset-password",
     "/auth/github/start",
     "/auth/github/callback",
-    "/auth/qq/start",
-    "/auth/qq/callback",
 ];
 
 /// Routes that stay reachable while the site is in maintenance. The admin console must remain
@@ -538,19 +585,14 @@ fn maintenance_page_response() -> Response {
         .unwrap_or_else(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())
 }
 
-async fn public_catalog(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> ApiResult<Response> {
+async fn public_catalog(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
     let expected = read_token(&state.paths);
-    if !expected.is_empty() {
-        let provided = headers
-            .get(TOKEN_HEADER)
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or("");
-        if !token_matches(&expected, provided) {
-            return Err(ApiError::unauthorized("访问令牌无效"));
-        }
+    let provided = headers
+        .get(TOKEN_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    if expected.is_empty() || !token_matches(&expected, provided) {
+        return Err(ApiError::unauthorized("访问令牌无效"));
     }
     let data = tokio::fs::read(&state.paths.catalog)
         .await
@@ -973,7 +1015,6 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
     )
     .await;
     let storage_value = serde_json::to_value(&usage).unwrap_or_else(|_| json!({}));
-    let caddy = system::service_state("caddy").await;
     let sync_timer = system::service_state("sukisu-themes-sync.timer").await;
     let admin_service = system::service_state("sukisu-theme-web.service").await;
     let (downloads_total, recent_downloads) = crate::db::download_totals(&state.db)
@@ -1028,7 +1069,6 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
             "recentDownloads": recent_downloads,
             "topThemes": top_themes,
         },
-        "caddy": caddy,
         "syncTimer": sync_timer,
         "adminService": admin_service,
         "publicUrl": config.get("PUBLIC_URL").cloned().unwrap_or_default(),
@@ -1465,8 +1505,8 @@ async fn asset(
         if let Some(theme_id) = catalog::theme_id_from_package_path(&path) {
             if let Some(location) = state.mirrors.pick(&path, &headers).await {
                 state.record_theme_download(&theme_id);
-                let location = axum::http::HeaderValue::from_str(&location)
-                    .map_err(ApiError::internal)?;
+                let location =
+                    axum::http::HeaderValue::from_str(&location).map_err(ApiError::internal)?;
                 return Ok(Response::builder()
                     .status(StatusCode::FOUND)
                     .header("Location", location)
@@ -1504,7 +1544,7 @@ async fn asset(
         }
     }
     // Packages and images are versioned (the key contains -v<version>), so
-    // clients and Caddy can cache them safely. Author avatars stay short-lived
+    // clients and proxies can cache them safely. Author avatars stay short-lived
     // because they can be replaced in place.
     // Keep token-protected assets out of shared caches; browsers may still
     // cache them locally. Versioned keys make the long lifetimes safe.
@@ -1627,20 +1667,27 @@ async fn static_file(
             .body(Body::empty())
             .map_err(ApiError::internal);
     }
-    let relative = if path == "/"
-        || path == "/index.html"
-        || path == "/admin"
-        || path == "/admin/"
-        || path == "/admin/index.html"
-    {
+    // Caddy used to redirect the public root to the account center while the
+    // admin console stayed under /admin/.
+    if path == "/" || path == "/index.html" {
+        return Response::builder()
+            .status(StatusCode::FOUND)
+            .header("Location", "/account/login")
+            .header("Cache-Control", "no-store")
+            .body(Body::empty())
+            .map_err(ApiError::internal);
+    }
+    // Caddy stripped the /admin prefix before proxying to the service.
+    let stripped = path.strip_prefix("/admin/").map(|rest| format!("/{rest}"));
+    let path = match path {
+        "/admin" | "/admin/" => "/",
+        _ => stripped.as_deref().unwrap_or(path),
+    };
+    let relative = if path == "/" || path == "/index.html" {
         "index.html".to_string()
     } else if path == "/login" || path == "/login.html" {
         "account-auth.html".to_string()
-    } else if path == "/setup"
-        || path == "/setup.html"
-        || path == "/admin/setup"
-        || path == "/admin/setup.html"
-    {
+    } else if path == "/setup" || path == "/setup.html" {
         "setup.html".to_string()
     } else if path == "/account" || path == "/account/" || path == "/account/index.html" {
         "account.html".to_string()
@@ -2266,7 +2313,10 @@ async fn set_theme_tags(
         if catalog::is_r18_tag(&tag) {
             continue;
         }
-        if tags.iter().any(|existing| existing.eq_ignore_ascii_case(&tag)) {
+        if tags
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&tag))
+        {
             continue;
         }
         tags.push(tag);
@@ -2380,16 +2430,6 @@ async fn test_catalog(State(state): State<AppState>) -> ApiResult<Response> {
     }
 }
 
-async fn reload_caddy(State(_state): State<AppState>) -> ApiResult<Response> {
-    system::reload_caddy().await.map_err(|error| {
-        ApiError::new(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("system command failed: {error}"),
-        )
-    })?;
-    Ok(Json(json!({"ok": true, "message": "caddy reloaded"})).into_response())
-}
-
 async fn set_token(State(state): State<AppState>, body: Bytes) -> ApiResult<Response> {
     let value = json_body(body).await?;
     let token = value
@@ -2401,8 +2441,7 @@ async fn set_token(State(state): State<AppState>, body: Bytes) -> ApiResult<Resp
         return Err(ApiError::bad("token must be 16-128 safe characters"));
     }
     set_env_key(&state.paths.token_env, "THEME_STORE_TOKEN", token).map_err(ApiError::internal)?;
-    system::schedule_caddy_restart();
-    Ok(Json(json!({"ok": true, "message": "token saved; caddy is restarting"})).into_response())
+    Ok(Json(json!({"ok": true, "message": "令牌已保存"})).into_response())
 }
 
 async fn generate_token(State(_state): State<AppState>) -> Json<Value> {
@@ -2874,7 +2913,6 @@ async fn storage_root(State(state): State<AppState>, body: Bytes) -> ApiResult<R
             Ok(()) => {
                 progress.finish_ok("存储目录已更新，服务即将重启");
                 system::schedule_admin_restart();
-                system::schedule_caddy_restart();
             }
             Err(error) => progress.fail(&error.to_string()),
         }
@@ -3022,5 +3060,21 @@ mod route_tests {
         assert_eq!(response.status(), StatusCode::OK);
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
         assert_eq!(&bytes[..], b"foo.jpg");
+    }
+
+    #[test]
+    fn protects_store_assets_and_catalog_only() {
+        for path in [
+            "/catalog.json",
+            "/themes/a.sukisu",
+            "/previews/a.jpg",
+            "/screenshots/a.jpg",
+            "/avatars/a.jpg",
+        ] {
+            assert!(store_path_is_protected(path), "{path}");
+        }
+        for path in ["/", "/i18n.js", "/locales/en.json", "/account/login", "/health"] {
+            assert!(!store_path_is_protected(path), "{path}");
+        }
     }
 }

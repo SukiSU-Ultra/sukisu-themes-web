@@ -598,7 +598,6 @@ input:-webkit-autofill:focus {
         <a class="forgot-link" href="#" id="forgotLink">忘记密码？</a>
         <button type="submit" class="login-btn" id="loginBtn"><span class="spinner"></span><span id="loginLabel">登录</span></button>
         <button type="button" class="github-btn" id="githubLogin">使用 GitHub 登录</button>
-        <button type="button" class="github-btn" id="qqLogin">使用 QQ 登录</button>
       </form>
 
       <form id="registerForm" class="auth-form" autocomplete="on">
@@ -619,7 +618,6 @@ input:-webkit-autofill:focus {
         <div class="field"><input id="regConfirm" name="confirmPassword" type="password" autocomplete="new-password" placeholder="再次输入密码" required></div>
         <button type="submit" class="login-btn" id="registerBtn"><span class="spinner"></span><span id="registerLabel">注册账号</span></button>
         <button type="button" class="github-btn" id="githubRegister">使用 GitHub 注册</button>
-        <button type="button" class="github-btn" id="qqRegister">使用 QQ 注册</button>
       </form>
 
       <form id="forgotForm" class="auth-form" autocomplete="on">
@@ -883,22 +881,6 @@ input:-webkit-autofill:focus {
   document.getElementById('githubLogin').addEventListener('click', githubStart);
   document.getElementById('githubRegister').addEventListener('click', githubStart);
 
-  async function qqStart() {
-    try {
-      const response = await fetch(API + '/config', { cache: 'no-store' });
-      const data = await response.json().catch(() => ({}));
-      if (!data.qq) {
-        showError('QQ 登录尚未配置');
-        return;
-      }
-      location.href = API + '/auth/qq/start';
-    } catch (_) {
-      showError('QQ 登录暂不可用');
-    }
-  }
-  document.getElementById('qqLogin').addEventListener('click', qqStart);
-  document.getElementById('qqRegister').addEventListener('click', qqStart);
-
   document.getElementById('themeToggle').addEventListener('click', () => {
     const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
     document.documentElement.dataset.theme = next;
@@ -918,14 +900,6 @@ input:-webkit-autofill:focus {
     else if (github === 'email') showError('GitHub 账号没有已验证的邮箱');
     else if (github === 'disabled') showError('账号未启用');
     else showError('GitHub 登录失败，请重试');
-  } else if (params.get('qq')) {
-    const qq = params.get('qq');
-    if (qq === '1') showMessage('QQ 登录成功。', 'ok');
-    else if (qq === 'denied') showError('你取消了 QQ 授权');
-    else if (qq === 'state') showError('QQ 登录状态已过期，请重试');
-    else if (qq === 'disabled') showError('账号未启用');
-    else if (qq === 'unconfigured') showError('QQ 登录尚未配置');
-    else showError('QQ 登录失败，请重试');
   }
   if (params.get('token')) {
     setView('reset');
@@ -937,10 +911,6 @@ input:-webkit-autofill:focus {
       if (!data.github) {
         document.getElementById('githubLogin').style.display = 'none';
         document.getElementById('githubRegister').style.display = 'none';
-      }
-      if (!data.qq) {
-        document.getElementById('qqLogin').style.display = 'none';
-        document.getElementById('qqRegister').style.display = 'none';
       }
     })
     .catch(() => {});
