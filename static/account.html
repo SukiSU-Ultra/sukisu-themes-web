@@ -260,6 +260,41 @@ html[data-theme="light"] .adaptive-badge {
   background: rgba(255, 255, 255, .82);
   color: #0e7490;
 }
+.r18-badge {
+  position: absolute;
+  top: 9px;
+  left: 9px;
+  z-index: 1;
+  padding: 3px 8px;
+  border-radius: 99px;
+  border: 1px solid rgba(255, 180, 180, .42);
+  background: rgba(90, 16, 28, .72);
+  color: #ffd9de;
+  font-size: 10.5px;
+  font-weight: 700;
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+html[data-theme="light"] .r18-badge {
+  border-color: rgba(185, 28, 28, .3);
+  background: rgba(254, 226, 226, .92);
+  color: #b91c1c;
+}
+.popular-theme { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.popular-theme:last-child { border-bottom: 0; }
+.popular-theme img { width: 52px; height: 52px; border-radius: 10px; object-fit: cover; background: var(--gradient-soft); flex: none; }
+.popular-rank { width: 22px; text-align: center; color: var(--faint); font-weight: 700; flex: none; }
+.popular-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.popular-body b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.popular-body span { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.follow-btn { flex: none; border: 1px solid var(--line-strong); border-radius: 999px; background: transparent; color: var(--accent-2); font-size: 12px; font-weight: 650; padding: 6px 12px; cursor: pointer; }
+.follow-btn.active { background: var(--gradient-soft); color: var(--text); border-color: var(--line); }
+.follow-btn:disabled { opacity: .55; cursor: default; }
+.pref-row { display: flex; align-items: flex-start; gap: 10px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.pref-row input[type="checkbox"] { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--accent-2); }
+.pref-text { display: flex; flex-direction: column; gap: 3px; }
+.pref-text b { color: var(--text); }
+.pref-text span { color: var(--muted); font-size: 12px; }
 .adaptive-chip {
   border-color: rgba(56, 189, 248, .42) !important;
   background: rgba(14, 165, 233, .13) !important;
@@ -604,6 +639,7 @@ input:-webkit-autofill:focus {
     <aside class="side">
       <button data-view="profile" class="active">个人资料</button>
       <button data-view="security">安全设置</button>
+      <button data-view="preferences">内容偏好</button>
       <button data-view="author">作者身份</button>
       <button data-view="upload">上传主题</button>
       <button data-view="content">我的内容 <span class="view-badge hidden" id="contentBadge">0</span></button>
@@ -621,6 +657,7 @@ input:-webkit-autofill:focus {
             <div><b id="profileName">—</b><span id="profileHandle">—</span></div>
             <span class="pill" id="profileStatus" style="margin-left:auto">—</span>
           </div>
+          <div class="hint" id="profileStats" style="margin-top:10px">—</div>
           <div class="grid2" style="margin-top:18px">
             <div class="field"><label for="username">用户名</label><input id="username" autocomplete="username"></div>
             <div class="field"><label for="displayName">显示名称</label><input id="displayName" autocomplete="nickname"></div>
@@ -636,10 +673,10 @@ input:-webkit-autofill:focus {
 
       <section id="view-security" class="view hidden">
         <div class="card">
-          <h3>修改密码</h3>
-          <p class="hint">修改后当前账号的所有登录会话会失效。</p>
+          <h3 id="passwordTitle">修改密码</h3>
+          <p class="hint" id="passwordHint">修改后当前账号的所有登录会话会失效。</p>
           <div class="grid3">
-            <div class="field"><label for="currentPassword">当前密码</label><input id="currentPassword" type="password" autocomplete="current-password"></div>
+            <div class="field" id="currentPasswordField"><label for="currentPassword">当前密码</label><input id="currentPassword" type="password" autocomplete="current-password"></div>
             <div class="field"><label for="newPassword">新密码</label><input id="newPassword" type="password" autocomplete="new-password"></div>
             <div class="field"><label for="confirmPassword">确认新密码</label><input id="confirmPassword" type="password" autocomplete="new-password"></div>
           </div>
@@ -655,6 +692,25 @@ input:-webkit-autofill:focus {
           <h3>GitHub</h3>
           <p class="hint" id="githubHint">绑定 GitHub 后可以使用 GitHub 登录用户中心。</p>
           <div class="row" id="githubActions"></div>
+        </div>
+      </section>
+
+      <section id="view-preferences" class="view hidden">
+        <div class="card">
+          <h3>内容偏好</h3>
+          <p class="hint">这些偏好保存在你的账号中。R18 开关会影响网页端，并在登录管理器后优先同步到管理器；管理器的免责声明仍需在每台设备上单独同意，卸载后重新同意。</p>
+          <label class="pref-row">
+            <input id="prefShowR18" type="checkbox">
+            <span class="pref-text">
+              <b>显示 R18 主题</b>
+              <span>默认关闭。仅在你已达到法定年龄且所在地区允许此类内容时开启。</span>
+            </span>
+          </label>
+          <p class="hint" id="prefConsent">协议状态：加载中…</p>
+          <p class="hint">管理器登录后会优先同步这里的 R18 偏好；免责声明与数据传输协议仍需在每台设备上单独同意，卸载应用后需要重新同意。</p>
+          <div class="row" style="margin-top:14px">
+            <button class="btn primary" id="savePreferences" type="button">保存偏好</button>
+          </div>
         </div>
       </section>
 
@@ -799,6 +855,17 @@ input:-webkit-autofill:focus {
       </section>
 
       <section id="view-discover" class="view hidden">
+        <div class="card" style="margin-bottom:14px">
+          <div class="discover-head">
+            <div>
+              <h3>热门主题</h3>
+              <p class="hint">按热度排序：总下载量 + 近 7 天下载 × 10。</p>
+            </div>
+            <button class="btn" id="popularSeeAll" type="button">发现更多主题</button>
+          </div>
+          <div id="popularList"></div>
+          <div class="empty hidden" id="popularEmpty">还没有下载记录</div>
+        </div>
         <div class="card">
           <div class="discover-head">
             <div>
@@ -870,6 +937,9 @@ input:-webkit-autofill:focus {
   let discoverAuthor = '';
   let discoverLoaded = false;
   let discoverBusy = false;
+  let popularThemes = [];
+  let followedAuthors = new Set();
+  let followsLoaded = false;
   let commentTheme = null;
   let commentItems = [];
   let commentReplyTarget = null;
@@ -1181,7 +1251,11 @@ input:-webkit-autofill:focus {
     }
     if (name === 'author') loadAuthors();
     if (name === 'upload') loadUploadView();
-    if (name === 'discover' && !discoverLoaded) loadDiscover();
+    if (name === 'preferences') loadPreferences();
+    if (name === 'discover') {
+      loadPopular();
+      if (!discoverLoaded) loadDiscover();
+    }
     if (name === 'messages') loadMessages(true);
   }
 
@@ -1224,7 +1298,11 @@ input:-webkit-autofill:focus {
     } else {
       banner.classList.remove('show');
     }
-    $('sideInfo').innerHTML = '<div>' + (activeAuthor ? '作者：' + escapeHtml(activeAuthor.displayName || activeAuthor.fingerprint) : '尚未绑定作者') + '</div><div>' + escapeHtml(statusText(user.status)) + '</div>';
+    $('profileStats').textContent = '关注 ' + (data.following || 0) + ' · 粉丝 ' + (data.followers || 0);
+    $('sideInfo').innerHTML =
+      '<div>' + (activeAuthor ? '作者：' + escapeHtml(activeAuthor.displayName || activeAuthor.fingerprint) : '尚未绑定作者') + '</div>' +
+      '<div>关注 ' + (data.following || 0) + ' · 粉丝 ' + (data.followers || 0) + '</div>' +
+      '<div>' + escapeHtml(statusText(user.status)) + '</div>';
     $('emailHint').textContent = user.email ? '当前邮箱：' + user.email : '尚未绑定邮箱';
     if (data.managerVersionCode && (!$('userUpMin').value || $('userUpMin').value === '0')) {
       $('userUpMin').value = data.managerVersionCode;
@@ -1234,6 +1312,13 @@ input:-webkit-autofill:focus {
   }
 
   function renderSecurity(data) {
+    const passwordConfigured = data.passwordConfigured !== false;
+    $('passwordTitle').textContent = passwordConfigured ? '修改密码' : '设置密码';
+    $('passwordHint').textContent = passwordConfigured
+      ? '修改后当前账号的所有登录会话会失效。'
+      : '当前账号通过第三方登录创建，设置密码后即可使用账号密码登录。';
+    $('currentPasswordField').classList.toggle('hidden', !passwordConfigured);
+    $('savePassword').textContent = passwordConfigured ? '更新密码' : '设置密码';
     const github = data.github;
     $('githubHint').textContent = github
       ? '已绑定 GitHub：' + (github.login || github.email || '')
@@ -1712,17 +1797,124 @@ input:-webkit-autofill:focus {
     return String(count);
   }
 
+  async function ensureFollows() {
+    if (followsLoaded) return;
+    try {
+      const data = await api('/follows');
+      followedAuthors = new Set((data.authors || []).map(item => item.authorHash).filter(Boolean));
+      followsLoaded = true;
+    } catch (_) {
+      // Keep the lists usable; a follow click will show the real error.
+    }
+  }
+
+  function followButton(theme) {
+    if (!theme.authorHash) return '';
+    const following = followedAuthors.has(theme.authorHash);
+    return '<button type="button" class="follow-btn' + (following ? ' active' : '') +
+      '" data-follow-hash="' + escapeHtml(theme.authorHash) + '">' +
+      (following ? '已关注' : '关注') + '</button>';
+  }
+
+  function refreshFollowButtons(hash) {
+    const following = followedAuthors.has(hash);
+    const selector = '[data-follow-hash="' +
+      (window.CSS && CSS.escape ? CSS.escape(hash) : hash) + '"]';
+    document.querySelectorAll(selector).forEach(button => {
+      button.classList.toggle('active', following);
+      button.textContent = following ? '已关注' : '关注';
+    });
+  }
+
+  async function toggleFollowAuthor(hash, button) {
+    if (!hash) return;
+    const following = followedAuthors.has(hash);
+    if (button) button.disabled = true;
+    try {
+      await api('/follows/' + (following ? 'unfollow' : 'follow'), {
+        method: 'POST',
+        body: JSON.stringify({ authorHash: hash }),
+      });
+      if (following) followedAuthors.delete(hash);
+      else followedAuthors.add(hash);
+      refreshFollowButtons(hash);
+    } catch (error) {
+      toast(error.message, true);
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  function r18Badge() {
+    return '<span class="r18-badge">R18</span>';
+  }
+
+  async function loadPopular() {
+    try {
+      await ensureFollows();
+      const data = await api('/discover?limit=5&sort=hot&includeOwn=1');
+      popularThemes = data.themes || [];
+      renderPopular();
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
+  function renderPopular() {
+    const list = $('popularList');
+    if (!list) return;
+    list.innerHTML = '';
+    $('popularEmpty').classList.toggle('hidden', popularThemes.length > 0);
+    popularThemes.forEach((theme, index) => {
+      const row = document.createElement('div');
+      row.className = 'popular-theme';
+      const cover = theme.previewPath
+        ? '<img src="' + escapeHtml(assetUrl(theme.previewPath)) + '" alt="" loading="lazy">'
+        : '';
+      row.innerHTML = '<span class="popular-rank">' + (index + 1) + '</span>' + cover +
+        '<div class="popular-body"><b>' + escapeHtml(theme.name || theme.id) + '</b>' +
+        '<span>' + escapeHtml(theme.author || '未知作者') + ' · 热度 ' + formatCount(theme.heat) +
+        ' · 下载 ' + formatCount(theme.downloads) + (theme.r18 ? ' · R18' : '') + '</span></div>' +
+        followButton(theme);
+      row.addEventListener('click', () => openDiscoverTheme(theme));
+      const button = row.querySelector('.follow-btn');
+      if (button) {
+        button.addEventListener('click', event => {
+          event.stopPropagation();
+          toggleFollowAuthor(theme.authorHash, button);
+        });
+      }
+      list.appendChild(row);
+    });
+  }
+
+  async function loadPreferences() {
+    try {
+      const data = await api('/preferences');
+      $('prefShowR18').checked = Boolean(data.showR18);
+      const version = Number(data.consentVersion || 0);
+      $('prefConsent').textContent = version > 0
+        ? '协议状态：已记录（版本 ' + version +
+          (data.consentAt ? '，' + formatTime(data.consentAt) : '') + '）'
+        : '协议状态：尚未记录，请先在管理器的主题商店中同意。';
+    } catch (error) {
+      toast(error.message, true);
+    }
+  }
+
   function discoverCard(theme) {
     const card = document.createElement('div');
     card.className = 'theme-card';
     const cover = theme.previewPath
       ? '<div class="theme-cover"><img src="' + escapeHtml(assetUrl(theme.previewPath)) + '" alt="" loading="lazy">' +
+        (theme.r18 ? r18Badge() : '') +
         (isAdaptiveTheme(theme) ? adaptiveBadge() : '') + '</div>'
       : '';
     const author = theme.author || '未知作者';
     card.innerHTML = cover +
       '<div class="theme-body"><b>' + escapeHtml(theme.name || theme.id) + '</b>' +
-      '<p><button type="button" class="author-link">' + escapeHtml(author) + '</button> · ' + escapeHtml(formatTime(theme.updatedAt)) + '</p>' +
+      '<p><button type="button" class="author-link">' + escapeHtml(author) + '</button> · ' +
+      escapeHtml(formatTime(theme.updatedAt)) + ' ' + followButton(theme) + '</p>' +
       '<div class="theme-stat-row">' +
       '<span class="theme-stat hot" title="热度：总下载量 + 近 7 天下载 × 10">热度 ' + formatCount(theme.heat) + '</span>' +
       '<span class="theme-stat dl" title="累计下载量">下载 ' + formatCount(theme.downloads) + '</span>' +
@@ -1733,6 +1925,13 @@ input:-webkit-autofill:focus {
       authorButton.addEventListener('click', event => {
         event.stopPropagation();
         filterDiscoverByAuthor(theme.author);
+      });
+    }
+    const followButtonEl = card.querySelector('.follow-btn');
+    if (followButtonEl) {
+      followButtonEl.addEventListener('click', event => {
+        event.stopPropagation();
+        toggleFollowAuthor(theme.authorHash, followButtonEl);
       });
     }
     return card;
@@ -1768,6 +1967,7 @@ input:-webkit-autofill:focus {
   async function loadDiscover() {
     if (discoverBusy) return;
     discoverBusy = true;
+    await ensureFollows();
     const button = $('discoverShuffle');
     const oldLabel = button.textContent;
     button.disabled = true;
@@ -2483,6 +2683,30 @@ input:-webkit-autofill:focus {
     discoverAuthor = '';
     loadDiscover();
   });
+  $('popularSeeAll').addEventListener('click', () => {
+    discoverSeen = new Set();
+    discoverLoaded = false;
+    loadDiscover();
+    const grid = $('discoverGrid');
+    if (grid) grid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+  $('savePreferences').addEventListener('click', async () => {
+    try {
+      const data = await api('/preferences', {
+        method: 'POST',
+        body: JSON.stringify({ showR18: $('prefShowR18').checked }),
+      });
+      $('prefShowR18').checked = Boolean(data.showR18);
+      toast('内容偏好已保存');
+      discoverSeen = new Set();
+      discoverLoaded = false;
+      await loadPopular();
+      if (currentView === 'discover') await loadDiscover();
+      await loadPreferences();
+    } catch (error) {
+      toast(error.message, true);
+    }
+  });
   $('discoverClose').addEventListener('click', () => $('discoverDialog').close());
   $('discoverDialog').addEventListener('click', event => {
     if (event.target === $('discoverDialog')) $('discoverDialog').close();
@@ -2555,14 +2779,21 @@ input:-webkit-autofill:focus {
   });
 
   $('savePassword').addEventListener('click', async () => {
-    const currentPassword = $('currentPassword').value;
     const password = $('newPassword').value;
     if (password !== $('confirmPassword').value) return toast('两次输入的密码不一致', true);
     if (password.length < 8) return toast('密码至少 8 位', true);
+    const payload = { password };
+    if (!$('currentPasswordField').classList.contains('hidden')) {
+      payload.currentPassword = $('currentPassword').value;
+    }
     try {
-      await api('/password', { method: 'POST', body: JSON.stringify({ currentPassword, password }) });
-      toast('密码已更新，请重新登录');
-      setTimeout(() => location.replace(basePath + 'login'), 1200);
+      const data = await api('/password', { method: 'POST', body: JSON.stringify(payload) });
+      toast(data.message || '密码已更新');
+      if (data.relogin) {
+        setTimeout(() => location.replace(basePath + 'login'), 1200);
+      } else {
+        loadProfile();
+      }
     } catch (error) { toast(error.message, true); }
   });
 
@@ -2866,7 +3097,13 @@ document.querySelectorAll('[data-tag-target]').forEach(group => {
   sync();
 });
 
-  loadProfile();
+  const pendingDeviceCode = sessionStorage.getItem('sukisu_device_code');
+  if (pendingDeviceCode) {
+    sessionStorage.removeItem('sukisu_device_code');
+    location.replace(basePath + 'device?code=' + encodeURIComponent(pendingDeviceCode));
+  } else {
+    loadProfile();
+  }
   setInterval(() => {
     if (document.hidden || !profile) return;
     loadSubmissions();

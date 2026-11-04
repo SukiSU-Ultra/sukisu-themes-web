@@ -11,8 +11,6 @@ use crate::db::Database;
 
 pub const ADMIN_SESSION_COOKIE: &str = "sukisu_admin_session";
 pub const USER_SESSION_COOKIE: &str = "sukisu_user_session";
-pub const SESSION_TTL_SECS: u64 = 12 * 60 * 60;
-pub const USER_SESSION_TTL_SECS: u64 = 12 * 60 * 60;
 
 /// A short positive cache avoids one SQLite query per authenticated request.
 /// Five seconds keeps revocation/disable effects near-immediate while still

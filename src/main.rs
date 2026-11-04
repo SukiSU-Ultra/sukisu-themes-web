@@ -12,6 +12,7 @@ mod catalog;
 mod comments;
 mod config;
 mod db;
+mod follows;
 mod images;
 mod jobs;
 mod mailer;
@@ -20,6 +21,7 @@ mod models;
 mod network_api;
 mod oauth;
 mod package;
+mod qq;
 mod resumable;
 mod sources;
 mod sources_api;
@@ -112,7 +114,13 @@ async fn main() -> anyhow::Result<()> {
     if let Err(error) = catalog::backfill_meta_assets(&state.store, &state.paths).await {
         tracing::warn!("storage init warning: {error:#}");
     }
-    if catalog::read_catalog(&state.paths).is_none() {
+    // Rebuild when the catalog is missing or its maintenance flag no longer matches config.env,
+    // so a manual config edit or an old binary cannot leave the flag stale.
+    let maintenance = config::maintenance_enabled(&state.paths);
+    let catalog_stale = catalog::read_catalog(&state.paths)
+        .map(|catalog| catalog.maintenance != maintenance)
+        .unwrap_or(true);
+    if catalog_stale {
         if let Err(error) = catalog::rebuild_catalog(&state.store, &state.paths).await {
             tracing::warn!("catalog init rebuild warning: {error:#}");
         }

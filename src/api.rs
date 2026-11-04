@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
@@ -38,6 +38,7 @@ const EMBEDDED_INDEX_HTML: &str = include_str!("../static/index.html");
 const EMBEDDED_LOGIN_HTML: &str = include_str!("../static/login.html");
 const EMBEDDED_SETUP_HTML: &str = include_str!("../static/setup.html");
 const EMBEDDED_ACCOUNT_AUTH_HTML: &str = include_str!("../static/account-auth.html");
+const EMBEDDED_ACCOUNT_DEVICE_HTML: &str = include_str!("../static/account-device.html");
 const EMBEDDED_ACCOUNT_HTML: &str = include_str!("../static/account.html");
 const EMBEDDED_LOGO_SVG: &[u8] = include_bytes!("../static/logo.svg");
 const EMBEDDED_I18N_JS: &str = include_str!("../static/i18n.js");
@@ -65,6 +66,8 @@ pub struct AppState {
     /// Optional HTTP mirrors used for package redirects.
     pub mirrors: crate::mirrors::MirrorPool,
     pub login_failures: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
+    /// Site-wide maintenance switch; mirrored into `catalog.json` on every toggle.
+    pub maintenance: Arc<AtomicBool>,
     withdrawn_assets: Arc<RwLock<HashSet<String>>>,
     /// Serializes in-place catalog counter writes during download bursts.
     stats_write_lock: Arc<tokio::sync::Mutex<()>>,
@@ -92,6 +95,7 @@ impl AppState {
         let sessions = auth::SessionStore::new(db.clone());
         let withdrawn_assets = Arc::new(RwLock::new(catalog::withdrawn_asset_keys(&paths)));
         let theme_stats = Arc::new(crate::db::load_theme_stats(&paths.db));
+        let maintenance = config::maintenance_enabled(&paths);
         Ok(Self {
             paths,
             settings: Arc::new(settings),
@@ -106,6 +110,7 @@ impl AppState {
             sources,
             mirrors: crate::mirrors::MirrorPool::load().await,
             login_failures: Arc::new(Mutex::new(HashMap::new())),
+            maintenance: Arc::new(AtomicBool::new(maintenance)),
             withdrawn_assets,
             stats_write_lock: Arc::new(tokio::sync::Mutex::new(())),
             download_buffer: Arc::new(Mutex::new(HashMap::new())),
@@ -318,6 +323,8 @@ pub fn router(state: AppState) -> Router {
         .route("/delete-theme", post(delete_theme))
         .route("/approve", post(approve))
         .route("/reject", post(reject))
+        .route("/theme-tags", post(set_theme_tags))
+        .route("/maintenance", get(maintenance_state).post(set_maintenance))
         .route("/author/revoke", post(author_revoke))
         .route("/author/delete", post(author_delete))
         .route("/author/batch", post(author_batch))
@@ -330,6 +337,7 @@ pub fn router(state: AppState) -> Router {
         .route("/storage/backend", post(storage_backend))
         .route("/storage/limit", post(storage_limit))
         .merge(crate::admin_users::router())
+        .merge(crate::follows::admin_router())
         .merge(crate::network_api::router())
         .merge(crate::auth_settings_api::router())
         .merge(crate::sources_api::router())
@@ -347,6 +355,7 @@ pub fn router(state: AppState) -> Router {
         .route("/submit", post(submit))
         .route("/health", get(health))
         .route("/healthz", get(health))
+        .route("/catalog.json", get(public_catalog))
         .route("/themes/{*path}", get(asset))
         .route("/previews/{*path}", get(asset))
         .route("/screenshots/{*path}", get(asset))
@@ -354,6 +363,10 @@ pub fn router(state: AppState) -> Router {
         .fallback(get(static_file))
         .layer(DefaultBodyLimit::max(config::MAX_UPLOAD_BODY_BYTES))
         .layer(tower_http::trace::TraceLayer::new_for_http())
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            maintenance_guard,
+        ))
         .with_state(state)
 }
 
@@ -370,6 +383,184 @@ async fn csrf_guard(request: Request, next: Next) -> Response {
         }
     }
     next.run(request).await
+}
+
+/// Account-auth API paths that must stay reachable so an administrator can sign back in while
+/// maintenance is on. They only establish a session; account data remains blocked below.
+const MAINTENANCE_AUTH_API_PATHS: &[&str] = &[
+    "/config",
+    "/auth/login",
+    "/auth/logout",
+    "/session",
+    "/auth/forgot-password",
+    "/auth/reset-password",
+    "/auth/github/start",
+    "/auth/github/callback",
+    "/auth/qq/start",
+    "/auth/qq/callback",
+];
+
+/// Routes that stay reachable while the site is in maintenance. The admin console must remain
+/// usable for the administrator to turn the switch off, and `/catalog.json` still carries the
+/// flag so managers can show a clean maintenance screen instead of a stale catalog.
+fn maintenance_path_exempt(path: &str) -> bool {
+    matches!(
+        path,
+        "/" | "/index.html"
+            | "/setup"
+            | "/setup.html"
+            | "/health"
+            | "/healthz"
+            | "/catalog.json"
+            | "/i18n.js"
+            | "/logo.svg"
+            | "/favicon.ico"
+            | "/admin/logo.svg"
+            | "/account/logo.svg"
+            | "/login"
+            | "/login.html"
+            | "/account/login"
+            | "/account/login.html"
+            | "/account/forgot"
+            | "/account/reset"
+    ) || path.starts_with("/admin")
+        || path.starts_with("/api")
+        || path.starts_with("/locales/")
+}
+
+async fn maintenance_guard(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if !state.maintenance.load(Ordering::Relaxed) {
+        return next.run(request).await;
+    }
+    let path = request.uri().path().to_string();
+    if maintenance_path_exempt(&path) {
+        return next.run(request).await;
+    }
+    // Administrators keep full access to the storefront and account center; the admin cookie is
+    // enough even if they are currently browsing the user-facing pages.
+    let mut admin = None;
+    if let Some(token) = auth::session_token(request.headers(), auth::ADMIN_SESSION_COOKIE) {
+        admin = state.sessions.validate(&token, "admin").await;
+    }
+    if admin.is_none() {
+        if let Some(token) = auth::session_token(request.headers(), auth::USER_SESSION_COOKIE) {
+            if let Some(session) = state.sessions.validate(&token, "user").await {
+                if session.role == "admin" {
+                    admin = Some(session);
+                }
+            }
+        }
+    }
+    if admin.is_none() {
+        if let Some(token) = auth::bearer_token(request.headers()) {
+            admin = state.sessions.validate(&token, "admin").await;
+            if admin.is_none() {
+                admin = state
+                    .sessions
+                    .validate(&token, "user")
+                    .await
+                    .filter(|session| session.role == "admin");
+            }
+        }
+    }
+    if admin.is_some() {
+        return next.run(request).await;
+    }
+    if let Some(relative) = path.strip_prefix("/account/api") {
+        if MAINTENANCE_AUTH_API_PATHS.contains(&relative) {
+            return next.run(request).await;
+        }
+    }
+    if path.starts_with("/account/api") || path.starts_with("/api") {
+        return maintenance_api_response();
+    }
+    maintenance_page_response()
+}
+
+fn maintenance_api_response() -> Response {
+    Response::builder()
+        .status(StatusCode::SERVICE_UNAVAILABLE)
+        .header("Content-Type", "application/json; charset=utf-8")
+        .header("Cache-Control", "no-store")
+        .header("Retry-After", "3600")
+        .body(Body::from(
+            json!({
+                "ok": false,
+                "maintenance": true,
+                "error": "网站维护中",
+            })
+            .to_string(),
+        ))
+        .unwrap_or_else(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())
+}
+
+const MAINTENANCE_HTML: &str = r#"<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>网站维护中</title>
+<style>
+:root{color-scheme:light dark}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;font-family:system-ui,-apple-system,"Segoe UI","Noto Sans SC",sans-serif;color:#1c1b1f;background:radial-gradient(circle at 30% 20%,#e8e6ff,transparent 55%),radial-gradient(circle at 75% 80%,#d9f2ea,transparent 50%),#f7f7fb}
+.card{width:min(440px,100%);padding:40px 32px;text-align:center;background:rgba(255,255,255,.82);border:1px solid rgba(28,27,31,.08);border-radius:28px;box-shadow:0 24px 70px rgba(28,27,31,.12);backdrop-filter:blur(16px)}
+.icon{display:grid;place-items:center;width:64px;height:64px;margin:0 auto 20px;border-radius:20px;background:#e8def8;color:#4f378b}
+h1{margin:0 0 10px;font-size:24px;font-weight:650}
+p{margin:0;font-size:14px;line-height:1.7;color:#49454f}
+.en{margin-top:10px;font-size:12.5px;color:#79747e}
+@media(prefers-color-scheme:dark){body{background:radial-gradient(circle at 30% 20%,#2b2440,transparent 55%),radial-gradient(circle at 75% 80%,#17332c,transparent 50%),#121014;color:#e6e1e5}.card{background:rgba(32,29,35,.84);border-color:rgba(230,225,229,.08);box-shadow:0 24px 70px rgba(0,0,0,.45)}.icon{background:#4f378b;color:#e8def8}p{color:#cac4d0}.en{color:#938f99}}
+</style>
+</head>
+<body>
+<main class="card">
+<div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-2.5 2.5-2.5Z"/></svg></div>
+<h1>网站维护中</h1>
+<p>我们正在进行维护，请稍后再访问。感谢你的耐心等待。</p>
+<p class="en">We're performing maintenance. Please check back soon.</p>
+</main>
+</body>
+</html>"#;
+
+fn maintenance_page_response() -> Response {
+    Response::builder()
+        .status(StatusCode::SERVICE_UNAVAILABLE)
+        .header("Content-Type", "text/html; charset=utf-8")
+        .header("Cache-Control", "no-store")
+        .header("Retry-After", "3600")
+        .header("X-Robots-Tag", "noindex")
+        .body(Body::from(MAINTENANCE_HTML))
+        .unwrap_or_else(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())
+}
+
+async fn public_catalog(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> ApiResult<Response> {
+    let expected = read_token(&state.paths);
+    if !expected.is_empty() {
+        let provided = headers
+            .get(TOKEN_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("");
+        if !token_matches(&expected, provided) {
+            return Err(ApiError::unauthorized("访问令牌无效"));
+        }
+    }
+    let data = tokio::fs::read(&state.paths.catalog)
+        .await
+        .map_err(|_| ApiError::not_found("catalog not found"))?;
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json; charset=utf-8")
+        .header("Cache-Control", "no-store")
+        .body(Body::from(data))
+        .map_err(ApiError::internal)?)
 }
 
 async fn auth_guard(State(state): State<AppState>, mut request: Request, next: Next) -> Response {
@@ -478,7 +669,7 @@ async fn login(
         .create(
             &user.id,
             "admin",
-            auth::SESSION_TTL_SECS,
+            crate::config::web_session_ttl_secs(&state.paths),
             &user_agent,
             &remote,
         )
@@ -488,13 +679,13 @@ async fn login(
         auth::ADMIN_SESSION_COOKIE,
         &token,
         "/",
-        auth::SESSION_TTL_SECS,
+        crate::config::web_session_ttl_secs(&state.paths),
         auth::request_is_secure(&headers),
     );
     let payload = json!({
         "ok": true,
         "username": user.username,
-        "expiresIn": auth::SESSION_TTL_SECS,
+        "expiresIn": crate::config::web_session_ttl_secs(&state.paths),
     });
     Response::builder()
         .status(StatusCode::OK)
@@ -577,7 +768,7 @@ async fn setup(
         .create(
             &user.id,
             "admin",
-            auth::SESSION_TTL_SECS,
+            crate::config::web_session_ttl_secs(&state.paths),
             &header_text(&headers, "user-agent"),
             &request_ip(&headers),
         )
@@ -587,13 +778,13 @@ async fn setup(
         auth::ADMIN_SESSION_COOKIE,
         &token,
         "/",
-        auth::SESSION_TTL_SECS,
+        crate::config::web_session_ttl_secs(&state.paths),
         auth::request_is_secure(&headers),
     );
     let payload = json!({
         "ok": true,
         "username": user.username,
-        "expiresIn": auth::SESSION_TTL_SECS,
+        "expiresIn": crate::config::web_session_ttl_secs(&state.paths),
         "limitBytes": limit_bytes,
     });
     Response::builder()
@@ -741,6 +932,7 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
             ("删除主题", "POST", "/delete-theme"),
             ("测试目录", "POST", "/test-catalog"),
             ("重建目录", "POST", "/sync"),
+            ("站点维护", "POST", "/maintenance"),
             ("修改密码", "POST", "/password"),
             ("存储状态", "GET", "/storage"),
             ("测试对象存储", "POST", "/storage/test"),
@@ -805,6 +997,7 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
                 "name": theme_json_string(&item, "name"),
                 "author": theme_json_string(&item, "author"),
                 "previewUrl": theme_json_string(&item, "previewUrl"),
+                "r18": item.get("r18").and_then(Value::as_bool).unwrap_or(false),
                 "downloads": theme_json_number(&item, "downloads"),
                 "heat": theme_json_number(&item, "heat"),
             })
@@ -816,6 +1009,7 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
         "formatVersion": CURRENT_FORMAT_VERSION,
         "minFormatVersion": MIN_FORMAT_VERSION,
         "supportedFormats": (MIN_FORMAT_VERSION..=CURRENT_FORMAT_VERSION).collect::<Vec<_>>(),
+        "maintenance": state.maintenance.load(Ordering::Relaxed),
         "catalog": catalog::catalog_state(&state.paths),
         "pendingCount": pending_count,
         "pendingBytes": pending_bytes,
@@ -1002,6 +1196,7 @@ async fn stats(State(state): State<AppState>) -> Json<Value> {
                 "name": theme_json_string(&item, "name"),
                 "author": theme_json_string(&item, "author"),
                 "previewUrl": theme_json_string(&item, "previewUrl"),
+                "r18": item.get("r18").and_then(Value::as_bool).unwrap_or(false),
                 "downloads": theme_json_number(&item, "downloads"),
                 "heat": theme_json_number(&item, "heat"),
             })
@@ -1372,6 +1567,10 @@ fn embedded_static(relative: &str) -> Option<(&'static [u8], &'static str)> {
             EMBEDDED_ACCOUNT_AUTH_HTML.as_bytes(),
             "text/html; charset=utf-8",
         )),
+        "account-device.html" => Some((
+            EMBEDDED_ACCOUNT_DEVICE_HTML.as_bytes(),
+            "text/html; charset=utf-8",
+        )),
         "logo.svg" => Some((EMBEDDED_LOGO_SVG, "image/svg+xml")),
         "i18n.js" => Some((
             EMBEDDED_I18N_JS.as_bytes(),
@@ -1398,6 +1597,7 @@ fn embedded_etags() -> &'static HashMap<&'static str, String> {
             "setup.html",
             "account.html",
             "account-auth.html",
+            "account-device.html",
             "logo.svg",
             "i18n.js",
             "locales/en.json",
@@ -1450,6 +1650,11 @@ async fn static_file(
         || path == "/account/forgot"
     {
         "account-auth.html".to_string()
+    } else if path == "/account/device"
+        || path == "/account/device/"
+        || path == "/account/device.html"
+    {
+        "account-device.html".to_string()
     } else if path == "/account/logo.svg" || path == "/admin/logo.svg" {
         "logo.svg".to_string()
     } else {
@@ -2020,6 +2225,126 @@ async fn delete_theme(State(state): State<AppState>, body: Bytes) -> ApiResult<R
         .map_err(ApiError::internal)?;
     state.refresh_withdrawn_assets();
     Ok(Json(json!({"ok": true, "themes": themes.len()})).into_response())
+}
+
+async fn set_theme_tags(
+    State(state): State<AppState>,
+    Extension(actor): Extension<crate::accounts::SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
+    let value = json_body(body).await?;
+    let id = value
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if !valid_theme_id(&id) {
+        return Err(ApiError::bad("主题 ID 无效"));
+    }
+    if state.jobs.is_running() {
+        return Err(ApiError::conflict("存储迁移进行中，请稍后再试"));
+    }
+    let r18 = value.get("r18").and_then(Value::as_bool).unwrap_or(false);
+    let raw_tags = value
+        .get("tags")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut tags: Vec<String> = Vec::new();
+    for raw in raw_tags {
+        let Some(tag) = raw.as_str() else { continue };
+        let tag = tag.trim().to_string();
+        if tag.is_empty() {
+            continue;
+        }
+        if tag.chars().count() > 24 {
+            return Err(ApiError::bad("标签长度不能超过 24 个字符"));
+        }
+        // R18 aliases are controlled exclusively by the checkbox so the catalog flag stays
+        // consistent with what the administrator sees.
+        if catalog::is_r18_tag(&tag) {
+            continue;
+        }
+        if tags.iter().any(|existing| existing.eq_ignore_ascii_case(&tag)) {
+            continue;
+        }
+        tags.push(tag);
+    }
+    if r18 {
+        tags.insert(0, "r18".to_string());
+    }
+    if tags.len() > 10 {
+        return Err(ApiError::bad("标签最多 10 个"));
+    }
+    let Some((meta_path, mut meta)) = catalog::find_theme_meta(&state.paths, &id) else {
+        return Err(ApiError::not_found("主题不存在"));
+    };
+    meta.tags = tags.clone();
+    catalog::write_meta(&meta_path, &meta).map_err(ApiError::internal)?;
+    let themes = catalog::rebuild_catalog(&state.store, &state.paths)
+        .await
+        .map_err(ApiError::internal)?;
+    let _ = crate::accounts::audit(
+        &state.db,
+        Some(&actor.user_id),
+        "theme.tags",
+        Some(&id),
+        None,
+        Some(&format!("r18={r18} tags={}", tags.join(","))),
+    )
+    .await;
+    Ok(Json(json!({
+        "ok": true,
+        "id": id,
+        "tags": tags,
+        "r18": r18,
+        "themes": themes.len(),
+    })))
+}
+
+async fn maintenance_state(State(state): State<AppState>) -> Json<Value> {
+    Json(json!({
+        "ok": true,
+        "enabled": state.maintenance.load(Ordering::Relaxed),
+    }))
+}
+
+async fn set_maintenance(
+    State(state): State<AppState>,
+    Extension(actor): Extension<crate::accounts::SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
+    let value = json_body(body).await?;
+    let enabled = value
+        .get("enabled")
+        .and_then(Value::as_bool)
+        .ok_or_else(|| ApiError::bad("缺少维护状态"))?;
+    if state.jobs.is_running() {
+        return Err(ApiError::conflict("存储迁移进行中，请稍后再试"));
+    }
+    let previous = state.maintenance.swap(enabled, Ordering::Relaxed);
+    if let Err(error) = config::set_maintenance_enabled(&state.paths, enabled) {
+        state.maintenance.store(previous, Ordering::Relaxed);
+        return Err(ApiError::internal(error));
+    }
+    if let Err(error) = catalog::rebuild_catalog(&state.store, &state.paths).await {
+        // Keep config, memory and catalog consistent: a half-applied switch would make the
+        // manager miss the maintenance screen until the next rebuild.
+        state.maintenance.store(previous, Ordering::Relaxed);
+        let _ = config::set_maintenance_enabled(&state.paths, previous);
+        return Err(ApiError::internal(error));
+    }
+    let _ = crate::accounts::audit(
+        &state.db,
+        Some(&actor.user_id),
+        "site.maintenance",
+        None,
+        Some(if previous { "on" } else { "off" }),
+        Some(if enabled { "on" } else { "off" }),
+    )
+    .await;
+    Ok(Json(json!({"ok": true, "enabled": enabled})))
 }
 
 async fn sync_catalog(State(state): State<AppState>) -> ApiResult<Response> {

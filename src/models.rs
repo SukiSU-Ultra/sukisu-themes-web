@@ -15,6 +15,9 @@ pub struct CatalogFile {
     pub supported_formats: Vec<u32>,
     #[serde(rename = "generatedAt", default)]
     pub generated_at: Option<String>,
+    /// Site-wide maintenance flag. Managers show a maintenance screen instead of the store.
+    #[serde(default)]
+    pub maintenance: bool,
     #[serde(default)]
     pub themes: Vec<CatalogEntry>,
 }
@@ -42,6 +45,13 @@ pub struct CatalogEntry {
     pub name: String,
     #[serde(default)]
     pub author: String,
+    /// Stable author identity used by the follow feature. Older clients ignore it.
+    #[serde(
+        rename = "authorHash",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
+    pub author_hash: Option<String>,
     #[serde(default)]
     pub description: String,
     #[serde(default)]
@@ -49,6 +59,9 @@ pub struct CatalogEntry {
     /// Package carries separate light and dark halves for the system theme switch.
     #[serde(default)]
     pub adaptive: bool,
+    /// Adult content marker derived from the upload tags.
+    #[serde(default)]
+    pub r18: bool,
     #[serde(default)]
     pub license: String,
     #[serde(default)]

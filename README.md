@@ -12,6 +12,8 @@ Rust 编写的主题镜像、投稿审核和账号系统，提供 Android 管理
 - 统一登录、邮箱验证、密码重置、GitHub OAuth、作者身份绑定/重置。
 - 本地磁盘或 S3 兼容存储；支持配额、存储迁移、网络和认证配置。
 - 主存储之外可添加多个存储位置：本地/NAS、OpenList/AList；可只读导入，也可标记为可写，在主存储满后按优先级作为溢出位置。
+- 站点维护模式：管理后台一键开启后，除管理员外的网页访问显示维护页，管理器主题商店也会进入维护状态。
+- 用户中心「内容偏好」保存 R18 显示选择；管理器登录后优先采用网页设置，本机免责声明仍需在每台设备上单独同意。
 - 中文 / English，首次按浏览器语言选择，之后保存在 `localStorage.sukisu-lang`。
 - 主题描述支持 `用户名@平台` 提及，用户名支持中文/Unicode；支持 GitHub、Gitee、Bilibili、酷安、Telegram、微博、小红书、XDA、YouTube、爱发电、X、知乎、Threads、抖音。
 
@@ -283,6 +285,8 @@ PUBLIC_DOMAINS=themes.example.com
 # config.env
 PUBLIC_URL=https://themes.example.com/
 ADMIN_URL=https://themes.example.com/admin/
+# 站点维护开关；通常由管理后台「站点维护」卡片修改
+MAINTENANCE=0
 ```
 
 ### `account.env`
@@ -292,6 +296,11 @@ ACCOUNT_URL=https://themes.example.com/account/
 GITHUB_CALLBACK_URL=https://themes.example.com/account/api/auth/github/callback
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
+QQ_APP_ID=
+QQ_APP_KEY=
+QQ_CALLBACK_URL=https://themes.example.com/account/api/auth/qq/callback
+# Web 用户中心/管理后台会话时长（秒），也可在管理后台「认证」页修改；默认 30 天
+WEB_SESSION_TTL_SECS=2592000
 SMTP_HOST=
 SMTP_PORT=587
 SMTP_USERNAME=
@@ -300,7 +309,17 @@ SMTP_FROM=
 SMTP_TLS=starttls
 ```
 
-未配置 SMTP 时无法注册邮箱账号；未配置 GitHub 时隐藏 GitHub 登录按钮。管理员也可以登录后在「认证」页修改并测试。
+未配置 SMTP 时无法注册邮箱账号；未配置 GitHub/QQ 时对应登录按钮隐藏。管理员也可以登录后在「认证」页修改这些配置。QQ 登录需要在 QQ 互联创建应用，并把回调地址登记为 `QQ_CALLBACK_URL`；QQ 不返回邮箱，账号创建后可在用户中心补充邮箱并设置密码。
+
+### 站点维护模式
+
+管理后台首页的「站点维护」卡片可以一键开启或关闭维护。状态保存在 `config.env` 的 `MAINTENANCE`，重启后仍然有效。
+
+- 管理员（管理后台会话或 `role=admin` 的账号会话）不受影响，可以继续使用管理后台、账号中心和关闭维护。
+- 普通访客的页面请求返回 `503` 维护页；账号中心 API 返回 `503` JSON（`maintenance: true`）。
+- 健康检查、登录/找回密码页面及其所需的认证 API 保持可用，避免管理员被锁在维护模式之外。
+- `/catalog.json` 保持可读，并写入 `"maintenance": true`；管理器读取后显示维护提示，不再展示主题列表。
+- 维护期间主题包资源仍可能被 Caddy 直接下发。若需要连资源下载也严格阻断，请把 `/themes/*`、`/previews/*` 等资源路径改为反代到应用（应用会返回维护页），而不是使用 Caddy `file_server`；`/catalog.json` 会继续返回维护标记供管理器识别。
 
 ### 存储位置、溢出与导入
 

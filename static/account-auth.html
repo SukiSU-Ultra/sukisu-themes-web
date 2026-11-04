@@ -598,6 +598,7 @@ input:-webkit-autofill:focus {
         <a class="forgot-link" href="#" id="forgotLink">忘记密码？</a>
         <button type="submit" class="login-btn" id="loginBtn"><span class="spinner"></span><span id="loginLabel">登录</span></button>
         <button type="button" class="github-btn" id="githubLogin">使用 GitHub 登录</button>
+        <button type="button" class="github-btn" id="qqLogin">使用 QQ 登录</button>
       </form>
 
       <form id="registerForm" class="auth-form" autocomplete="on">
@@ -618,11 +619,12 @@ input:-webkit-autofill:focus {
         <div class="field"><input id="regConfirm" name="confirmPassword" type="password" autocomplete="new-password" placeholder="再次输入密码" required></div>
         <button type="submit" class="login-btn" id="registerBtn"><span class="spinner"></span><span id="registerLabel">注册账号</span></button>
         <button type="button" class="github-btn" id="githubRegister">使用 GitHub 注册</button>
+        <button type="button" class="github-btn" id="qqRegister">使用 QQ 注册</button>
       </form>
 
       <form id="forgotForm" class="auth-form" autocomplete="on">
-        <label for="forgotEmail">邮箱</label>
-        <div class="field"><input id="forgotEmail" name="email" type="email" autocomplete="email" placeholder="注册时使用的邮箱" required></div>
+        <label for="forgotEmail">邮箱或账号名称</label>
+        <div class="field"><input id="forgotEmail" name="login" type="text" autocomplete="username" placeholder="注册邮箱或账号名称" required></div>
         <button type="submit" class="login-btn" id="forgotBtn"><span class="spinner"></span><span id="forgotLabel">发送重置邮件</span></button>
         <div class="auth-alt"><a href="#" id="backToLogin">返回登录</a></div>
       </form>
@@ -744,7 +746,13 @@ input:-webkit-autofill:focus {
     setLoading(button, label, true, '登录');
     try {
       const data = await post('/auth/login', { login, password });
-      location.replace(homeFor(data));
+      const pendingDevice = sessionStorage.getItem('sukisu_device_code');
+      if (pendingDevice) {
+        sessionStorage.removeItem('sukisu_device_code');
+        location.replace(basePath + 'device?code=' + encodeURIComponent(pendingDevice));
+      } else {
+        location.replace(homeFor(data));
+      }
     } catch (error) {
       if (error.message.includes('验证邮箱')) {
         showError('请先打开邮箱完成验证，然后再登录');
@@ -803,17 +811,17 @@ input:-webkit-autofill:focus {
   document.getElementById('forgotForm').addEventListener('submit', async event => {
     event.preventDefault();
     clearError();
-    const email = document.getElementById('forgotEmail').value.trim();
-    if (!email) {
-      showError('请输入邮箱');
+    const login = document.getElementById('forgotEmail').value.trim();
+    if (!login) {
+      showError('请输入邮箱或账号名称');
       return;
     }
     const button = document.getElementById('forgotBtn');
     const label = document.getElementById('forgotLabel');
     setLoading(button, label, true, '发送重置邮件');
     try {
-      const data = await post('/auth/forgot-password', { email });
-      showMessage(data.message || '如果该邮箱已注册，重置邮件已经发送', 'ok');
+      const data = await post('/auth/forgot-password', { login, email: login });
+      showMessage(data.message || '如果该邮箱或账号存在，重置邮件已经发送', 'ok');
     } catch (error) {
       showError(error.message);
     } finally {
@@ -875,6 +883,22 @@ input:-webkit-autofill:focus {
   document.getElementById('githubLogin').addEventListener('click', githubStart);
   document.getElementById('githubRegister').addEventListener('click', githubStart);
 
+  async function qqStart() {
+    try {
+      const response = await fetch(API + '/config', { cache: 'no-store' });
+      const data = await response.json().catch(() => ({}));
+      if (!data.qq) {
+        showError('QQ 登录尚未配置');
+        return;
+      }
+      location.href = API + '/auth/qq/start';
+    } catch (_) {
+      showError('QQ 登录暂不可用');
+    }
+  }
+  document.getElementById('qqLogin').addEventListener('click', qqStart);
+  document.getElementById('qqRegister').addEventListener('click', qqStart);
+
   document.getElementById('themeToggle').addEventListener('click', () => {
     const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
     document.documentElement.dataset.theme = next;
@@ -894,6 +918,14 @@ input:-webkit-autofill:focus {
     else if (github === 'email') showError('GitHub 账号没有已验证的邮箱');
     else if (github === 'disabled') showError('账号未启用');
     else showError('GitHub 登录失败，请重试');
+  } else if (params.get('qq')) {
+    const qq = params.get('qq');
+    if (qq === '1') showMessage('QQ 登录成功。', 'ok');
+    else if (qq === 'denied') showError('你取消了 QQ 授权');
+    else if (qq === 'state') showError('QQ 登录状态已过期，请重试');
+    else if (qq === 'disabled') showError('账号未启用');
+    else if (qq === 'unconfigured') showError('QQ 登录尚未配置');
+    else showError('QQ 登录失败，请重试');
   }
   if (params.get('token')) {
     setView('reset');
@@ -905,6 +937,10 @@ input:-webkit-autofill:focus {
       if (!data.github) {
         document.getElementById('githubLogin').style.display = 'none';
         document.getElementById('githubRegister').style.display = 'none';
+      }
+      if (!data.qq) {
+        document.getElementById('qqLogin').style.display = 'none';
+        document.getElementById('qqRegister').style.display = 'none';
       }
     })
     .catch(() => {});

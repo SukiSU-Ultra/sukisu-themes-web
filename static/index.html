@@ -595,6 +595,32 @@ html[data-theme="light"] .adaptive-badge {
   background: rgba(255, 255, 255, .82);
   color: #0e7490;
 }
+.r18-badge {
+  position: absolute;
+  top: 9px;
+  left: 9px;
+  z-index: 1;
+  padding: 3px 8px;
+  border-radius: 99px;
+  border: 1px solid rgba(255, 180, 180, .42);
+  background: rgba(90, 16, 28, .72);
+  color: #ffd9de;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  backdrop-filter: blur(6px);
+}
+html[data-theme="light"] .r18-badge {
+  border-color: rgba(185, 28, 28, .3);
+  background: rgba(254, 226, 226, .92);
+  color: #b91c1c;
+}
+.theme-actions { gap: 8px; }
+.theme-actions button.theme-tags-edit {
+  color: var(--accent-2);
+  background: rgba(96, 165, 250, .08);
+  border-color: rgba(96, 165, 250, .26);
+}
 .adaptive-chip {
   border-color: rgba(56, 189, 248, .42) !important;
   background: rgba(14, 165, 233, .13) !important;
@@ -1341,6 +1367,7 @@ input:-webkit-autofill:focus {
       <a href="#overview" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg>概览</a>
       <div class="nav-label">账号</div>
       <a href="#users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="8" r="3"/><path d="M3 20c.7-4 2.7-6 6-6s5.3 2 6 6"/><path d="M16 5.5a3 3 0 0 1 0 5.5M18 14c2.2.5 3.5 2.5 4 6"/></svg>用户 <span class="nav-badge" id="usersNavBadge">0</span></a>
+      <a href="#follows"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 20s-7-4.3-7-9a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 4.7-7 9-7 9Z"/></svg>关注关系 <span class="nav-badge" id="followsNavBadge">0</span></a>
       <a href="#authors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="5" width="17" height="14" rx="3"/><circle cx="8.5" cy="10" r="2"/><path d="M5.8 16c.4-2 1.3-3 2.7-3s2.3 1 2.7 3"/><path d="M14 9h4M14 12h4"/></svg>作者许可</a>
       <a href="/account/" target="_blank" rel="noreferrer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c.8-4 3.1-6 7-6s6.2 2 7 6"/></svg>用户中心 <span style="margin-left:auto;color:var(--faint)">↗</span></a>
       <div class="nav-label">主题</div>
@@ -1458,6 +1485,16 @@ input:-webkit-autofill:focus {
           </div>
         </div>
         <div class="card">
+          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-2.5 2.5-2.5Z"/></svg>站点维护</h4>
+          <p class="hint">开启后，除管理员外所有访客、账号中心和主题商店都会显示维护提示，管理器也会停止拉取主题。</p>
+          <div class="meta">
+            <div class="kv"><span>当前状态</span><b id="maintenanceState">–</b></div>
+          </div>
+          <div class="row" style="margin-top:14px">
+            <button id="maintenanceToggle" class="primary">开启维护模式</button>
+          </div>
+        </div>
+        <div class="card">
           <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3c1 3 4 4.5 4 8a4 4 0 0 1-8 0c0-1.4.5-2.4 1.5-3.5C9 10 9 11 9.5 12 10 9 11 6 12 3Z"/><path d="M12 21v-3"/></svg>热门主题</h4>
           <p class="hint">按热度排序：总下载量 + 近 7 天下载 × 10。</p>
           <div class="top-themes" id="topThemesList"></div>
@@ -1506,6 +1543,23 @@ input:-webkit-autofill:focus {
           <button class="small" id="auditNext" type="button">下一页</button>
         </div>
       </details>
+    </section>
+
+    <section id="follows" class="page">
+      <div class="section-head"><div><h3>关注关系</h3><p>查看用户关注了哪些作者，以及作者归属的账号。</p></div><span class="pill" id="followsPill">–</span></div>
+      <div class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+          <input id="followSearch" type="search" placeholder="搜索关注者、作者或账号…">
+        </div>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead><tr><th>关注者</th><th>被关注作者</th><th>作者归属</th><th>时间</th></tr></thead>
+          <tbody id="followRows"></tbody>
+        </table>
+        <div class="empty hidden" id="followEmpty">暂无关注关系</div>
+      </div>
     </section>
 
     <section id="pending" class="page">
@@ -1829,10 +1883,11 @@ input:-webkit-autofill:focus {
     </section>
 
     <section id="auth" class="page">
-      <div class="section-head"><div><h3>认证与邮件</h3><p>配置邮箱验证、SMTP 发件服务和 GitHub OAuth 登录。</p></div><span class="pill" id="authPill">–</span></div>
+      <div class="section-head"><div><h3>认证与邮件</h3><p>配置邮箱验证、SMTP 发件服务、GitHub 与 QQ 登录。</p></div><span class="pill" id="authPill">–</span></div>
       <div class="stats">
         <div class="stat"><div class="label">邮件验证</div><div class="value" id="authMailState">–</div><div class="sub">SMTP 发件服务</div></div>
         <div class="stat"><div class="label">GitHub 登录</div><div class="value" id="authGithubState">–</div><div class="sub">OAuth App</div></div>
+        <div class="stat"><div class="label">QQ 登录</div><div class="value" id="authQqState">–</div><div class="sub">QQ 互联</div></div>
         <div class="stat"><div class="label">用户中心</div><div class="value" id="authAccountState">–</div><div class="sub" id="authAccountUrl">–</div></div>
         <div class="stat"><div class="label">生效方式</div><div class="value">即时</div><div class="sub">保存后无需重启</div></div>
       </div>
@@ -1870,6 +1925,31 @@ input:-webkit-autofill:focus {
           <button id="testGithubBtn">检查 GitHub 配置</button>
         </div>
         <p class="field-hint">回调地址必须与 GitHub OAuth App 中填写的一致；修改后立即生效。</p>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h4>QQ 互联</h4>
+        <p class="hint">用于用户中心 QQ 快捷登录。App Key 留空表示保持现有。</p>
+        <div class="form-grid">
+          <div><label for="qqAppId">App ID</label><input id="qqAppId" spellcheck="false"></div>
+          <div><label for="qqAppKey">App Key</label><input id="qqAppKey" type="password" autocomplete="new-password" placeholder="留空保持现有"></div>
+          <div class="full"><label for="qqCallback">回调地址</label><input id="qqCallback" spellcheck="false" placeholder="https://example.com/account/api/auth/qq/callback"></div>
+        </div>
+        <label class="check"><input id="clearQqKey" type="checkbox"> 清除已保存的 QQ App Key</label>
+        <div class="row">
+          <button class="primary" id="saveQq">保存 QQ 配置</button>
+        </div>
+        <p class="field-hint">回调地址必须与 QQ 互联应用登记的一致。QQ 账号没有邮箱，用户可在用户中心补充邮箱后使用找回密码。</p>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h4>网页会话时长</h4>
+        <p class="hint">仅管理员可修改。作用于用户中心和管理后台的新登录会话；修改后需要重新登录才会应用新的时长，App 令牌固定为 30 天。</p>
+        <div class="form-grid">
+          <div><label for="sessionTtlDays">有效天数</label><input id="sessionTtlDays" type="number" min="1" max="365" step="1"><div class="field-hint">1-365 天，默认 30 天</div></div>
+        </div>
+        <div class="row">
+          <button class="primary" id="saveSessionTtl">保存会话时长</button>
+        </div>
+        <p class="field-hint">显式退出、修改密码、重置密码或禁用账号仍会立即结束会话。</p>
       </div>
     </section>
 
@@ -2050,6 +2130,20 @@ input:-webkit-autofill:focus {
     <button class="btn small" id="themeDetailClose" type="button">关闭</button>
   </div>
   <div class="theme-detail-body" id="themeDetailBody"></div>
+</dialog>
+<dialog class="theme-detail-dialog" id="themeTagsDialog">
+  <div class="theme-detail-head">
+    <h3 id="themeTagsTitle">编辑主题标签</h3>
+    <button class="btn small" id="themeTagsClose" type="button">关闭</button>
+  </div>
+  <div class="theme-detail-body">
+    <p class="hint">标签最多 10 个，用于管理器和网页的筛选。勾选 R18 会自动添加 r18 标签；取消会移除所有 R18 相关标签。</p>
+    <div class="field"><label for="themeTagsInput">标签（逗号分隔）</label><input id="themeTagsInput" placeholder="cute, dark, anime" spellcheck="false"></div>
+    <label class="check" style="margin-top:12px"><input id="themeTagsR18" type="checkbox"> 标记为 R18（默认在管理器主题商店隐藏）</label>
+    <div class="row" style="margin-top:14px">
+      <button class="primary" id="themeTagsSave" type="button">保存标签</button>
+    </div>
+  </div>
 </dialog>
 <dialog class="theme-detail-dialog" id="authorRestrictionsDialog">
   <div class="theme-detail-head">
@@ -2539,6 +2633,11 @@ function render(status) {
   const used = Number(storage.used || 0);
   const limit = Number(storage.limit || 0);
   $('storageMode').textContent = status.storageBackend === 's3' ? 'S3 对象存储' : '本地';
+  const maintenanceEnabled = status.maintenance === true;
+  $('maintenanceState').textContent = maintenanceEnabled ? '维护中' : '正常运行';
+  $('maintenanceState').style.color = maintenanceEnabled ? 'var(--warn)' : 'var(--ok)';
+  $('maintenanceToggle').textContent = maintenanceEnabled ? '关闭维护模式' : '开启维护模式';
+  $('maintenanceToggle').classList.toggle('primary', !maintenanceEnabled);
   const stats = status.stats || {};
   $('downloadsStat').textContent = formatCount(stats.downloads ?? 0);
   $('downloadsSub').textContent = '近 7 天下载 ' + formatCount(stats.recentDownloads ?? 0);
@@ -2605,7 +2704,7 @@ function renderTopThemes(items) {
       ${image}
       <div class="top-theme-body">
         <b>${escapeHtml(theme.name || theme.id)}</b>
-        <span>${escapeHtml(theme.author || '未知作者')} · 热度 ${formatCount(theme.heat)} · 下载 ${formatCount(theme.downloads)}</span>
+        <span>${escapeHtml(theme.author || '未知作者')} · 热度 ${formatCount(theme.heat)} · 下载 ${formatCount(theme.downloads)}${theme.r18 ? ' · R18' : ''}</span>
       </div>`;
     list.appendChild(row);
   });
@@ -2789,6 +2888,19 @@ function adaptiveBadge() {
   return '<span class="adaptive-badge">' + escapeHtml(adaptiveTagLabel()) + '</span>';
 }
 
+function isR18Tag(tag) {
+  const value = String(tag || '').trim().toLowerCase();
+  return ['r18', 'r-18', '18+', 'nsfw', 'adult', '成人', '成人向', '限制级'].includes(value);
+}
+
+function isR18Theme(theme) {
+  return !!theme.r18 || (theme.tags || []).some(isR18Tag);
+}
+
+function r18Badge() {
+  return '<span class="r18-badge">R18</span>';
+}
+
 function renderTagChips(tags, limit) {
   return (tags || []).slice(0, limit || tags.length)
     .map(tag => `<span>${escapeHtml(tagLabel(tag))}</span>`).join('');
@@ -2830,7 +2942,9 @@ function renderThemeGrid() {
     card.className = 'theme-card';
     const preview = (theme.previewUrl
       ? `<img src="${escapeHtml(theme.previewUrl)}" alt="${escapeHtml(theme.name)}" loading="lazy">`
-      : '<div class="fallback">暂无预览图</div>') + (isAdaptiveTheme(theme) ? adaptiveBadge() : '');
+      : '<div class="fallback">暂无预览图</div>') +
+      (isR18Theme(theme) ? r18Badge() : '') +
+      (isAdaptiveTheme(theme) ? adaptiveBadge() : '');
     const tags = renderTagChips(theme.tags, 5);
     const avatar = theme.avatarUrl
       ? `<img class="author-avatar" src="${escapeHtml(theme.avatarUrl)}" alt="" loading="lazy">`
@@ -2853,7 +2967,10 @@ function renderThemeGrid() {
         </div>
         <div class="theme-desc">${renderInlineMarkdown(theme.description || '暂无描述')}</div>
         <div class="theme-tags">${tags}</div>
-        <div class="theme-actions"><button class="theme-delete" data-id="${escapeHtml(theme.id)}">删除</button></div>
+        <div class="theme-actions">
+          <button class="theme-tags-edit" data-id="${escapeHtml(theme.id)}">编辑标签</button>
+          <button class="theme-delete" data-id="${escapeHtml(theme.id)}">删除</button>
+        </div>
       </div>`;
     const image = card.querySelector('.theme-preview img');
     if (image) {
@@ -2875,6 +2992,10 @@ function renderThemeGrid() {
       event.stopPropagation();
       deleteTheme(theme.id);
     });
+    card.querySelector('.theme-tags-edit').addEventListener('click', event => {
+      event.stopPropagation();
+      openThemeTags(theme);
+    });
     grid.appendChild(card);
   });
 }
@@ -2884,7 +3005,7 @@ function openThemeDetail(theme) {
   if (!dialog || typeof dialog.showModal !== 'function') return;
   $('themeDetailTitle').textContent = theme.name || theme.id || '主题详情';
   const preview = theme.previewUrl
-    ? `<div class="theme-detail-cover"><img class="theme-detail-hero" src="${escapeHtml(theme.previewUrl)}" alt="${escapeHtml(theme.name)}" loading="lazy">${isAdaptiveTheme(theme) ? adaptiveBadge() : ''}</div>`
+    ? `<div class="theme-detail-cover"><img class="theme-detail-hero" src="${escapeHtml(theme.previewUrl)}" alt="${escapeHtml(theme.name)}" loading="lazy">${isR18Theme(theme) ? r18Badge() : ''}${isAdaptiveTheme(theme) ? adaptiveBadge() : ''}</div>`
     : '';
   const tags = renderTagChips(theme.tags);
   const adaptiveMeta = isAdaptiveTheme(theme)
@@ -2934,6 +3055,11 @@ function openThemeDetail(theme) {
 }
 
 $('themeDetailClose').addEventListener('click', () => $('themeDetailDialog').close());
+$('themeTagsClose').addEventListener('click', () => $('themeTagsDialog').close());
+$('themeTagsDialog').addEventListener('click', event => {
+  if (event.target === $('themeTagsDialog')) $('themeTagsDialog').close();
+});
+$('themeTagsSave').addEventListener('click', saveThemeTags);
 $('themeDetailDialog').addEventListener('click', event => {
   if (event.target === $('themeDetailDialog')) $('themeDetailDialog').close();
 });
@@ -3541,6 +3667,41 @@ async function deleteTheme(id) {
   }
 }
 
+let editingThemeTags = null;
+
+function openThemeTags(theme) {
+  editingThemeTags = theme;
+  $('themeTagsTitle').textContent = '编辑标签 · ' + (theme.name || theme.id);
+  $('themeTagsInput').value = (theme.tags || []).filter(tag => !isR18Tag(tag)).join(', ');
+  $('themeTagsR18').checked = isR18Theme(theme);
+  const dialog = $('themeTagsDialog');
+  if (dialog && typeof dialog.showModal === 'function') dialog.showModal();
+}
+
+async function saveThemeTags() {
+  if (!editingThemeTags) return;
+  const tags = $('themeTagsInput').value
+    .split(/[,，\n]/)
+    .map(tag => tag.trim())
+    .filter(Boolean);
+  try {
+    const data = await api('/theme-tags', {
+      method: 'POST',
+      body: JSON.stringify({
+        id: editingThemeTags.id,
+        tags,
+        r18: $('themeTagsR18').checked,
+      }),
+    });
+    toast(data.r18 ? '已标记为 R18，并更新标签' : '已更新主题标签');
+    $('themeTagsDialog').close();
+    editingThemeTags = null;
+    await loadThemes();
+  } catch (error) {
+    toast('保存失败：' + error.message, 'bad');
+  }
+}
+
 async function loadThemes() {
   try {
     const data = await api('/themes?sort=' + encodeURIComponent(themeSort));
@@ -4065,6 +4226,46 @@ $('closeUserDetail').addEventListener('click', () => {
   selectedUserId = null;
 });
 
+let followsCache = [];
+
+async function loadFollows() {
+  try {
+    const data = await api('/follows?limit=500');
+    followsCache = data.follows || [];
+    const total = data.total || followsCache.length;
+    $('followsPill').textContent = total + ' 条';
+    if ($('followsNavBadge')) $('followsNavBadge').textContent = total;
+    renderFollows();
+  } catch (error) {
+    toast('关注关系读取失败：' + error.message, 'bad');
+  }
+}
+
+function renderFollows() {
+  const query = ($('followSearch').value || '').trim().toLowerCase();
+  const rows = followsCache.filter(item => {
+    if (!query) return true;
+    return [
+      item.followerUsername,
+      item.followerDisplayName,
+      item.authorName,
+      item.authorHash,
+      item.ownerUsername,
+    ].some(value => (value || '').toLowerCase().includes(query));
+  });
+  $('followRows').innerHTML = rows.map(item => {
+    const follower = '@' + escapeHtml(item.followerUsername || '') +
+      (item.followerDisplayName ? ' · ' + escapeHtml(item.followerDisplayName) : '');
+    const author = item.authorName || item.authorHash || '–';
+    const owner = item.ownerUsername ? '@' + escapeHtml(item.ownerUsername) : '–';
+    return '<tr><td>' + follower + '</td><td>' + escapeHtml(author) + '</td><td>' + owner +
+      '</td><td>' + escapeHtml(formatTime(item.createdAt)) + '</td></tr>';
+  }).join('');
+  $('followEmpty').classList.toggle('hidden', rows.length > 0);
+}
+
+if ($('followSearch')) $('followSearch').addEventListener('input', renderFollows);
+
 async function loadNetwork() {
   try {
     const data = await api('/network');
@@ -4153,10 +4354,17 @@ async function loadAuthSettings() {
     $('githubClientSecret').value = '';
     $('githubClientSecret').placeholder = data.githubClientSecretConfigured ? '已保存，留空保持现有' : 'GitHub Client Secret';
     $('githubCallback').value = data.githubCallback || '';
+    $('qqAppId').value = data.qqAppId || '';
+    $('qqAppKey').value = '';
+    $('qqAppKey').placeholder = data.qqAppKeyConfigured ? '已保存，留空保持现有' : 'QQ App Key';
+    $('qqCallback').value = data.qqCallback || '';
+    $('sessionTtlDays').value = data.sessionTtlDays || 30;
     $('authMailState').textContent = data.smtpConfigured ? '已配置' : '未配置';
     $('authMailState').style.color = data.smtpConfigured ? 'var(--ok)' : 'var(--bad)';
     $('authGithubState').textContent = data.githubConfigured ? '已配置' : '未配置';
     $('authGithubState').style.color = data.githubConfigured ? 'var(--ok)' : 'var(--bad)';
+    $('authQqState').textContent = data.qqConfigured ? '已配置' : '未配置';
+    $('authQqState').style.color = data.qqConfigured ? 'var(--ok)' : 'var(--bad)';
     $('authAccountState').textContent = '用户中心';
     $('authAccountUrl').textContent = data.accountUrl || '–';
     $('authPill').textContent = data.smtpConfigured && data.githubConfigured ? '全部已配置' : '部分配置';
@@ -4166,7 +4374,7 @@ async function loadAuthSettings() {
   }
 }
 
-function authPayload(clearSmtp, clearGithub) {
+function authPayload(clearSmtp, clearGithub, clearQq) {
   return {
     smtpHost: $('smtpHost').value.trim(),
     smtpPort: Number($('smtpPort').value) || 587,
@@ -4177,22 +4385,29 @@ function authPayload(clearSmtp, clearGithub) {
     githubClientId: $('githubClientId').value.trim(),
     githubClientSecret: $('githubClientSecret').value,
     githubCallback: $('githubCallback').value.trim(),
+    qqAppId: $('qqAppId').value.trim(),
+    qqAppKey: $('qqAppKey').value,
+    qqCallback: $('qqCallback').value.trim(),
+    sessionTtlDays: Number($('sessionTtlDays').value) || 30,
     clearSmtpPassword: clearSmtp,
     clearGithubSecret: clearGithub,
+    clearQqKey: clearQq,
   };
 }
 
-async function saveAuthSettings(clearSmtp, clearGithub) {
+async function saveAuthSettings(clearSmtp, clearGithub, clearQq) {
   try {
     const data = await api('/auth-settings', {
       method: 'POST',
-      body: JSON.stringify(authPayload(clearSmtp, clearGithub)),
+      body: JSON.stringify(authPayload(clearSmtp, clearGithub, clearQq)),
     });
     toast(data.message || '认证配置已保存');
     $('smtpPassword').value = '';
     $('githubClientSecret').value = '';
+    $('qqAppKey').value = '';
     $('clearSmtpPassword').checked = false;
     $('clearGithubSecret').checked = false;
+    $('clearQqKey').checked = false;
     await loadAuthSettings();
     await refresh(true);
   } catch (error) {
@@ -4200,8 +4415,10 @@ async function saveAuthSettings(clearSmtp, clearGithub) {
   }
 }
 
-$('saveAuth').addEventListener('click', () => saveAuthSettings($('clearSmtpPassword').checked, false));
-$('saveGithub').addEventListener('click', () => saveAuthSettings(false, $('clearGithubSecret').checked));
+$('saveAuth').addEventListener('click', () => saveAuthSettings($('clearSmtpPassword').checked, false, false));
+$('saveGithub').addEventListener('click', () => saveAuthSettings(false, $('clearGithubSecret').checked, false));
+$('saveQq').addEventListener('click', () => saveAuthSettings(false, false, $('clearQqKey').checked));
+$('saveSessionTtl').addEventListener('click', () => saveAuthSettings(false, false, false));
 
 $('testEmailBtn').addEventListener('click', async () => {
   const to = $('testEmailTo').value.trim();
@@ -5095,6 +5312,7 @@ async function refresh(silent = false) {
 const PAGE_LABELS = {
   overview: 'Overview',
   users: 'Users',
+  follows: 'Follows',
   pending: 'Review queue',
   comments: 'Comments',
   authors: 'Author licenses',
@@ -5112,6 +5330,7 @@ const PAGE_LABELS = {
 const PAGE_TITLES = {
   overview: '主题镜像控制台',
   users: '用户与作者',
+  follows: '关注关系',
   pending: '待审核投稿',
   comments: '评论管理',
   authors: '作者许可',
@@ -5129,6 +5348,7 @@ const PAGE_TITLES = {
 const PAGE_LEADS = {
   overview: '管理访问令牌、审核主题投稿，以及查看客户端需要使用的 API 地址。',
   users: '管理用户账号、作者绑定申请、资料和权限。',
+  follows: '查看关注关系、被关注的作者以及作者归属账号。',
   pending: '检查投稿预览、作者信息与包内容，通过后立即写入 catalog。',
   comments: '查看所有主题留言与私密留言，删除单条、按主题清理或设置自动清理天数。',
   authors: '维护可信作者指纹与自动发布许可。',
@@ -5164,6 +5384,7 @@ function showPage(id, smooth = false) {
   if (page === 'storage') loadStorage();
   if (page === 'locations' || page === 'settings') loadLocations();
   if (page === 'users') loadUsers();
+  if (page === 'follows') loadFollows();
   if (page === 'comments') loadCommentsAdmin(0);
   if (page === 'network') loadNetwork();
   if (page === 'auth') loadAuthSettings();
@@ -5282,6 +5503,26 @@ $('saveToken').addEventListener('click', async () => {
     setTimeout(() => refresh(true), 1800);
   } catch (error) {
     toast('保存失败：' + error.message, 'bad');
+  }
+});
+$('maintenanceToggle').addEventListener('click', async () => {
+  const enabled = !(statusData && statusData.maintenance === true);
+  if (enabled && !confirm('开启维护模式后，除管理员外所有用户都无法访问网站。确定继续吗？')) {
+    return;
+  }
+  const button = $('maintenanceToggle');
+  button.disabled = true;
+  try {
+    await api('/maintenance', {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    });
+    toast(enabled ? '维护模式已开启' : '维护模式已关闭');
+    await refresh(true);
+  } catch (error) {
+    toast('切换维护模式失败：' + error.message, 'bad');
+  } finally {
+    button.disabled = false;
   }
 });
 $('syncBtn').addEventListener('click', async () => {

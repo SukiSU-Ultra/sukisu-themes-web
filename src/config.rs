@@ -101,6 +101,40 @@ fn env_path(name: &str, default: &str) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(default))
 }
 
+pub const DEFAULT_WEB_SESSION_TTL_SECS: u64 = 30 * 24 * 60 * 60;
+pub const MIN_WEB_SESSION_TTL_SECS: u64 = 60 * 60;
+pub const MAX_WEB_SESSION_TTL_SECS: u64 = 365 * 24 * 60 * 60;
+
+/// Web sessions (account center and admin console) can be tuned by an administrator through
+/// `WEB_SESSION_TTL_SECS` in `account.env`. Invalid values fall back to the 30-day default.
+pub fn web_session_ttl_secs(paths: &Paths) -> u64 {
+    read_env(&paths.account_env)
+        .get("WEB_SESSION_TTL_SECS")
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|seconds| (MIN_WEB_SESSION_TTL_SECS..=MAX_WEB_SESSION_TTL_SECS).contains(seconds))
+        .unwrap_or(DEFAULT_WEB_SESSION_TTL_SECS)
+}
+
+/// Site-wide maintenance switch persisted in `config.env`, so it survives restarts.
+///
+/// The admin console and health endpoints stay reachable; every public page, the account
+/// center and the theme catalog report maintenance instead. The manager learns about it from
+/// the `maintenance` flag in `catalog.json`.
+pub fn maintenance_enabled(paths: &Paths) -> bool {
+    read_env(&paths.admin_config)
+        .get("MAINTENANCE")
+        .map(|value| parse_bool(value, false))
+        .unwrap_or(false)
+}
+
+pub fn set_maintenance_enabled(paths: &Paths, enabled: bool) -> io::Result<()> {
+    set_env_key(
+        &paths.admin_config,
+        "MAINTENANCE",
+        if enabled { "1" } else { "0" },
+    )
+}
+
 pub fn load_paths(settings: &StorageSettings) -> Paths {
     let root = settings.root.clone();
     Paths {

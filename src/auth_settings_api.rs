@@ -46,9 +46,20 @@ struct AuthSettingsBody {
     #[serde(default)]
     github_callback: String,
     #[serde(default)]
+    qq_app_id: String,
+    #[serde(default)]
+    qq_app_key: String,
+    #[serde(default)]
+    qq_callback: String,
+    /// Optional because older clients do not send it; the current admin UI always does.
+    #[serde(default)]
+    session_ttl_days: Option<u64>,
+    #[serde(default)]
     clear_smtp_password: bool,
     #[serde(default)]
     clear_github_secret: bool,
+    #[serde(default)]
+    clear_qq_key: bool,
 }
 
 #[derive(Deserialize)]
@@ -67,6 +78,14 @@ fn state_value(state: &AppState) -> Value {
             mailer::account_base_url(&state.paths)
         )
     });
+    let qq_app_id = env.get("QQ_APP_ID").cloned().unwrap_or_default();
+    let qq_callback = env.get("QQ_CALLBACK_URL").cloned().unwrap_or_else(|| {
+        format!(
+            "{}api/auth/qq/callback",
+            mailer::account_base_url(&state.paths)
+        )
+    });
+    let session_ttl_secs = crate::config::web_session_ttl_secs(&state.paths);
     json!({
         "ok": true,
         "smtpHost": smtp_host,
@@ -81,6 +100,13 @@ fn state_value(state: &AppState) -> Value {
         "githubCallback": callback,
         "githubConfigured": !github_id.is_empty()
             && env.get("GITHUB_CLIENT_SECRET").map(|value| !value.is_empty()).unwrap_or(false),
+        "qqAppId": qq_app_id,
+        "qqAppKeyConfigured": env.get("QQ_APP_KEY").map(|value| !value.is_empty()).unwrap_or(false),
+        "qqCallback": qq_callback,
+        "qqConfigured": !qq_app_id.is_empty()
+            && env.get("QQ_APP_KEY").map(|value| !value.is_empty()).unwrap_or(false),
+        "sessionTtlDays": (session_ttl_secs / (24 * 60 * 60)).max(1),
+        "sessionTtlSeconds": session_ttl_secs,
         "devMode": std::env::var("THEME_DEV_MODE").as_deref() == Ok("1"),
         "accountUrl": mailer::account_base_url(&state.paths),
     })
@@ -204,6 +230,52 @@ async fn auth_settings_save(
             .map_err(ApiError::internal)?;
     }
 
+    let qq_app_id = body.qq_app_id.trim().to_string();
+    let current_qq_key = env.get("QQ_APP_KEY").cloned().unwrap_or_default();
+    let qq_app_key = if body.clear_qq_key {
+        String::new()
+    } else if !body.qq_app_key.trim().is_empty() {
+        body.qq_app_key.trim().to_string()
+    } else {
+        current_qq_key
+    };
+    let qq_callback = body.qq_callback.trim().to_string();
+    if qq_app_id.is_empty() || qq_app_key.is_empty() {
+        for key in ["QQ_APP_ID", "QQ_APP_KEY", "QQ_CALLBACK_URL"] {
+            let _ = remove_env_key(&state.paths.account_env, key);
+        }
+    } else {
+        let callback = if qq_callback.is_empty() {
+            format!(
+                "{}api/auth/qq/callback",
+                mailer::account_base_url(&state.paths)
+            )
+        } else {
+            qq_callback
+        };
+        if !valid_callback(&callback) {
+            return Err(ApiError::bad("QQ 回调地址无效"));
+        }
+        set_env_key(&state.paths.account_env, "QQ_APP_ID", &qq_app_id)
+            .map_err(ApiError::internal)?;
+        set_env_key(&state.paths.account_env, "QQ_APP_KEY", &qq_app_key)
+            .map_err(ApiError::internal)?;
+        set_env_key(&state.paths.account_env, "QQ_CALLBACK_URL", &callback)
+            .map_err(ApiError::internal)?;
+    }
+
+    if let Some(days) = body.session_ttl_days {
+        if !(1..=365).contains(&days) {
+            return Err(ApiError::bad("网页会话时长需要 1-365 天"));
+        }
+        set_env_key(
+            &state.paths.account_env,
+            "WEB_SESSION_TTL_SECS",
+            &(days * 24 * 60 * 60).to_string(),
+        )
+        .map_err(ApiError::internal)?;
+    }
+
     let _ = crate::accounts::audit(
         &state.db,
         Some(&actor.user_id),
@@ -211,9 +283,11 @@ async fn auth_settings_save(
         Some("account_env"),
         None,
         Some(&format!(
-            "smtp={} github={}",
+            "smtp={} github={} qq={} sessionDays={}",
             !smtp_host.is_empty(),
-            !github_id.is_empty() && !github_secret.is_empty()
+            !github_id.is_empty() && !github_secret.is_empty(),
+            !qq_app_id.is_empty() && !qq_app_key.is_empty(),
+            body.session_ttl_days.map(|value| value.to_string()).unwrap_or_else(|| "unchanged".to_string())
         )),
     )
     .await;

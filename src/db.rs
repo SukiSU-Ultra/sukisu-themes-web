@@ -316,8 +316,58 @@ impl Database {
                     features TEXT NOT NULL DEFAULT '',
                     updated_at TEXT NOT NULL,
                     updated_by TEXT
+                );
+                CREATE TABLE IF NOT EXISTS user_follows (
+                    follower_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    author_hash TEXT NOT NULL REFERENCES authors(hash) ON DELETE CASCADE,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (follower_id, author_hash)
+                );
+                CREATE INDEX IF NOT EXISTS user_follows_author_idx
+                    ON user_follows(author_hash);
+                CREATE TABLE IF NOT EXISTS device_login_codes (
+                    device_code_hash TEXT PRIMARY KEY,
+                    user_code TEXT NOT NULL UNIQUE,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+                    user_agent TEXT,
+                    ip TEXT,
+                    created_at TEXT NOT NULL,
+                    expires_at INTEGER NOT NULL,
+                    approved_at TEXT,
+                    consumed_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS device_login_codes_user_code_idx
+                    ON device_login_codes(user_code);
+                CREATE INDEX IF NOT EXISTS device_login_codes_expiry_idx
+                    ON device_login_codes(expires_at);
+                CREATE TABLE IF NOT EXISTS user_preferences (
+                    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                    show_r18 INTEGER NOT NULL DEFAULT 0,
+                    show_r18_set INTEGER NOT NULL DEFAULT 0,
+                    consent_version INTEGER NOT NULL DEFAULT 0,
+                    consent_at TEXT,
+                    updated_at TEXT NOT NULL
                 );",
             )?;
+            // A consent-only sync also creates a preferences row. Keep explicit R18 choices
+            // distinguishable so the manager can prefer the web setting after login without
+            // treating a default 0 as an intentional "off".
+            let has_show_r18_set: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('user_preferences') WHERE name = 'show_r18_set'",
+                [],
+                |row| row.get(0),
+            )?;
+            if has_show_r18_set == 0 {
+                conn.execute(
+                    "ALTER TABLE user_preferences ADD COLUMN show_r18_set INTEGER NOT NULL DEFAULT 0",
+                    [],
+                )?;
+                conn.execute(
+                    "UPDATE user_preferences SET show_r18_set = 1 WHERE show_r18 <> 0",
+                    [],
+                )?;
+            }
             let has_super_admin: i64 = conn.query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'is_super_admin'",
                 [],

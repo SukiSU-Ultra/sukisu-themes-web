@@ -8,7 +8,9 @@ use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use bytes::Bytes;
+use rusqlite::{params, OptionalExtension};
 use rand::seq::SliceRandom;
+use rand::Rng;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -17,12 +19,14 @@ use crate::api::{header_text, json_body, request_ip, ApiError, AppState};
 use crate::auth;
 use crate::authors;
 use crate::config::AVATAR_MAX_EDGE;
+use crate::follows;
 use crate::images;
 use crate::mailer;
 use crate::oauth;
+use crate::qq;
 use crate::util::{
-    author_fingerprint, author_key, content_type_for, quote_query, random_hex, valid_author_id,
-    valid_theme_id,
+    author_fingerprint, author_key, content_type_for, now_iso, quote_query, random_hex, sha256_hex,
+    unix_now, valid_author_hash, valid_author_id, valid_theme_id,
 };
 
 type ApiResult<T> = Result<T, ApiError>;
@@ -41,6 +45,11 @@ const PUBLIC_PATHS: &[&str] = &[
     "/auth/reset-password",
     "/auth/github/start",
     "/auth/github/callback",
+    "/auth/device/start",
+    "/auth/device/poll",
+    "/auth/device/info",
+    "/auth/qq/start",
+    "/auth/qq/callback",
 ];
 
 pub fn router(state: AppState) -> Router<AppState> {
@@ -57,6 +66,16 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/auth/github/start", get(github_start))
         .route("/auth/github/callback", get(github_callback))
         .route("/auth/github/unlink", post(github_unlink))
+        .route("/auth/device/start", post(device_start))
+        .route("/auth/device/poll", get(device_poll))
+        .route("/auth/device/info", get(device_info))
+        .route("/auth/device/approve", post(device_approve))
+        .route("/auth/qq/start", get(qq_start))
+        .route("/auth/qq/callback", get(qq_callback))
+        .route("/follows", get(my_follows))
+        .route("/follows/follow", post(follow_author))
+        .route("/follows/unfollow", post(unfollow_author))
+        .route("/preferences", get(get_preferences).post(update_preferences))
         .route("/profile", get(profile).post(update_profile))
         .route("/password", post(change_password))
         .route("/email", post(change_email))
@@ -292,6 +311,7 @@ async fn config(State(state): State<AppState>) -> Json<Value> {
         "ok": true,
         "email": mailer::configured(&state.paths),
         "github": oauth::GithubSettings::load(&state.paths).is_some(),
+        "qq": qq::QqSettings::load(&state.paths).is_some(),
         "registration": true,
         "accountUrl": mailer::account_base_url(&state.paths),
     }))
@@ -451,9 +471,10 @@ async fn login(
     }
     let hash = accounts::user_password_hash(&state.db, &user.id)
         .await
-        .map_err(ApiError::internal)?;
+        .map_err(ApiError::internal)?
+        .filter(|hash| !hash.trim().is_empty());
     let Some(hash) = hash else {
-        return Err(ApiError::bad("该账号没有密码，请使用 GitHub 登录"));
+        return Err(ApiError::bad("该账号尚未设置密码，请使用第三方登录或先在用户中心设置密码"));
     };
     let pass = password.clone();
     let verified = tokio::task::spawn_blocking(move || bcrypt::verify(pass, &hash))
@@ -471,7 +492,7 @@ async fn login(
     let ttl = if android {
         accounts::ANDROID_SESSION_TTL_SECS
     } else {
-        accounts::WEB_SESSION_TTL_SECS
+        crate::config::web_session_ttl_secs(&state.paths)
     };
     let token = state
         .sessions
@@ -578,6 +599,7 @@ async fn session_info(State(state): State<AppState>, headers: HeaderMap) -> Json
         "author": author,
         "email": mailer::configured(&state.paths),
         "github": oauth::GithubSettings::load(&state.paths).is_some(),
+        "qq": qq::QqSettings::load(&state.paths).is_some(),
     }))
 }
 
@@ -655,17 +677,43 @@ async fn forgot_password(
 ) -> ApiResult<Response> {
     let ip = request_ip(&headers);
     let value = json_body(body).await?;
-    let email = normalize_email(
-        value
-            .get("email")
-            .and_then(|value| value.as_str())
-            .unwrap_or(""),
-    );
-    if valid_email(&email)
-        && rate_allowed(&state, &format!("forgot:{ip}:{email}"), 3, 600)
+    let input = value
+        .get("login")
+        .or_else(|| value.get("username"))
+        .or_else(|| value.get("email"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let candidate_email = normalize_email(&input);
+    let user = if valid_email(&candidate_email) {
+        accounts::user_by_email(&state.db, &candidate_email)
+            .await
+            .ok()
+            .flatten()
+    } else if input.is_empty() {
+        None
+    } else {
+        accounts::user_by_login(&state.db, &input)
+            .await
+            .ok()
+            .flatten()
+    };
+    let email = user
+        .as_ref()
+        .and_then(|user| user.email.clone())
+        .filter(|value| valid_email(value))
+        .unwrap_or_default();
+    let rate_key = if email.is_empty() {
+        format!("forgot:{ip}:{}", input.to_lowercase())
+    } else {
+        format!("forgot:{ip}:{email}")
+    };
+    if !email.is_empty()
+        && rate_allowed(&state, &rate_key, 3, 600)
         && mailer::configured(&state.paths)
     {
-        if let Ok(Some(user)) = accounts::user_by_email(&state.db, &email).await {
+        if let Some(user) = user {
             if user.status != "disabled" && user.status != "rejected" {
                 if let Ok(token) = accounts::issue_email_token(
                     &state.db,
@@ -683,7 +731,7 @@ async fn forgot_password(
     }
     Ok(Json(json!({
         "ok": true,
-        "message": "如果该邮箱已注册，重置邮件已经发送",
+        "message": "如果该邮箱或账号存在，重置邮件已经发送",
     }))
     .into_response())
 }
@@ -885,7 +933,7 @@ async fn github_callback(
         .create(
             &user.id,
             "user",
-            accounts::WEB_SESSION_TTL_SECS,
+            crate::config::web_session_ttl_secs(&state.paths),
             &header_text(&headers, "user-agent"),
             &ip,
         )
@@ -901,7 +949,7 @@ async fn github_callback(
         auth::USER_SESSION_COOKIE,
         &token,
         "/account",
-        accounts::WEB_SESSION_TTL_SECS,
+        crate::config::web_session_ttl_secs(&state.paths),
         auth::request_is_secure(&headers),
     );
     Response::builder()
@@ -961,6 +1009,654 @@ async fn github_unlink(
     Ok(Json(json!({"ok": true, "message": "已解绑 GitHub"})).into_response())
 }
 
+#[derive(Deserialize)]
+struct AuthorHashBody {
+    #[serde(rename = "authorHash", default)]
+    author_hash: String,
+}
+
+async fn my_follows(
+    State(state): State<AppState>,
+    Extension(session): Extension<SessionInfo>,
+) -> ApiResult<Json<Value>> {
+    let authors = follows::following_authors(&state.db, &session.user_id)
+        .await
+        .map_err(ApiError::internal)?;
+    let followers = follows::follower_count(&state.db, &session.user_id)
+        .await
+        .map_err(ApiError::internal)?;
+    let following = authors.len() as i64;
+    Ok(Json(json!({
+        "ok": true,
+        "authors": authors,
+        "followers": followers,
+        "following": following,
+    })))
+}
+
+async fn preferences_value(state: &AppState, user_id: &str) -> ApiResult<Value> {
+    let user_id = user_id.to_string();
+    let row = state
+        .db
+        .call(move |conn| {
+            let row = conn
+                .query_row(
+                    "SELECT show_r18, show_r18_set, consent_version, consent_at
+                     FROM user_preferences WHERE user_id = ?1",
+                    [user_id],
+                    |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, i64>(1)?,
+                            row.get::<_, i64>(2)?,
+                            row.get::<_, Option<String>>(3)?,
+                        ))
+                    },
+                )
+                .optional()?;
+            Ok(row)
+        })
+        .await
+        .map_err(ApiError::internal)?;
+    let (show_r18, show_r18_set, consent_version, consent_at) = row.unwrap_or((0, 0, 0, None));
+    Ok(json!({
+        "ok": true,
+        "showR18": show_r18 != 0,
+        "showR18Set": show_r18_set != 0,
+        "consentVersion": consent_version,
+        "consentAt": consent_at,
+    }))
+}
+
+async fn get_preferences(
+    State(state): State<AppState>,
+    Extension(session): Extension<SessionInfo>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(preferences_value(&state, &session.user_id).await?))
+}
+
+async fn update_preferences(
+    State(state): State<AppState>,
+    Extension(session): Extension<SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
+    let value = json_body(body).await?;
+    let show_r18 = value.get("showR18").and_then(Value::as_bool).map(|value| value as i64);
+    let consent_version = value
+        .get("consentVersion")
+        .and_then(Value::as_i64)
+        .map(|value| value.max(0));
+    if show_r18.is_none() && consent_version.is_none() {
+        return Err(ApiError::bad("没有需要保存的设置"));
+    }
+    let user_id = session.user_id.clone();
+    let now = now_iso();
+    let consent_at = consent_version.filter(|value| *value > 0).map(|_| now.clone());
+    state
+        .db
+        .call(move |conn| {
+            conn.execute(
+                "INSERT INTO user_preferences(user_id, show_r18, show_r18_set, consent_version, consent_at, updated_at)
+                 VALUES (?1, COALESCE(?2, 0), CASE WHEN ?2 IS NULL THEN 0 ELSE 1 END, COALESCE(?3, 0), ?4, ?5)
+                 ON CONFLICT(user_id) DO UPDATE SET
+                    show_r18 = COALESCE(?2, user_preferences.show_r18),
+                    show_r18_set = CASE
+                        WHEN ?2 IS NULL THEN user_preferences.show_r18_set
+                        ELSE 1
+                    END,
+                    consent_version = COALESCE(?3, user_preferences.consent_version),
+                    consent_at = CASE
+                        WHEN ?3 IS NULL THEN user_preferences.consent_at
+                        WHEN ?3 = 0 THEN NULL
+                        WHEN user_preferences.consent_version = 0
+                            OR user_preferences.consent_at IS NULL THEN ?4
+                        ELSE user_preferences.consent_at
+                    END,
+                    updated_at = ?5",
+                params![user_id, show_r18, consent_version, consent_at, now],
+            )?;
+            Ok(())
+        })
+        .await
+        .map_err(ApiError::internal)?;
+    Ok(Json(preferences_value(&state, &session.user_id).await?))
+}
+
+async fn follow_author(
+    State(state): State<AppState>,
+    Extension(session): Extension<SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
+    let value = json_body(body).await?;
+    let author_hash = value
+        .get("authorHash")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if !valid_author_hash(&author_hash) {
+        return Err(ApiError::bad("作者标识无效"));
+    }
+    if !follows::author_exists(&state.db, &author_hash)
+        .await
+        .map_err(ApiError::internal)?
+    {
+        return Err(ApiError::not_found("作者不存在"));
+    }
+    follows::follow(&state.db, &session.user_id, &author_hash)
+        .await
+        .map_err(ApiError::internal)?;
+    let followers = follows::author_follower_count(&state.db, &author_hash)
+        .await
+        .map_err(ApiError::internal)?;
+    Ok(Json(json!({
+        "ok": true,
+        "following": true,
+        "followers": followers,
+    })))
+}
+
+async fn unfollow_author(
+    State(state): State<AppState>,
+    Extension(session): Extension<SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
+    let value = json_body(body).await?;
+    let author_hash = value
+        .get("authorHash")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if !valid_author_hash(&author_hash) {
+        return Err(ApiError::bad("作者标识无效"));
+    }
+    follows::unfollow(&state.db, &session.user_id, &author_hash)
+        .await
+        .map_err(ApiError::internal)?;
+    let followers = follows::author_follower_count(&state.db, &author_hash)
+        .await
+        .map_err(ApiError::internal)?;
+    Ok(Json(json!({
+        "ok": true,
+        "following": false,
+        "followers": followers,
+    })))
+}
+
+const DEVICE_CODE_TTL_SECS: u64 = 10 * 60;
+const DEVICE_CODE_INTERVAL_SECS: u64 = 2;
+
+fn random_device_user_code() -> String {
+    const ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let mut rng = rand::thread_rng();
+    (0..8)
+        .map(|_| ALPHABET[rng.gen_range(0..ALPHABET.len())] as char)
+        .collect()
+}
+
+async fn unique_device_user_code(state: &AppState) -> ApiResult<String> {
+    for _ in 0..12 {
+        let code = random_device_user_code();
+        let candidate = code.clone();
+        let exists: bool = state
+            .db
+            .call(move |conn| {
+                let count: i64 = conn.query_row(
+                    "SELECT COUNT(*) FROM device_login_codes WHERE user_code = ?1",
+                    [candidate],
+                    |row| row.get(0),
+                )?;
+                Ok(count > 0)
+            })
+            .await
+            .map_err(ApiError::internal)?;
+        if !exists {
+            return Ok(code);
+        }
+    }
+    Err(ApiError::internal("无法生成一次性密钥"))
+}
+
+async fn device_start(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
+    let ip = request_ip(&headers);
+    if !rate_allowed(&state, &format!("device-start:{ip}"), 10, 300) {
+        return Err(ApiError::too_many("操作过于频繁，请稍后再试"));
+    }
+    let value = json_body(body).await.unwrap_or_else(|_| Value::Object(Default::default()));
+    let device_name = value
+        .get("deviceName")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let user_agent = header_text(&headers, "user-agent");
+    let stored_agent = if device_name.is_empty() {
+        user_agent
+    } else {
+        format!("{user_agent} ({device_name})")
+    };
+    let device_code = random_hex(32);
+    let device_code_hash = sha256_hex(device_code.as_bytes());
+    let user_code = unique_device_user_code(&state).await?;
+    let now = now_iso();
+    let expires_at = unix_now() as i64 + DEVICE_CODE_TTL_SECS as i64;
+    let hash_for_db = device_code_hash.clone();
+    let code_for_db = user_code.clone();
+    let agent_for_db = stored_agent.clone();
+    let ip_for_db = ip.clone();
+    state
+        .db
+        .call(move |conn| {
+            conn.execute(
+                "DELETE FROM device_login_codes WHERE expires_at <= ?1",
+                [unix_now() as i64],
+            )?;
+            conn.execute(
+                "INSERT INTO device_login_codes(
+                    device_code_hash, user_code, status, user_agent, ip, created_at, expires_at
+                 ) VALUES (?1, ?2, 'pending', ?3, ?4, ?5, ?6)",
+                params![hash_for_db, code_for_db, agent_for_db, ip_for_db, now, expires_at],
+            )?;
+            Ok(())
+        })
+        .await
+        .map_err(ApiError::internal)?;
+    let verify_url = format!(
+        "{}device?code={}",
+        mailer::account_base_url(&state.paths),
+        user_code
+    );
+    Ok(Json(json!({
+        "ok": true,
+        "deviceCode": device_code,
+        "userCode": user_code,
+        "verifyUrl": verify_url,
+        "expiresIn": DEVICE_CODE_TTL_SECS,
+        "interval": DEVICE_CODE_INTERVAL_SECS,
+    })))
+}
+
+#[derive(Deserialize)]
+struct DevicePollQuery {
+    #[serde(rename = "deviceCode", default)]
+    device_code: String,
+}
+
+async fn device_poll(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<DevicePollQuery>,
+) -> ApiResult<Json<Value>> {
+    let ip = request_ip(&headers);
+    if !rate_allowed(&state, &format!("device-poll:{ip}"), 600, 600) {
+        return Err(ApiError::too_many("轮询过于频繁"));
+    }
+    let device_code = query.device_code.trim().to_string();
+    if device_code.is_empty() {
+        return Err(ApiError::bad("缺少登录密钥"));
+    }
+    let device_code_hash = sha256_hex(device_code.as_bytes());
+    let row = state
+        .db
+        .call(move |conn| {
+            let row = conn
+                .query_row(
+                    "SELECT status, user_id, expires_at, COALESCE(user_agent, ''), consumed_at
+                     FROM device_login_codes WHERE device_code_hash = ?1",
+                    [device_code_hash],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                            row.get::<_, i64>(2)?,
+                            row.get::<_, String>(3)?,
+                            row.get::<_, Option<String>>(4)?,
+                        ))
+                    },
+                )
+                .optional()?;
+            Ok(row)
+        })
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::not_found("登录密钥无效或已过期"))?;
+    let (status, user_id, expires_at, stored_agent, consumed_at) = row;
+    if consumed_at.is_some() {
+        return Ok(Json(json!({"ok": true, "status": "consumed"})));
+    }
+    if expires_at <= unix_now() as i64 {
+        return Ok(Json(json!({"ok": true, "status": "expired"})));
+    }
+    if status != "approved" {
+        return Ok(Json(json!({"ok": true, "status": "pending"})));
+    }
+    let Some(user_id) = user_id else {
+        return Ok(Json(json!({"ok": true, "status": "pending"})));
+    };
+    let updated = {
+        let device_code_hash = sha256_hex(device_code.as_bytes());
+        let consumed_at = now_iso();
+        state
+            .db
+            .call(move |conn| {
+                let changed = conn.execute(
+                    "UPDATE device_login_codes
+                     SET consumed_at = ?1
+                     WHERE device_code_hash = ?2
+                       AND status = 'approved'
+                       AND consumed_at IS NULL",
+                    params![consumed_at, device_code_hash],
+                )?;
+                Ok(changed)
+            })
+            .await
+            .map_err(ApiError::internal)?
+    };
+    if updated == 0 {
+        return Ok(Json(json!({"ok": true, "status": "consumed"})));
+    }
+    let user = accounts::user_by_id(&state.db, &user_id)
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::not_found("账号不存在"))?;
+    if user.status == "disabled" || user.status == "rejected" {
+        return Err(ApiError::new(StatusCode::FORBIDDEN, "账号未启用"));
+    }
+    let ttl = accounts::ANDROID_SESSION_TTL_SECS;
+    let agent = if stored_agent.is_empty() {
+        header_text(&headers, "user-agent")
+    } else {
+        stored_agent
+    };
+    let token = state
+        .sessions
+        .create(&user.id, "user", ttl, &agent, &ip)
+        .await
+        .map_err(ApiError::internal)?;
+    Ok(Json(json!({
+        "ok": true,
+        "status": "approved",
+        "user": user_json(&user),
+        "expiresIn": ttl,
+        "token": token,
+    })))
+}
+
+#[derive(Deserialize)]
+struct DeviceInfoQuery {
+    #[serde(default)]
+    code: String,
+}
+
+async fn device_info(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<DeviceInfoQuery>,
+) -> ApiResult<Json<Value>> {
+    let ip = request_ip(&headers);
+    if !rate_allowed(&state, &format!("device-info:{ip}"), 120, 300) {
+        return Err(ApiError::too_many("请求过于频繁"));
+    }
+    let user_code = query.code.trim().to_ascii_uppercase();
+    if user_code.is_empty() {
+        return Err(ApiError::bad("缺少一次性密钥"));
+    }
+    let row = state
+        .db
+        .call(move |conn| {
+            let row = conn
+                .query_row(
+                    "SELECT status, created_at, expires_at, COALESCE(user_agent, ''), consumed_at
+                     FROM device_login_codes WHERE user_code = ?1",
+                    [user_code],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, i64>(2)?,
+                            row.get::<_, String>(3)?,
+                            row.get::<_, Option<String>>(4)?,
+                        ))
+                    },
+                )
+                .optional()?;
+            Ok(row)
+        })
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::not_found("一次性密钥无效"))?;
+    let (status, created_at, expires_at, user_agent, consumed_at) = row;
+    let status = if consumed_at.is_some() {
+        "consumed"
+    } else if expires_at <= unix_now() as i64 {
+        "expired"
+    } else {
+        status.as_str()
+    };
+    Ok(Json(json!({
+        "ok": true,
+        "status": status,
+        "createdAt": created_at,
+        "expiresAt": expires_at,
+        "userAgent": user_agent,
+    })))
+}
+
+#[derive(Deserialize)]
+struct DeviceApproveBody {
+    #[serde(rename = "userCode", default)]
+    user_code: String,
+}
+
+async fn device_approve(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(session): Extension<SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
+    let ip = request_ip(&headers);
+    if !rate_allowed(
+        &state,
+        &format!("device-approve:{}:{ip}", session.user_id),
+        30,
+        300,
+    ) {
+        return Err(ApiError::too_many("操作过于频繁，请稍后再试"));
+    }
+    let value = json_body(body).await?;
+    let user_code = value
+        .get("userCode")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_ascii_uppercase();
+    if user_code.is_empty() {
+        return Err(ApiError::bad("缺少一次性密钥"));
+    }
+    let user_id = session.user_id.clone();
+    let approved_at = now_iso();
+    let changed = state
+        .db
+        .call(move |conn| {
+            let changed = conn.execute(
+                "UPDATE device_login_codes
+                 SET status = 'approved', user_id = ?1, approved_at = ?2
+                 WHERE user_code = ?3
+                   AND status = 'pending'
+                   AND expires_at > ?4",
+                params![user_id, approved_at, user_code, unix_now() as i64],
+            )?;
+            Ok(changed)
+        })
+        .await
+        .map_err(ApiError::internal)?;
+    if changed == 0 {
+        return Err(ApiError::bad("一次性密钥无效、已过期或已被使用"));
+    }
+    Ok(Json(json!({
+        "ok": true,
+        "message": "已确认登录，可以返回应用",
+    })))
+}
+
+#[derive(Deserialize)]
+struct QqCallbackQuery {
+    code: Option<String>,
+    state: Option<String>,
+    error: Option<String>,
+}
+
+async fn qq_start(State(state): State<AppState>) -> Response {
+    let Some(settings) = qq::QqSettings::load(&state.paths) else {
+        return Redirect::to("/account/login?qq=unconfigured").into_response();
+    };
+    let state_value = match oauth::create_state(&state.db, None, None).await {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!("qq oauth state failed: {error:#}");
+            return Redirect::to("/account/login?qq=error").into_response();
+        }
+    };
+    match settings.authorize_url(&state_value) {
+        Ok(url) => Redirect::to(&url).into_response(),
+        Err(error) => {
+            tracing::warn!("qq authorize url failed: {error:#}");
+            Redirect::to("/account/login?qq=error").into_response()
+        }
+    }
+}
+
+async fn qq_callback(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<QqCallbackQuery>,
+) -> Response {
+    if query.error.is_some() {
+        return Redirect::to("/account/login?qq=denied").into_response();
+    }
+    let Some(code) = query.code else {
+        return Redirect::to("/account/login?qq=error").into_response();
+    };
+    let Some(state_value) = query.state else {
+        return Redirect::to("/account/login?qq=state").into_response();
+    };
+    let Some(settings) = qq::QqSettings::load(&state.paths) else {
+        return Redirect::to("/account/login?qq=unconfigured").into_response();
+    };
+    if oauth::consume_state(&state.db, &state_value)
+        .await
+        .ok()
+        .flatten()
+        .is_none()
+    {
+        return Redirect::to("/account/login?qq=state").into_response();
+    }
+    let profile = match qq::exchange(&state.http, &settings, &code).await {
+        Ok(profile) => profile,
+        Err(error) => {
+            tracing::warn!("qq oauth failed: {error:#}");
+            return Redirect::to("/account/login?qq=exchange").into_response();
+        }
+    };
+
+    let mut user = match qq::identity_user_id(&state.db, &profile.openid)
+        .await
+        .ok()
+        .flatten()
+    {
+        Some(user_id) => accounts::user_by_id(&state.db, &user_id)
+            .await
+            .ok()
+            .flatten(),
+        None => None,
+    };
+    let user = if user.is_none() {
+        let base = sanitize_username(&profile.nickname);
+        let base = if base == "user" {
+            format!(
+                "qq-{}",
+                profile.openid.chars().take(10).collect::<String>()
+            )
+        } else {
+            base
+        };
+        let username = match unique_username(&state, &base).await {
+            Ok(value) => value,
+            Err(_) => return Redirect::to("/account/login?qq=error").into_response(),
+        };
+        let display_name: String = profile.nickname.chars().take(40).collect();
+        match accounts::create_user(
+            &state.db,
+            accounts::NewUser {
+                username: &username,
+                display_name: &display_name,
+                email: None,
+                password_hash: None,
+                role: "user",
+                status: "pending",
+                email_verified: true,
+            },
+        )
+        .await
+        {
+            Ok(created) => {
+                let _ = qq::link_identity(&state.db, &created.id, &profile).await;
+                created
+            }
+            Err(error) => {
+                tracing::warn!("qq user creation failed: {error:#}");
+                return Redirect::to("/account/login?qq=error").into_response();
+            }
+        }
+    } else {
+        let user = user.take().unwrap();
+        if let Err(error) = qq::link_identity(&state.db, &user.id, &profile).await {
+            tracing::warn!("qq identity link failed: {error:#}");
+            return Redirect::to("/account/login?qq=error").into_response();
+        }
+        user
+    };
+    if user.status == "disabled" || user.status == "rejected" {
+        return Redirect::to("/account/login?qq=disabled").into_response();
+    }
+    let ip = request_ip(&headers);
+    let token = match state
+        .sessions
+        .create(
+            &user.id,
+            "user",
+            crate::config::web_session_ttl_secs(&state.paths),
+            &header_text(&headers, "user-agent"),
+            &ip,
+        )
+        .await
+    {
+        Ok(token) => token,
+        Err(error) => {
+            tracing::warn!("qq session failed: {error:#}");
+            return Redirect::to("/account/login?qq=error").into_response();
+        }
+    };
+    let cookie = auth::session_cookie(
+        auth::USER_SESSION_COOKIE,
+        &token,
+        "/account",
+        crate::config::web_session_ttl_secs(&state.paths),
+        auth::request_is_secure(&headers),
+    );
+    Response::builder()
+        .status(StatusCode::SEE_OTHER)
+        .header("Location", "/account/?qq=1")
+        .header("Set-Cookie", cookie)
+        .body(axum::body::Body::empty())
+        .unwrap_or_else(|_| Redirect::to("/account/").into_response())
+}
+
 async fn profile(
     State(state): State<AppState>,
     Extension(session): Extension<SessionInfo>,
@@ -996,14 +1692,29 @@ async fn profile(
     let github = oauth::github_identity(&state.db, &user.id)
         .await
         .map_err(ApiError::internal)?;
+    let followers = follows::follower_count(&state.db, &user.id)
+        .await
+        .map_err(ApiError::internal)?;
+    let following = follows::following_count(&state.db, &user.id)
+        .await
+        .map_err(ApiError::internal)?;
+    let password_configured = accounts::user_password_hash(&state.db, &user.id)
+        .await
+        .map_err(ApiError::internal)?
+        .filter(|hash| !hash.trim().is_empty())
+        .is_some();
     Ok(Json(json!({
         "ok": true,
         "user": user_json(&user),
         "authors": author_values,
         "activeAuthor": active_author,
         "github": github,
+        "followers": followers,
+        "following": following,
+        "passwordConfigured": password_configured,
         "mailConfigured": mailer::configured(&state.paths),
         "githubConfigured": oauth::GithubSettings::load(&state.paths).is_some(),
+        "qqConfigured": qq::QqSettings::load(&state.paths).is_some(),
         "managerVersionCode": crate::config::manager_version_code(&state.paths),
     })))
 }
@@ -1059,30 +1770,44 @@ async fn change_password(
     if !valid_password(password) {
         return Err(ApiError::bad("密码长度需要 8-128 位"));
     }
-    let hash = accounts::user_password_hash(&state.db, &session.user_id)
+    let existing = accounts::user_password_hash(&state.db, &session.user_id)
         .await
         .map_err(ApiError::internal)?
-        .ok_or_else(|| ApiError::bad("当前账号没有密码，无法修改"))?;
-    let current = current.to_string();
-    let verified = tokio::task::spawn_blocking(move || bcrypt::verify(current, &hash))
-        .await
-        .map_err(|error| ApiError::internal(error.to_string()))?
-        .map_err(|error| ApiError::internal(error.to_string()))?;
-    if !verified {
-        return Err(ApiError::bad("当前密码不正确"));
-    }
+        .filter(|hash| !hash.trim().is_empty());
     let pass = password.to_string();
     let new_hash = tokio::task::spawn_blocking(move || auth::hash_admin_password(&pass))
         .await
         .map_err(|error| ApiError::internal(error.to_string()))?
         .map_err(ApiError::internal)?;
-    accounts::update_password(&state.db, &session.user_id, &new_hash)
-        .await
-        .map_err(ApiError::internal)?;
-    state.sessions.revoke_user(&session.user_id).await;
-    Ok(Json(
-        json!({"ok": true, "message": "密码已更新，请重新登录", "relogin": true}),
-    ))
+    match existing {
+        Some(hash) => {
+            let current = current.to_string();
+            let verified = tokio::task::spawn_blocking(move || bcrypt::verify(current, &hash))
+                .await
+                .map_err(|error| ApiError::internal(error.to_string()))?
+                .map_err(|error| ApiError::internal(error.to_string()))?;
+            if !verified {
+                return Err(ApiError::bad("当前密码不正确"));
+            }
+            accounts::update_password(&state.db, &session.user_id, &new_hash)
+                .await
+                .map_err(ApiError::internal)?;
+            state.sessions.revoke_user(&session.user_id).await;
+            Ok(Json(
+                json!({"ok": true, "message": "密码已更新，请重新登录", "relogin": true}),
+            ))
+        }
+        None => {
+            // Accounts created through GitHub/QQ have no password yet. A signed-in session is
+            // enough to set the first one, and the current session stays usable.
+            accounts::update_password(&state.db, &session.user_id, &new_hash)
+                .await
+                .map_err(ApiError::internal)?;
+            Ok(Json(
+                json!({"ok": true, "message": "密码已设置", "relogin": false}),
+            ))
+        }
+    }
 }
 
 async fn change_email(
@@ -1483,6 +2208,12 @@ struct DiscoverQuery {
     limit: Option<usize>,
     exclude: Option<String>,
     author: Option<String>,
+    /// `hot` sorts by heat instead of shuffling; the user center's popular card
+    /// uses this so it mirrors the admin overview ranking.
+    sort: Option<String>,
+    /// `1` keeps the signed-in user's own themes in the pool (popular rankings).
+    #[serde(rename = "includeOwn")]
+    include_own: Option<String>,
 }
 
 /// Theme ids owned by the signed-in account, used to keep "别人的主题"
@@ -1500,6 +2231,25 @@ async fn owned_theme_ids(state: &AppState, session: &SessionInfo) -> ApiResult<H
         .collect();
     let index = state.meta_index().await;
     Ok(index.owned_ids(&hashes, &session.username))
+}
+
+async fn user_show_r18(state: &AppState, user_id: &str) -> ApiResult<bool> {
+    let user_id = user_id.to_string();
+    let enabled = state
+        .db
+        .call(move |conn| {
+            let value: Option<i64> = conn
+                .query_row(
+                    "SELECT show_r18 FROM user_preferences WHERE user_id = ?1",
+                    [user_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            Ok(value.unwrap_or(0) != 0)
+        })
+        .await
+        .map_err(ApiError::internal)?;
+    Ok(enabled)
 }
 
 fn discover_theme_json(
@@ -1533,9 +2283,11 @@ fn discover_theme_json(
         "minManagerVersion": theme.min_manager_version,
         "name": theme.name,
         "author": theme.author,
+        "authorHash": theme.author_hash,
         "description": theme.description,
         "tags": theme.tags,
         "adaptive": theme.adaptive || crate::catalog::tags_mark_adaptive(&theme.tags),
+        "r18": theme.r18 || crate::catalog::tags_mark_r18(&theme.tags),
         "license": theme.license,
         "size": theme.size,
         "sha256": theme.sha256,
@@ -1571,6 +2323,9 @@ async fn discover_themes(
         })));
     };
     let stats = state.theme_stats();
+    let show_r18 = user_show_r18(&state, &session.user_id).await?;
+    let include_own = query.include_own.as_deref() == Some("1");
+    let sort_hot = query.sort.as_deref() == Some("hot");
     let owned = owned_theme_ids(&state, &session).await?;
     let author_filter = query
         .author
@@ -1580,7 +2335,10 @@ async fn discover_themes(
     let pool: Vec<&crate::models::CatalogEntry> = catalog
         .themes
         .iter()
-        .filter(|theme| !owned.contains(&theme.id))
+        .filter(|theme| include_own || !owned.contains(&theme.id))
+        .filter(|theme| {
+            show_r18 || !(theme.r18 || crate::catalog::tags_mark_r18(&theme.tags))
+        })
         .filter(|theme| {
             author_filter
                 .map(|author| theme.author.trim().eq_ignore_ascii_case(author))
@@ -1607,7 +2365,17 @@ async fn discover_themes(
         // Everything has been seen already; recycle the full pool.
         candidates = pool;
     }
-    candidates.shuffle(&mut rand::thread_rng());
+    if sort_hot {
+        candidates.sort_by(|left, right| {
+            let left_heat = stats.get(&left.id).map(|item| item.heat).unwrap_or(0);
+            let right_heat = stats.get(&right.id).map(|item| item.heat).unwrap_or(0);
+            right_heat
+                .cmp(&left_heat)
+                .then_with(|| left.name.cmp(&right.name))
+        });
+    } else {
+        candidates.shuffle(&mut rand::thread_rng());
+    }
     let themes: Vec<Value> = candidates
         .into_iter()
         .take(limit)

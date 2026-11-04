@@ -29,6 +29,20 @@
 - Full runbook, verification commands, and rollback: `docs/DEPLOYMENT.md`.
 - Mirror redirect configuration and verification: `docs/MIRRORS.md`.
 
+## Auth and follow notes
+
+- `account.env` also holds `QQ_APP_ID`, `QQ_APP_KEY`, `QQ_CALLBACK_URL` for QQ 互联 login. QQ accounts are created without an email; users can set a password and bind an email from the account center.
+- Web user/admin sessions default to 30 days. The admin-only "网页会话时长" control on the Auth page writes `WEB_SESSION_TTL_SECS` (1-365 days) to `account.env`; App tokens stay at 30 days and existing sessions keep their old expiry until re-login.
+- One-time key (device login) uses `device_login_codes`: the manager polls `account/api/auth/device/poll`, and the web page `account/device?code=...` must be confirmed while signed in. Codes expire after 10 minutes and are single-use.
+- Follow relations live in `user_follows` (follower user → author hash) and are exposed through `account/api/follows` plus the admin `api/follows` page. Catalog entries now expose `authorHash`; rebuild `catalog.json` after deploying so old entries gain it.
+- `user_preferences.show_r18_set` marks an explicit web R18 choice; a consent-only row leaves it unset. The manager pulls `/account/api/preferences` after sign-in, applies the web value once the device-local agreement exists, and only uploads its local value when the server has no explicit choice.
+
+## Maintenance mode
+
+- `MAINTENANCE=1` in `config.env` is the source of truth; `AppState.maintenance` mirrors it and `api/maintenance` toggles it, rebuilds `catalog.json` and writes an audit entry.
+- The maintenance middleware allows the admin console (`/api*`, `/admin*`), health, setup, the login/recovery pages and their auth API paths, plus valid admin cookies/user sessions. Everything else gets a 503 maintenance page or JSON.
+- `catalog.json` stays reachable and carries `"maintenance": true`, so managers can stop pulling themes even when Caddy `file_server` serves the catalog. Theme package assets are still served directly by Caddy; proxy `/themes/*` to the app if those must be blocked too.
+
 ## Product notes
 
 - UI languages: Chinese (source in HTML) + English (`static/locales/en.json`); switcher picks the browser language on first visit and stores the choice in `localStorage.sukisu-lang`.

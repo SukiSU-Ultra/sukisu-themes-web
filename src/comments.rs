@@ -1391,22 +1391,31 @@ pub async fn admin_settings_save(
     })))
 }
 
-/// Public avatar endpoint used by comments. It only serves the user's stored
-/// avatar asset, never other profile fields.
+/// Public avatar endpoint used by comments and the @mention picker. It accepts a user id or
+/// username and only serves the stored avatar asset, never other profile fields.
 pub async fn user_avatar(
     State(state): State<AppState>,
-    Path(user_id): Path<String>,
+    Path(identifier): Path<String>,
 ) -> ApiResult<Response> {
-    if user_id.is_empty()
-        || user_id.len() > 64
-        || !user_id.chars().all(|ch| ch.is_ascii_alphanumeric())
+    if identifier.is_empty()
+        || identifier.len() > 64
+        || !identifier
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
     {
-        return Err(ApiError::bad("无效的用户 ID"));
+        return Err(ApiError::bad("无效的用户标识"));
     }
-    let user = accounts::user_by_id(&state.db, &user_id)
+    // Comments pass the user id; the mention picker only knows the public username.
+    let user = match accounts::user_by_id(&state.db, &identifier)
         .await
         .map_err(ApiError::internal)?
-        .ok_or_else(|| ApiError::not_found("头像不存在"))?;
+    {
+        Some(user) => Some(user),
+        None => accounts::user_by_login(&state.db, &identifier)
+            .await
+            .map_err(ApiError::internal)?,
+    }
+    .ok_or_else(|| ApiError::not_found("头像不存在"))?;
     let key = user
         .avatar
         .filter(|value| value.starts_with("avatars/users/"))
@@ -1459,7 +1468,8 @@ pub async fn account_user_search(
                         EXISTS(
                             SELECT 1 FROM authors a
                             WHERE a.user_id = u.id AND a.status = 'active'
-                        ) AS is_author
+                        ) AS is_author,
+                        u.avatar
                  FROM users u
                  WHERE u.status = 'active'
                    AND (u.username LIKE ?1 ESCAPE '\\'
@@ -1468,11 +1478,21 @@ pub async fn account_user_search(
                  LIMIT 10",
             )?;
             let rows = statement.query_map(params![pattern], |row| {
+                let username: String = row.get(0)?;
+                let display_name: String = row.get(1)?;
+                let role: String = row.get(2)?;
+                let is_author: i64 = row.get(3)?;
+                let avatar_url = row
+                    .get::<_, Option<String>>(4)?
+                    .filter(|value| value.starts_with("avatars/users/"))
+                    .map(|_| format!("/account/api/users/{username}/avatar"))
+                    .unwrap_or_default();
                 Ok(json!({
-                    "username": row.get::<_, String>(0)?,
-                    "displayName": row.get::<_, String>(1)?,
-                    "role": row.get::<_, String>(2)?,
-                    "isAuthor": row.get::<_, i64>(3)? != 0,
+                    "username": username,
+                    "displayName": display_name,
+                    "role": role,
+                    "isAuthor": is_author != 0,
+                    "avatarUrl": avatar_url,
                 }))
             })?;
             let mut items = Vec::new();

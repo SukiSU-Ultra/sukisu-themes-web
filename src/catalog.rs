@@ -177,6 +177,22 @@ pub fn tags_mark_adaptive(tags: &[String]) -> bool {
     })
 }
 
+/// Tags that mark a theme as adult content. Kept in sync with the manager's fallback matcher.
+pub fn is_r18_tag(tag: &str) -> bool {
+    matches!(
+        tag.trim().to_lowercase().as_str(),
+        "r18" | "r-18" | "18+" | "nsfw" | "adult" | "成人" | "成人向" | "限制级"
+    )
+}
+
+pub fn tags_mark_r18(tags: &[String]) -> bool {
+    tags.iter().any(|tag| is_r18_tag(tag))
+}
+
+fn meta_is_r18(meta: &Meta) -> bool {
+    tags_mark_r18(&meta.tags)
+}
+
 fn meta_is_adaptive(meta: &Meta) -> bool {
     meta.adaptive || tags_mark_adaptive(&meta.tags)
 }
@@ -288,9 +304,11 @@ async fn build_catalog_entry(
         min_manager_version: meta.min_manager_version,
         name: meta.name.clone(),
         author: meta.author.clone(),
+        author_hash: meta.author_hash.clone().filter(|hash| valid_author_hash(hash)),
         description: meta.description.clone(),
         tags: meta.tags.clone(),
         adaptive: meta_is_adaptive(meta),
+        r18: meta_is_r18(meta),
         license: meta.license.clone(),
         size: store.size(&meta.package).await,
         sha256,
@@ -415,6 +433,7 @@ pub async fn rebuild_catalog(store: &AssetStore, paths: &Paths) -> Result<Vec<Ca
         min_format_version: MIN_FORMAT_VERSION,
         supported_formats: (MIN_FORMAT_VERSION..=CURRENT_FORMAT_VERSION).collect(),
         generated_at: Some(now_iso()),
+        maintenance: crate::config::maintenance_enabled(paths),
         themes: themes.clone(),
     };
     // Machine-read catalog: compact JSON keeps transfer and parse costs down.
@@ -914,6 +933,7 @@ pub async fn admin_themes(paths: &Paths, stats: &HashMap<String, ThemeStats>) ->
                 "description": theme.description,
                 "tags": theme.tags,
                 "adaptive": theme.adaptive || tags_mark_adaptive(&theme.tags),
+                "r18": theme.r18 || tags_mark_r18(&theme.tags),
                 "size": theme.size,
                 "license": theme.license,
                 "sha256": theme.sha256,
@@ -1042,6 +1062,15 @@ mod tests {
         assert_eq!(theme_id_from_package_path("themes/abc.sukisu"), None);
     }
 
+    #[test]
+    fn detects_r18_tags() {
+        assert!(tags_mark_r18(&["R18".to_string()]));
+        assert!(tags_mark_r18(&["nsfw".to_string()]));
+        assert!(tags_mark_r18(&["成人向".to_string()]));
+        assert!(!tags_mark_r18(&["dark".to_string()]));
+        assert!(!tags_mark_r18(&[]));
+    }
+
     #[tokio::test]
     async fn finds_legacy_author_avatar_by_name() {
         let directory = tempfile::tempdir().unwrap();
@@ -1069,5 +1098,22 @@ mod tests {
             author_avatar_key(&store, &paths, "missing-hash", Some("shirkneko")).await,
             Some("avatars/1-v1.jpg".to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn rebuild_catalog_copies_maintenance_flag() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        let paths = test_paths(root);
+        std::fs::create_dir_all(&paths.meta).unwrap();
+        let store = AssetStore::Local(LocalStore::new(root));
+
+        crate::config::set_maintenance_enabled(&paths, true).unwrap();
+        rebuild_catalog(&store, &paths).await.unwrap();
+        assert!(read_catalog(&paths).unwrap().maintenance);
+
+        crate::config::set_maintenance_enabled(&paths, false).unwrap();
+        rebuild_catalog(&store, &paths).await.unwrap();
+        assert!(!read_catalog(&paths).unwrap().maintenance);
     }
 }

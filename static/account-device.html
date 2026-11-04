@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>一次性密钥登录 · SukiSU 主题小铺</title>
+<link rel="icon" href="/account/logo.svg">
+<script src="/i18n.js"></script>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0d12;
+    --card: #151923;
+    --text: #f4f1ea;
+    --muted: #a8a49b;
+    --line: #2a2f3a;
+    --brand: #f0c46d;
+    --accent: #8fd3ff;
+    --danger: #ff9a9a;
+    --ok: #9ee6b8;
+  }
+  html[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f6f2ea;
+    --card: #ffffff;
+    --text: #201c16;
+    --muted: #6d675d;
+    --line: #e3dbcf;
+    --brand: #9a6b16;
+    --accent: #1f6f9e;
+    --danger: #b3261e;
+    --ok: #1f7a44;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: radial-gradient(1200px 600px at 20% -10%, #1c2233 0%, transparent 60%), var(--bg);
+    color: var(--text);
+    font: 14px/1.6 system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .card {
+    width: min(460px, 100%);
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    padding: 28px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, .35);
+  }
+  h1 { margin: 0 0 6px; font-size: 22px; }
+  p.hint { margin: 0 0 18px; color: var(--muted); font-size: 12.5px; }
+  .code {
+    margin: 14px 0 18px;
+    padding: 18px;
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--brand) 12%, transparent);
+    border: 1px dashed color-mix(in srgb, var(--brand) 50%, var(--line));
+    text-align: center;
+    font: 700 30px/1.1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 6px;
+  }
+  .meta { margin: 0 0 14px; color: var(--muted); font-size: 12px; word-break: break-all; }
+  .message { min-height: 20px; margin: 12px 0; font-size: 13px; }
+  .message.error { color: var(--danger); }
+  .message.ok { color: var(--ok); }
+  button {
+    width: 100%;
+    height: 46px;
+    border: 0;
+    border-radius: 14px;
+    background: var(--brand);
+    color: #241a05;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:disabled { opacity: .55; cursor: default; }
+  button.secondary {
+    margin-top: 10px;
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--line);
+  }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+  <main class="card">
+    <h1>一次性密钥登录</h1>
+    <p class="hint">确认后，SukiSU 管理器会在这台设备上自动完成登录。</p>
+    <div class="code" id="userCode">—</div>
+    <p class="meta" id="deviceMeta"></p>
+    <div class="message" id="message"></div>
+    <button id="approveBtn" type="button" disabled>正在检查...</button>
+    <button id="backBtn" type="button" class="secondary hidden">返回 SukiSU 管理器</button>
+  </main>
+<script>
+(() => {
+  const basePath = location.pathname.replace(/\/device(?:\.html)?\/?$/, '/');
+  const API = basePath.endsWith('/account/') ? basePath + 'api' : '/account/api';
+  const code = new URLSearchParams(location.search).get('code') || '';
+  const userCodeEl = document.getElementById('userCode');
+  const metaEl = document.getElementById('deviceMeta');
+  const messageEl = document.getElementById('message');
+  const approveBtn = document.getElementById('approveBtn');
+  const backBtn = document.getElementById('backBtn');
+
+  function showMessage(text, kind) {
+    messageEl.textContent = text || '';
+    messageEl.className = 'message' + (kind ? ' ' + kind : '');
+  }
+
+  async function request(path, options) {
+    const response = await fetch(API + path, {
+      ...options,
+      credentials: 'same-origin',
+      headers: { 'X-Requested-With': 'SukiSUThemeAdmin', ...(options && options.headers) },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || data.message || ('HTTP ' + response.status));
+    return data;
+  }
+
+  if (!code) {
+    userCodeEl.textContent = '—';
+    showMessage('缺少一次性密钥，请重新在管理器中点击登录。', 'error');
+    approveBtn.textContent = '无法继续';
+    return;
+  }
+
+  // Keep the code across the web login redirect.
+  sessionStorage.setItem('sukisu_device_code', code);
+
+  (async () => {
+    let session;
+    try {
+      session = await request('/session');
+    } catch (_) {
+      session = null;
+    }
+    if (!session || !session.authenticated) {
+      location.replace(basePath + 'login');
+      return;
+    }
+
+    sessionStorage.removeItem('sukisu_device_code');
+    userCodeEl.textContent = code.trim().toUpperCase();
+
+    let info;
+    try {
+      info = await request('/auth/device/info?code=' + encodeURIComponent(code.trim()));
+    } catch (error) {
+      showMessage(error.message, 'error');
+      approveBtn.textContent = '密钥无效';
+      return;
+    }
+
+    if (info.userAgent) {
+      metaEl.textContent = '请求来源：' + info.userAgent;
+    }
+    if (info.status === 'expired') {
+      showMessage('该密钥已过期，请回到管理器重新发起登录。', 'error');
+      approveBtn.textContent = '密钥已过期';
+      return;
+    }
+    if (info.status === 'consumed') {
+      showMessage('该密钥已被使用，请回到管理器查看登录状态。', 'ok');
+      approveBtn.textContent = '已使用';
+      return;
+    }
+    if (info.status === 'approved') {
+      showMessage('已确认登录，请返回 SukiSU 管理器。', 'ok');
+      approveBtn.textContent = '已确认';
+      return;
+    }
+
+    approveBtn.disabled = false;
+    approveBtn.textContent = '确认登录';
+    approveBtn.addEventListener('click', async () => {
+      approveBtn.disabled = true;
+      approveBtn.textContent = '正在确认...';
+      try {
+        const data = await request('/auth/device/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userCode: code.trim().toUpperCase() }),
+        });
+        showMessage(data.message || '已确认登录，请返回 SukiSU 管理器。', 'ok');
+        approveBtn.textContent = '已确认';
+        backBtn.classList.remove('hidden');
+      } catch (error) {
+        showMessage(error.message, 'error');
+        approveBtn.disabled = false;
+        approveBtn.textContent = '重试';
+      }
+    });
+  })();
+
+  backBtn.addEventListener('click', () => {
+    // There is no custom scheme callback; just tell the user to switch apps.
+    showMessage('请切换到 SukiSU 管理器，应用会自动完成登录。', 'ok');
+  });
+})();
+</script>
+</body>
+</html>

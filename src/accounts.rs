@@ -11,7 +11,6 @@ use crate::util::{now_iso, random_hex, unix_now};
 
 pub const EMAIL_VERIFY_TTL_SECS: u64 = 24 * 60 * 60;
 pub const PASSWORD_RESET_TTL_SECS: u64 = 30 * 60;
-pub const WEB_SESSION_TTL_SECS: u64 = 12 * 60 * 60;
 pub const ANDROID_SESSION_TTL_SECS: u64 = 30 * 24 * 60 * 60;
 
 const USER_COLUMNS: &str = "id, username, display_name, email, avatar, role, status, \
