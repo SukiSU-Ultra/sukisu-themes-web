@@ -15,6 +15,8 @@ use crate::models::FilePart;
 use crate::util::{file_extension, now_iso, random_hex};
 
 const CHUNK_SIZE: u64 = 4 * 1024 * 1024;
+const MIN_CHUNK_SIZE: u64 = 1024 * 1024;
+const MAX_CHUNK_SIZE: u64 = 8 * 1024 * 1024;
 const SESSION_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -37,6 +39,9 @@ struct InitBody {
     size: u64,
     #[serde(default)]
     fingerprint: String,
+    /// Optional client preference. Older managers omit it; the server keeps 4 MB then.
+    #[serde(default)]
+    chunk_size: Option<u64>,
 }
 
 pub fn router() -> Router<AppState> {
@@ -76,6 +81,14 @@ async fn init(
     if fingerprint.chars().count() > 200 {
         fingerprint = fingerprint.chars().take(200).collect();
     }
+    let chunk_size = body.chunk_size.unwrap_or(CHUNK_SIZE);
+    if !(MIN_CHUNK_SIZE..=MAX_CHUNK_SIZE).contains(&chunk_size) {
+        return Err(ApiError::bad(format!(
+            "分片大小必须在 {} MB 到 {} MB 之间",
+            MIN_CHUNK_SIZE / (1024 * 1024),
+            MAX_CHUNK_SIZE / (1024 * 1024)
+        )));
+    }
 
     if let Some((dir, meta)) = find_existing(
         &state.paths,
@@ -100,8 +113,8 @@ async fn init(
         owner_id: session.user_id,
         filename,
         size: body.size,
-        chunk_size: CHUNK_SIZE,
-        total_chunks: body.size.div_ceil(CHUNK_SIZE),
+        chunk_size,
+        total_chunks: body.size.div_ceil(chunk_size),
         fingerprint,
         created_at: now.clone(),
         updated_at: now,

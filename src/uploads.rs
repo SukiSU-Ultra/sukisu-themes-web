@@ -366,11 +366,16 @@ pub async fn prepare_upload(form: UploadForm) -> Result<PreparedUpload, String> 
         return Err(format!("最多上传 {MAX_SCREENSHOTS} 张截图"));
     }
 
-    let package_data = form.package.data.clone();
-    let package_info = tokio::task::spawn_blocking(move || validate_package(&package_data))
-        .await
-        .map_err(|error| error.to_string())?
-        .map_err(|error| error.to_string())?;
+    // Move the package into the blocking validator and return it afterwards. Cloning a
+    // package of up to 128 MB only to read theme.json doubles peak memory and copy time.
+    let package = form.package;
+    let (package, package_info) = tokio::task::spawn_blocking(move || {
+        let info = validate_package(&package.data).map_err(|error| error.to_string())?;
+        Ok::<_, String>((package, info))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())?;
     let format_version = match form.format_version.as_deref() {
         Some(value) if !value.trim().is_empty() => {
             let declared = value
@@ -401,55 +406,74 @@ pub async fn prepare_upload(form: UploadForm) -> Result<PreparedUpload, String> 
         tags.retain(|tag| canonical_tag(tag) != ADAPTIVE_TAG);
     }
 
+    // Start every image optimization before awaiting any of them: preview, avatar and up
+    // to six screenshots no longer serialize the post-upload verification phase.
     let preview_input_ext = form.preview.ext.clone();
     let preview_data = form.preview.data;
-    let (preview_bytes, preview_ext) = tokio::task::spawn_blocking(move || {
+    let preview_task = tokio::task::spawn_blocking(move || {
         images::optimize_image(preview_data, &preview_input_ext, PREVIEW_MAX_EDGE)
-    })
-    .await
-    .map_err(|error| error.to_string())?
-    .map_err(|error| error.to_string())?;
-    let preview = FilePart {
-        filename: "preview".to_string(),
-        ext: preview_ext,
-        data: preview_bytes,
-    };
-
-    let avatar = match form.avatar {
-        Some(avatar) => {
-            let input_ext = avatar.ext.clone();
-            let data = avatar.data;
-            let (bytes, ext) = tokio::task::spawn_blocking(move || {
-                images::optimize_image(data, &input_ext, AVATAR_MAX_EDGE)
-            })
-            .await
-            .map_err(|error| error.to_string())?
-            .map_err(|error| error.to_string())?;
-            Some(FilePart {
-                filename: "avatar".to_string(),
+            .map(|(bytes, ext)| FilePart {
+                filename: "preview".to_string(),
                 ext,
                 data: bytes,
             })
-        }
-        None => None,
-    };
+            .map_err(|error| error.to_string())
+    });
 
-    let mut screenshots = Vec::with_capacity(form.screenshots.len());
-    for (index, screenshot) in form.screenshots.into_iter().enumerate() {
-        let input_ext = screenshot.ext.clone();
-        let data = screenshot.data;
-        let (bytes, ext) = tokio::task::spawn_blocking(move || {
-            images::optimize_image(data, &input_ext, SCREENSHOT_MAX_EDGE)
+    let avatar_task = form.avatar.map(|avatar| {
+        let input_ext = avatar.ext.clone();
+        let data = avatar.data;
+        tokio::task::spawn_blocking(move || {
+            images::optimize_image(data, &input_ext, AVATAR_MAX_EDGE)
+                .map(|(bytes, ext)| FilePart {
+                    filename: "avatar".to_string(),
+                    ext,
+                    data: bytes,
+                })
+                .map_err(|error| error.to_string())
         })
+    });
+
+    let screenshot_tasks: Vec<_> = form
+        .screenshots
+        .into_iter()
+        .enumerate()
+        .map(|(index, screenshot)| {
+            let input_ext = screenshot.ext.clone();
+            let data = screenshot.data;
+            tokio::task::spawn_blocking(move || {
+                images::optimize_image(data, &input_ext, SCREENSHOT_MAX_EDGE)
+                    .map(|(bytes, ext)| FilePart {
+                        filename: format!("screenshot-{:02}", index + 1),
+                        ext,
+                        data: bytes,
+                    })
+                    .map_err(|error| error.to_string())
+            })
+        })
+        .collect();
+
+    let screenshots = futures::future::join_all(screenshot_tasks)
+        .await
+        .into_iter()
+        .map(|result| {
+            result
+                .map_err(|error| error.to_string())?
+                .map_err(|error| error.to_string())
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let preview = preview_task
         .await
         .map_err(|error| error.to_string())?
         .map_err(|error| error.to_string())?;
-        screenshots.push(FilePart {
-            filename: format!("screenshot-{:02}", index + 1),
-            ext,
-            data: bytes,
-        });
-    }
+    let avatar = match avatar_task {
+        Some(task) => Some(
+            task.await
+                .map_err(|error| error.to_string())?
+                .map_err(|error| error.to_string())?,
+        ),
+        None => None,
+    };
 
     Ok(PreparedUpload {
         id: theme_id,
@@ -462,7 +486,7 @@ pub async fn prepare_upload(form: UploadForm) -> Result<PreparedUpload, String> 
         license,
         min_manager_version,
         changelog,
-        package: form.package,
+        package,
         package_info,
         preview,
         avatar,
