@@ -261,6 +261,30 @@ pub async fn validate(db: &Database, token: &str, scope: &str) -> bool {
     result.unwrap_or(false)
 }
 
+/// Resolve a named token to its display name for the API monitor. Returns
+/// `None` for disabled/expired/unknown tokens; callers still label the request
+/// as a theme-token request so invalid attempts remain visible.
+pub async fn name_for_token(db: &Database, token: &str) -> Option<String> {
+    let token_hash = hash_token(token);
+    let now = unix_now() as i64;
+    db.call(move |conn| {
+        let name: Option<String> = conn
+            .query_row(
+                "SELECT name FROM theme_tokens
+                 WHERE token_hash = ?1 AND enabled = 1
+                   AND (expires_at IS NULL OR expires_at > ?2)
+                 LIMIT 1",
+                params![token_hash, now],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(name)
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
 /// Enabled, unexpired token count; used to keep `status.tokenSet` honest
 /// when the env master token is not configured.
 pub async fn enabled_count(db: &Database) -> anyhow::Result<i64> {

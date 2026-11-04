@@ -28,6 +28,10 @@ struct NetworkBody {
     bind: String,
     port: u16,
     #[serde(default)]
+    ip_family: Option<crate::net::IpFamily>,
+    #[serde(default)]
+    outbound_ip_family: Option<crate::net::IpFamily>,
+    #[serde(default)]
     domains: Vec<String>,
     #[serde(default)]
     domains_text: String,
@@ -54,6 +58,8 @@ impl NetworkBody {
         config::validate_network(
             &self.bind,
             self.port,
+            self.ip_family.unwrap_or_default(),
+            self.outbound_ip_family.unwrap_or_default(),
             &self.domains(),
             &self.public_url,
             &self.admin_url,
@@ -208,9 +214,11 @@ async fn network_apply(
 
 async fn accounts_audit(state: &AppState, actor: &str, settings: &NetworkSettings) {
     let detail = format!(
-        "{}:{} domains={} public={}",
+        "{}:{} listen={} outbound={} domains={} public={}",
         settings.bind,
         settings.port,
+        settings.ip_family.as_str(),
+        settings.outbound_ip_family.as_str(),
         settings.domains.join(","),
         settings.public_url
     );

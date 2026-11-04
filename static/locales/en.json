@@ -1375,7 +1375,143 @@
     "没有需要更新的字段": "No fields to update",
     "令牌已创建，离开弹窗后将无法再次查看": "Token created. It cannot be shown again after this dialog closes.",
     "未设置主令牌，无法通过 HTTP 自测目录接口": "No master token is set, so the catalog endpoint cannot be self-tested over HTTP",
-    "加载访问令牌失败：": "Failed to load tokens: "
+    "加载访问令牌失败：": "Failed to load tokens: ",
+    "接口监控": "API monitor",
+    "API 实时使用监控": "Real-time API usage",
+    "实时查看正在处理的 API 请求、使用者身份、来源 IP 和完整回传内容，并可强制断开连接或管理历史日志。": "Watch in-flight API requests, caller identity, source IP and full payloads, then force-disconnect or manage historical logs.",
+    "实时查看 API 使用者、完整请求/响应内容和连接日志。": "Inspect API callers, full request/response payloads and connection logs in real time.",
+    "活跃连接": "Active connections",
+    "正在处理": "In progress",
+    "近 24 小时": "Last 24 hours",
+    "已记录请求": "Recorded requests",
+    "日志总数": "Total logs",
+    "不自动清理": "No automatic cleanup",
+    "断开 / 丢弃": "Aborted / dropped",
+    "强制断开 / 队列溢出": "Forced disconnects / queue overflows",
+    "实时连接": "Live connections",
+    "监控 /api、/admin/api、/account/api、/submit、/catalog.json、/health 以及主题包/预览图/头像/截图下载，每 1 秒自动刷新；正在处理和最近完成的请求都会显示在这里。": "Monitors /api, /admin/api, /account/api, /submit, /catalog.json, /health and theme package/preview/avatar/screenshot downloads every second; both in-flight and recently completed requests are shown.",
+    "自动刷新": "Auto refresh",
+    "立即刷新": "Refresh now",
+    "接口 / 功能": "Endpoint / feature",
+    "使用者": "Caller",
+    "来源 IP": "Source IP",
+    "开始时间": "Started",
+    "已持续": "Duration",
+    "当前没有活跃连接，最近也没有新的请求": "No active connections and no recent requests",
+    "最近完成": "Recently completed",
+    "隐藏 IP（逗号分隔，支持 *）": "Hide IPs (comma separated, * supported)",
+    "隐藏用户/令牌（逗号分隔）": "Hide users/tokens (comma separated)",
+    "清除隐藏规则": "Clear hide rules",
+    "保存在本浏览器，同时作用于实时连接、日志和导出": "Stored in this browser; applies to live connections, logs and exports",
+    "已隐藏": "Hidden",
+    "追踪 IP（逗号分隔，支持 *）": "Track IPs (comma separated, * supported)",
+    "追踪用户/令牌（逗号分隔）": "Track users/tokens (comma separated)",
+    "只看追踪": "Tracked only",
+    "清除追踪规则": "Clear tracking rules",
+    "追踪项会高亮显示": "Tracked matches are highlighted",
+    "追踪": "Tracked",
+    "追踪此 IP": "Track this IP",
+    "追踪此用户/令牌": "Track this user/token",
+    "指定 IP/用户追踪并高亮": "Track specific IPs/users and highlight them",
+    "监听协议": "Listen family",
+    "出站协议": "Outbound family",
+    "自动": "Auto",
+    "自动（按监听 IP）": "Auto (from listen IP)",
+    "全部协议": "All families",
+    "按 IP 协议筛选": "Filter by IP family",
+    "IPv6 监听时 Lucky 上游填写 [::1]:端口": "When listening on IPv6, set the Lucky upstream to [::1]:port",
+    "服务器访问镜像/AList/GitHub 时使用，重启生效": "Used for mirror/AList/GitHub requests; takes effect after restart",
+    "出站协议作用于 reqwest 客户端（镜像探测、AList、GitHub）；S3 与 SMTP 由各自底层客户端决定。IPv6 监听后需同步修改 Lucky 上游为 [::1]:端口，否则公网入口会中断。": "Outbound family applies to reqwest clients (mirror probes, AList, GitHub); S3 and SMTP use their own stacks. After switching to IPv6, update the Lucky upstream to [::1]:port or the public entry breaks.",
+    "来源 IP 优先读取 X-Forwarded-For / X-Real-IP，其次使用 TCP 对端地址；显示 127.0.0.1/::1 时请检查 Lucky 是否转发客户端 IP。": "Source IP prefers X-Forwarded-For / X-Real-IP and falls back to the TCP peer address. If it shows 127.0.0.1/::1, check whether Lucky forwards the client IP.",
+    "最近完成的连接": "Recently completed",
+    "还没有完成的连接": "No completed connections yet",
+    "连接日志": "Connection logs",
+    "所有已完成的 API 请求自动保存为日志，包含请求参数、响应内容、请求头和 Cookie。日志可能含有敏感信息，请谨慎导出；隐藏规则同时作用于日志与导出。": "Every completed API request is logged with parameters, response payload, headers and cookies. Logs may contain sensitive data — export with care; hide rules also apply to logs and exports.",
+    "搜索路径、功能、IP 或用户": "Search path, feature, IP or user",
+    "按身份筛选": "Filter by identity",
+    "全部身份": "All identities",
+    "登录用户": "Signed-in user",
+    "主题令牌": "Theme token",
+    "未登录": "Not signed in",
+    "成功 (2xx)": "Success (2xx)",
+    "重定向 (3xx)": "Redirect (3xx)",
+    "客户端错误 (4xx)": "Client error (4xx)",
+    "服务端错误 (5xx)": "Server error (5xx)",
+    "已断开": "Disconnected",
+    "按方法筛选": "Filter by method",
+    "全部方法": "All methods",
+    "导出日志": "Export logs",
+    "刷新日志": "Refresh logs",
+    "删除选中": "Delete selected",
+    "清空日志": "Clear logs",
+    "时间": "Time",
+    "耗时": "Took",
+    "大小": "Size",
+    "全选当前页": "Select current page",
+    "没有符合条件的连接日志": "No matching connection logs",
+    "连接详情": "Connection details",
+    "正在读取完整连接内容…": "Loading the full connection payload…",
+    "连接或日志不存在": "The connection or log no longer exists",
+    "详情": "Details",
+    "断开": "Disconnect",
+    "基本信息": "Overview",
+    "功能": "Feature",
+    "身份": "Identity",
+    "错误": "Error",
+    "请求信息": "Request",
+    "方法": "Method",
+    "路径": "Path",
+    "查询参数": "Query",
+    "请求类型": "Request type",
+    "请求大小": "Request size",
+    "请求头": "Request headers",
+    "Cookie": "Cookies",
+    "请求参数 / 请求内容": "Request parameters / body",
+    "响应头": "Response headers",
+    "响应内容": "Response body",
+    "请求 / 响应大小": "Request / response size",
+    "响应尚未返回": "The response has not been returned yet",
+    "没有请求头": "No request headers",
+    "没有携带 Cookie": "No cookies",
+    "没有内容": "No content",
+    "账号状态": "Account status",
+    "邮箱已验证": "Email verified",
+    "正常": "Active",
+    "待验证": "Email pending",
+    "仍在处理": "Still in progress",
+    "处理中": "In progress",
+    "主题访问令牌": "Theme access token",
+    "未知": "Unknown",
+    "监控已关闭": "Monitoring is disabled",
+    "实时": "Live",
+    "已暂停": "Paused",
+    "读取失败": "Failed to read",
+    "强制断开该连接？请求会立即中断；若携带管理员/用户登录会话，该会话也会立即失效。日志会记录本次操作。": "Force-disconnect this connection? The request stops immediately; any attached administrator/user session is also invalidated. The action is recorded in the admin log.",
+    "删除这条连接日志？此操作不可恢复。": "Delete this connection log? This cannot be undone.",
+    "请先选择要删除的日志": "Select logs to delete first",
+    "清空全部连接日志？此操作不可恢复，管理员操作日志会保留。": "Clear all connection logs? This cannot be undone; admin audit entries are kept.",
+    "连接日志已导出": "Connection logs exported",
+    "加载连接日志失败：": "Failed to load connection logs: ",
+    "断开失败：": "Failed to disconnect: ",
+    "导出失败：": "Failed to export: ",
+    "清空失败：": "Failed to clear: ",
+    "实时展示正在处理的 API 请求及其调用者、来源 IP、功能和回传内容，并保存完整的连接日志。": "Shows in-flight API requests with caller, source IP, feature and payload, and keeps full connection logs.",
+    "查看活跃连接和最近完成的请求": "See active connections and recently completed requests",
+    "按 IP/用户隐藏记录": "Hide records by IP/user",
+    "识别管理员、登录用户、主题令牌和未登录 IP": "Identify administrators, signed-in users, theme tokens and anonymous IPs",
+    "查看请求头、Cookie、请求参数和响应内容": "Inspect headers, cookies, request parameters and response bodies",
+    "强制断开连接并使其会话立即失效": "Force-disconnect a connection and invalidate its session immediately",
+    "按条件筛选、导出、单条/批量删除或清空日志": "Filter, export, delete one/bulk or clear logs",
+    "在实时连接中查看当前占用": "Check current usage in live connections",
+    "点击“详情”检查请求与响应内容": "Open Details to inspect request and response payloads",
+    "对异常连接执行“断开”": "Use Disconnect on suspicious connections",
+    "在连接日志中筛选、导出或清理记录": "Filter, export or clean up entries in connection logs",
+    "断开 API 连接": "Disconnect API connection",
+    "删除 API 日志": "Delete API logs",
+    "清空 API 日志": "Clear API logs",
+    "导出 API 日志": "Export API logs",
+    "API 连接": "API connection",
+    "API 日志": "API logs"
   },
   "patterns": [
     [
@@ -1873,6 +2009,94 @@
     [
       "^令牌参数格式错误：(.*)$",
       "Invalid token fields: $1"
+    ],
+    [
+      "^([0-9,]+) 个连接$",
+      "$1 connections"
+    ],
+    [
+      "^共 ([0-9,]+) 条$",
+      "Total $1"
+    ],
+    [
+      "^已选 ([0-9]+) 条 · 当前第 ([0-9]+) 页$",
+      "$1 selected · page $2"
+    ],
+    [
+      "^最多保留 ([0-9,]+) 条$",
+      "Keep at most $1"
+    ],
+    [
+      "^监控范围：/api、/admin/api、/account/api、/submit、/catalog.json、/health、主题资源 · 正文上限 (.*) · 日志保留 不限条数 · 队列丢弃 ([0-9,]+) 条$",
+      "Scope: /api, /admin/api, /account/api, /submit, /catalog.json, /health, theme assets · Body limit $1 · Retention unlimited · Dropped $2"
+    ],
+    [
+      "^监控范围：/api、/admin/api、/account/api、/submit、/catalog.json、/health、主题资源 · 正文上限 (.*) · 日志保留 ([0-9,]+) 条 · 队列丢弃 ([0-9,]+) 条$",
+      "Scope: /api, /admin/api, /account/api, /submit, /catalog.json, /health, theme assets · Body limit $1 · Retention $2 · Dropped $3"
+    ],
+    [
+      "^连接已断开，失效会话 ([0-9]+) 个$",
+      "Disconnected; $1 sessions invalidated"
+    ],
+    [
+      "^删除选中的 ([0-9]+) 条连接日志？此操作不可恢复。$",
+      "Delete $1 selected connection logs? This cannot be undone."
+    ],
+    [
+      "^已删除 ([0-9]+) 条连接日志$",
+      "Deleted $1 connection logs"
+    ],
+    [
+      "^已清空 ([0-9]+) 条连接日志$",
+      "Cleared $1 connection logs"
+    ],
+    [
+      "^内容已按监控上限截断，原始大小 (.*)$",
+      "Content was truncated at the monitor limit; original size $1"
+    ],
+    [
+      "^二进制内容（(.*)，(.*)），以下为前 512 字节的十六进制。$",
+      "Binary content ($1, $2); the first 512 bytes are shown in hex below."
+    ],
+    [
+      "^没有内容（(.*)）$",
+      "No content ($1)"
+    ],
+    [
+      "^加载连接日志失败：(.*)$",
+      "Failed to load connection logs: $1"
+    ],
+    [
+      "^断开失败：(.*)$",
+      "Failed to disconnect: $1"
+    ],
+    [
+      "^导出失败：(.*)$",
+      "Failed to export: $1"
+    ],
+    [
+      "^清空失败：(.*)$",
+      "Failed to clear: $1"
+    ],
+    [
+      "^读取失败：(.*)$",
+      "Failed to read: $1"
+    ],
+    [
+      "^删除失败：(.*)$",
+      "Delete failed: $1"
+    ],
+    [
+      "^已隐藏 ([0-9]+) 条$",
+      "$1 hidden"
+    ],
+    [
+      "^追踪 ([0-9]+)$",
+      "Tracked $1"
+    ],
+    [
+      "^已加入追踪：(.*)$",
+      "Added to tracking: $1"
     ]
   ]
 }

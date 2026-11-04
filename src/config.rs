@@ -853,6 +853,8 @@ pub fn path_part_is_safe(value: &str) -> bool {
 pub struct NetworkSettings {
     pub bind: String,
     pub port: u16,
+    pub ip_family: crate::net::IpFamily,
+    pub outbound_ip_family: crate::net::IpFamily,
     pub domains: Vec<String>,
     pub public_url: String,
     pub admin_url: String,
@@ -1007,6 +1009,18 @@ pub fn read_network_settings(paths: &Paths) -> NetworkSettings {
     NetworkSettings {
         bind,
         port,
+        ip_family: crate::net::IpFamily::parse(
+            network
+                .get("ADMIN_IP_FAMILY")
+                .map(String::as_str)
+                .unwrap_or("auto"),
+        ),
+        outbound_ip_family: crate::net::IpFamily::parse(
+            network
+                .get("OUTBOUND_IP_FAMILY")
+                .map(String::as_str)
+                .unwrap_or("auto"),
+        ),
         domains,
         public_url,
         admin_url,
@@ -1018,6 +1032,8 @@ pub fn read_network_settings(paths: &Paths) -> NetworkSettings {
 pub fn validate_network(
     bind: &str,
     port: u16,
+    ip_family: crate::net::IpFamily,
+    outbound_ip_family: crate::net::IpFamily,
     domains: &[String],
     public_url: &str,
     admin_url: &str,
@@ -1025,8 +1041,18 @@ pub fn validate_network(
     github_callback: &str,
 ) -> Result<NetworkSettings> {
     let bind = bind.trim().to_string();
-    bind.parse::<std::net::IpAddr>()
+    let bind_ip = bind
+        .parse::<std::net::IpAddr>()
         .with_context(|| format!("监听地址无效: {bind}"))?;
+    match ip_family {
+        crate::net::IpFamily::Ipv4 if !bind_ip.is_ipv4() => {
+            bail!("监听协议为 IPv4，但监听地址不是 IPv4")
+        }
+        crate::net::IpFamily::Ipv6 if !bind_ip.is_ipv6() => {
+            bail!("监听协议为 IPv6，但监听地址不是 IPv6")
+        }
+        _ => {}
+    }
     if port == 0 {
         bail!("端口不能为 0");
     }
@@ -1047,6 +1073,8 @@ pub fn validate_network(
     Ok(NetworkSettings {
         bind,
         port,
+        ip_family,
+        outbound_ip_family,
         domains: normalized_domains,
         public_url,
         admin_url,
@@ -1059,6 +1087,14 @@ pub fn write_network_settings(paths: &Paths, settings: &NetworkSettings) -> Resu
     let mut values = BTreeMap::new();
     values.insert("ADMIN_BIND".to_string(), settings.bind.clone());
     values.insert("ADMIN_PORT".to_string(), settings.port.to_string());
+    values.insert(
+        "ADMIN_IP_FAMILY".to_string(),
+        settings.ip_family.as_str().to_string(),
+    );
+    values.insert(
+        "OUTBOUND_IP_FAMILY".to_string(),
+        settings.outbound_ip_family.as_str().to_string(),
+    );
     values.insert("PUBLIC_DOMAINS".to_string(), settings.domains.join(","));
     write_env_map(&paths.network_env, &values)?;
     set_env_key(&paths.admin_config, "PUBLIC_URL", &settings.public_url)?;
@@ -1113,6 +1149,8 @@ mod tests {
         let settings = validate_network(
             "127.0.0.1",
             8090,
+            crate::net::IpFamily::Auto,
+            crate::net::IpFamily::Auto,
             &[
                 "themes.example.com".to_string(),
                 "themes.example.com:8443".to_string(),
@@ -1128,6 +1166,8 @@ mod tests {
         assert!(validate_network(
             "not-an-ip",
             8090,
+            crate::net::IpFamily::Auto,
+            crate::net::IpFamily::Auto,
             &["themes.example.com".to_string()],
             "https://themes.example.com/",
             "https://themes.example.com/admin/",
@@ -1138,6 +1178,8 @@ mod tests {
         let wildcard = validate_network(
             "0.0.0.0",
             8091,
+            crate::net::IpFamily::Auto,
+            crate::net::IpFamily::Auto,
             &["themes.example.com".to_string()],
             "https://themes.example.com/",
             "https://themes.example.com/admin/",

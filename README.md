@@ -109,6 +109,35 @@ Rust 编写的主题镜像、投稿审核和账号系统，提供 Android 管理
 - 主题预览页只读：不再提供编辑标签或删除入口；需要在「上传主题 → 主题维护」中操作。
 - 性能页新增实时下载/上传速度、活跃请求、上传任务和当前正在读取的资源；顶栏也显示实时速度。
 
+## API 实时使用监控
+
+管理后台「性能 → 接口监控」（`#monitor`）实时展示正在处理的 API 请求，并自动保存完整连接日志。
+
+- 监控范围：`/api`、`/admin/api`、`/account/api`、`/submit`、`/catalog.json`、`/health`，以及 `/themes/*`、`/previews/*`、`/screenshots/*`、`/avatars/*` 主题资源下载；后台/用户中心 HTML、JS、语言包等静态页面不在其中。
+- 每条连接显示接口/功能、使用者（管理员、登录用户、命名主题令牌或未登录）、来源 IP、开始时间和持续时间；管理器下载会显示令牌名称（主令牌显示为「主令牌」）。
+- 来源 IP 依次取 `X-Forwarded-For`、`X-Real-IP`，最后回退到 TCP 对端地址；显示 `127.0.0.1`/`::1` 说明反向代理没有转发客户端 IP，需要在 Lucky 中启用 `X-Forwarded-For`。不再用 `local` 代表真实请求。
+- 只要请求携带有效登录会话（Cookie、`Authorization: Bearer`、`X-Sukisu-User-Token`、`X-Sukisu-Account-Token`、`X-Sukisu-Session` 或 `X-User-Token`），监控就优先显示账号完整信息：用户 ID、用户名、显示名、角色、账号状态、邮箱验证状态和 IP；即使同时带主题令牌也不会只显示令牌名。
+- 管理器下载主题时，如果客户端只发送主题令牌而不带账号会话，服务端无法知道是哪个登录账号，只能显示令牌名；管理器需要在 `/themes/*` 请求上同时携带账号 token 或用户 Cookie。GitHub OAuth 登录的用户 Cookie 已改为 `/`，确保浏览器下载主题时也会携带。
+- 实时连接每 1 秒刷新，表格同时展示正在处理和最近完成的连接（最近 100 条），短暂请求不会因为轮询间隔而消失；最近完成的连接可直接查看日志详情。
+- 可在「实时连接」上方设置隐藏规则：按 IP（精确或 `*` 通配）或用户/令牌名称隐藏记录；规则保存在当前浏览器，并同时作用于实时连接、日志列表和导出。隐藏只影响显示/导出，不会删除数据库中的日志。
+- 可设置追踪规则：指定 IP（精确或 `*` 通配）或用户/令牌名称，命中的活跃连接、最近完成连接和日志会高亮并显示「追踪」标记；勾选「只看追踪」后，实时表和日志列表只显示命中项，导出也只包含命中项。追踪规则同样保存在当前浏览器。隐藏规则优先于追踪规则。
+- 日志详情中的「追踪此 IP / 追踪此用户/令牌」按钮可以直接把当前连接加入追踪。
+- 「IP 协议」筛选支持只看 IPv4 或 IPv6 连接，并同时作用于实时表、日志和导出。
+
+## IPv4 / IPv6 通道
+
+管理后台「网络」页新增两个协议族设置：
+
+- **监听协议**（`ADMIN_IP_FAMILY=auto|ipv4|ipv6`）：校验 `ADMIN_BIND` 与所选协议族一致；选择 IPv6 时把监听地址改为 `::1`/`::`，Lucky 上游必须同步改为 `[::1]:端口`，否则公网入口会中断。
+- **出站协议**（`OUTBOUND_IP_FAMILY=auto|ipv4|ipv6`）：为 reqwest 客户端安装 A/AAAA 过滤 DNS 解析器，作用于镜像探测、AList、GitHub 等出站请求，重启后生效。`auto` 保持系统解析顺序。
+- S3 使用 AWS SDK 自带的 HTTP 栈，SMTP 使用 lettre 的传输层，当前不强制协议族；如必须固定，可在对应 endpoint/host 直接填写 IPv4 或 IPv6 地址。
+- 接口监控 `ipFamily=ipv4|ipv6` 可筛选客户端地址族；页面上的「IP 协议」下拉同时过滤实时连接、日志和导出。
+- 请求与响应内容以可读格式保存：请求参数、响应正文、请求/响应头（含 Cookie）、User-Agent、状态码和耗时。正文默认最多保留 128 KiB，超出部分标记截断；所有活跃连接共享 32 MiB 抓取缓存，避免慢速大请求占用过多内存。
+- 「断开」会立即取消正在执行的请求，并撤销该连接携带的管理员/用户会话；操作写入管理员操作日志（`api.abort`）。
+- 日志支持按路径/功能、用户、IP、身份、状态和方法筛选，支持单条/批量删除、清空和导出 NDJSON 文件；删除/清空/导出同样写入管理员操作日志。
+- 日志保存在 `audit.db` 的 `api_request_logs` 表，默认最多保留 20000 条（`API_MONITOR_RETENTION`，0 为不自动清理）。
+- 配置项（`config.env`）：`API_MONITOR_ENABLED`（默认 1）、`API_MONITOR_BODY_LIMIT`（默认 131072，范围 16 KiB–4 MiB）、`API_MONITOR_CAPTURE_BUDGET`（默认 33554432，范围 1–512 MiB）、`API_MONITOR_RETENTION`（默认 20000）。
+
 ## 上传进度与并发
 
 - 管理后台和用户中心都使用服务端的 4 MB 分片会话（`/uploads/init`、`/uploads/{id}/{index}`），最多 4 路并发；每个分片用 XHR 的 `upload.onprogress` 上报实时字节数，不再等整块 4 MB 完成才跳一次。
@@ -302,6 +331,10 @@ THEME_STORE_TOKEN=<上面生成的 64 位十六进制>
 # network.env
 ADMIN_BIND=127.0.0.1
 ADMIN_PORT=8080
+# auto | ipv4 | ipv6；监听协议为 ipv6 时 Lucky 上游需写 [::1]:8080
+ADMIN_IP_FAMILY=auto
+# auto | ipv4 | ipv6；作用于镜像探测、AList、GitHub 等 reqwest 出站请求
+OUTBOUND_IP_FAMILY=auto
 PUBLIC_DOMAINS=themes.example.com
 
 # config.env
@@ -322,6 +355,11 @@ PERF_POLL_INTERVAL_SECS=30
 PERF_WORKER_THREADS=0
 PERF_BLOCKING_THREADS=64
 PERF_DB_POOL_SIZE=4
+# API 实时使用监控；默认开启，单请求正文上限 128 KiB，活跃连接共享 32 MiB 抓取缓存
+API_MONITOR_ENABLED=1
+API_MONITOR_BODY_LIMIT=131072
+API_MONITOR_CAPTURE_BUDGET=33554432
+API_MONITOR_RETENTION=20000
 ```
 
 ### `account.env`

@@ -1,10 +1,13 @@
 use std::collections::{HashMap, HashSet};
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant, SystemTime};
 
 use axum::body::Body;
-use axum::extract::{DefaultBodyLimit, Extension, Multipart, OriginalUri, Query, Request, State};
+use axum::extract::{
+    ConnectInfo, DefaultBodyLimit, Extension, Multipart, OriginalUri, Query, Request, State,
+};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -85,6 +88,8 @@ pub struct AppState {
     pub maintenance: Arc<AtomicBool>,
     /// Compression/performance runtime counters and hot-reloadable settings.
     pub performance: Arc<crate::performance::PerformanceRuntime>,
+    /// Real-time API usage monitoring and persisted request logs.
+    pub monitor: Arc<crate::api_monitor::MonitorRuntime>,
     pub upload_semaphore: Arc<tokio::sync::Semaphore>,
     token_cache: Arc<RwLock<TokenCache>>,
     named_token_cache: Arc<Mutex<HashMap<String, (bool, Instant)>>>,
@@ -136,15 +141,18 @@ impl AppState {
             ("audit", paths.audit_db.clone()),
         ];
         let performance_settings = config::read_performance_settings(&paths);
+        let network_settings = config::read_network_settings(&paths);
         let db = crate::db::Database::open_split(
             &paths.db,
             &attachments,
             performance_settings.db_pool_size,
         )
         .await?;
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(20))
-            .build()?;
+        let http = crate::net::apply_client_family(
+            reqwest::Client::builder().timeout(Duration::from_secs(20)),
+            network_settings.outbound_ip_family,
+        )
+        .build()?;
         let sources = crate::sources::SourcesStore::load(paths.sources_file.clone()).await;
         let location_specs = crate::sources::location_specs(&sources).await;
         let store = storage::build_multi(primary, location_specs, http.clone());
@@ -156,6 +164,7 @@ impl AppState {
         let performance = Arc::new(crate::performance::PerformanceRuntime::new(
             &performance_settings,
         ));
+        let monitor = crate::api_monitor::MonitorRuntime::new(db.clone(), &paths).await;
         let upload_concurrency = performance_settings.upload_concurrency.max(1);
         Ok(Self {
             paths,
@@ -169,10 +178,11 @@ impl AppState {
             db,
             sessions,
             sources,
-            mirrors: crate::mirrors::MirrorPool::load().await,
+            mirrors: crate::mirrors::MirrorPool::load(network_settings.outbound_ip_family).await,
             login_failures: Arc::new(Mutex::new(HashMap::new())),
             maintenance: Arc::new(AtomicBool::new(maintenance)),
             performance,
+            monitor,
             upload_semaphore: Arc::new(tokio::sync::Semaphore::new(upload_concurrency)),
             token_cache: Arc::new(RwLock::new(TokenCache::default())),
             named_token_cache: Arc::new(Mutex::new(HashMap::new())),
@@ -501,6 +511,7 @@ pub fn router(state: AppState) -> Router {
         .merge(crate::comments::admin_router())
         .merge(crate::resumable::router())
         .merge(crate::theme_tokens::router())
+        .merge(crate::api_monitor::router())
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard))
         .layer(middleware::from_fn(csrf_guard));
 
@@ -532,6 +543,10 @@ pub fn router(state: AppState) -> Router {
         .layer(middleware::from_fn_with_state(
             state.clone(),
             maintenance_guard,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::api_monitor::monitor,
         ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -596,7 +611,11 @@ async fn public_headers(request: Request, next: Next) -> Response {
 }
 
 async fn request_context(request: Request<Body>, next: Next) -> Response {
-    let ip = request_ip(request.headers());
+    let peer = request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|info| info.0);
+    let ip = client_ip(request.headers(), peer);
     REQUEST_IP.scope(ip, next.run(request)).await
 }
 
@@ -1113,14 +1132,31 @@ pub(crate) async fn check_theme_token(state: &AppState, provided: &str, scope: &
 }
 
 pub(crate) fn request_ip(headers: &HeaderMap) -> String {
-    headers
-        .get("x-forwarded-for")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.split(',').next())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("local")
-        .to_string()
+    if let Some(ip) = current_request_ip() {
+        return ip;
+    }
+    client_ip(headers, None)
+}
+
+/// Resolve the client address in preference order: proxy headers first, then
+/// the actual TCP peer. `local` is only a last resort for contexts without a
+/// socket (for example unit tests).
+fn client_ip(headers: &HeaderMap, peer: Option<SocketAddr>) -> String {
+    for name in ["x-forwarded-for", "x-real-ip"] {
+        if let Some(value) = headers.get(name).and_then(|value| value.to_str().ok()) {
+            let value = if name == "x-forwarded-for" {
+                value.split(',').next().unwrap_or("")
+            } else {
+                value
+            };
+            let value = value.trim();
+            if !value.is_empty() {
+                return value.to_string();
+            }
+        }
+    }
+    peer.map(|address| address.ip().to_string())
+        .unwrap_or_else(|| "local".to_string())
 }
 
 pub(crate) fn header_text(headers: &HeaderMap, name: &str) -> String {

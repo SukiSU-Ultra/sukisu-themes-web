@@ -1489,6 +1489,52 @@ input:-webkit-autofill:focus {
 .import-selected .pill { padding: 4px 8px; }
 @media (max-width: 700px) { .import-entry { flex-wrap: wrap; } .import-entry select { width: 100%; } }
 
+/* ── API monitor ───────────────────────────────────────────────────── */
+.api-log-dialog { width: min(1080px, calc(100vw - 24px)); }
+.api-log-dialog .theme-detail-body { display: grid; gap: 12px; }
+.api-log-section { padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--input-bg); }
+.api-log-section > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; list-style: none; font-size: 12.5px; font-weight: 700; color: var(--text); }
+.api-log-section > summary::-webkit-details-marker { display: none; }
+.api-log-section[open] > summary { margin-bottom: 10px; }
+.api-log-kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.api-log-kv > div { padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.api-log-kv span { display: block; color: var(--faint); font-size: 10.5px; margin-bottom: 3px; }
+.api-log-kv b { display: block; font-size: 12px; word-break: break-all; }
+.api-log-pre { margin: 0; padding: 12px; max-height: 360px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); font: 11.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+.api-log-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.api-log-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; word-break: break-all; }
+.api-log-table td:last-child { white-space: pre-wrap; }
+.api-log-table tr:last-child td { border-bottom: 0; }
+.api-log-table td:first-child { width: 32%; color: var(--faint); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.api-log-empty { color: var(--faint); font-size: 12px; }
+.monitor-path { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; word-break: break-all; }
+.monitor-path small { display: block; margin-top: 2px; color: var(--faint); font-size: 10.5px; font-family: inherit; }
+.monitor-status { font-weight: 700; }
+.monitor-status.ok { color: var(--ok); }
+.monitor-status.warn { color: var(--warn); }
+.monitor-status.bad { color: var(--bad); }
+.monitor-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.monitor-actions button { height: 28px; padding: 0 9px; font-size: 11px; }
+.monitor-actions button.danger { color: var(--bad); border-color: rgba(251, 113, 133, .3); }
+.monitor-log-table td { font-size: 11.5px; }
+.monitor-check { width: 30px; }
+.monitor-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.monitor-filters .search { flex: 1 1 250px; min-width: 210px; }
+.monitor-filters input, .monitor-filters select { height: 34px; }
+.monitor-hide-filters { margin-bottom: 10px; }
+.monitor-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.monitor-toolbar .spacer { flex: 1; }
+.monitor-live-wrap { max-height: 540px; overflow: auto; }
+.monitor-live-wrap thead th { position: sticky; top: 0; z-index: 1; background: var(--panel); }
+.monitor-row-done td { opacity: .78; }
+.monitor-row-tracked td { background: rgba(251, 191, 36, .07); }
+.monitor-divider td { padding: 7px 10px; color: var(--faint); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; background: var(--input-bg); }
+.pill.warn { color: var(--warn); border-color: rgba(251, 191, 36, .32); background: rgba(251, 191, 36, .08); }
+.monitor-live-dot { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 4px rgba(74, 222, 128, .12); animation: monitorPulse 1.8s ease-in-out infinite; }
+@keyframes monitorPulse { 50% { opacity: .35; } }
+.monitor-auth { display: inline-flex; align-items: center; gap: 5px; }
+.monitor-auth .tag { padding: 1px 6px; border-radius: 99px; border: 1px solid var(--line); color: var(--faint); font-size: 10px; }
+
 </style>
 </head>
 <body>
@@ -1517,6 +1563,7 @@ input:-webkit-autofill:focus {
       <a href="#storage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/><path d="M4.5 11.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg>存储与配额</a>
       <a href="#network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.4 3.6 5.3 3.6 8.5s-1.2 6.1-3.6 8.5c-2.4-2.4-3.6-5.3-3.6-8.5S9.6 5.9 12 3.5Z"/></svg>网络</a>
       <a href="#performance"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 18a8 8 0 1 1 16 0"/><path d="m12 14 4-5"/><circle cx="12" cy="18" r="1.6"/></svg>性能</a>
+      <a href="#monitor"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 12h3l2.2-5.5L12 18l2.4-7 1.8 3H21"/></svg>接口监控</a>
       <a href="#auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="m4 7 8 6 8-6"/></svg>认证</a>
       <a href="#settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H10a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V10a1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.6 1Z"/></svg>设置</a>
       <a href="#access"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><circle cx="12" cy="8" r=".8" fill="currentColor" stroke="none"/></svg>接入与 API</a>
@@ -2121,7 +2168,10 @@ input:-webkit-autofill:focus {
         <div class="form-grid">
           <div><label for="networkBind">监听 IP</label><input id="networkBind" placeholder="127.0.0.1" spellcheck="false"><div class="field-hint">可填 127.0.0.1、0.0.0.0、::1 或服务器具体 IP</div></div>
           <div><label for="networkPort">端口</label><input id="networkPort" type="number" min="1" max="65535" step="1" placeholder="8080"></div>
+          <div><label for="networkIpFamily">监听协议</label><select id="networkIpFamily"><option value="auto">自动（按监听 IP）</option><option value="ipv4">IPv4</option><option value="ipv6">IPv6</option></select><div class="field-hint">IPv6 监听时 Lucky 上游填写 [::1]:端口</div></div>
+          <div><label for="networkOutboundFamily">出站协议</label><select id="networkOutboundFamily"><option value="auto">自动</option><option value="ipv4">IPv4</option><option value="ipv6">IPv6</option></select><div class="field-hint">服务器访问镜像/AList/GitHub 时使用，重启生效</div></div>
         </div>
+        <p class="field-hint">出站协议作用于 reqwest 客户端（镜像探测、AList、GitHub）；S3 与 SMTP 由各自底层客户端决定。IPv6 监听后需同步修改 Lucky 上游为 [::1]:端口，否则公网入口会中断。</p>
       </div>
       <div class="card" style="margin-top:14px">
         <h4>公开域名与地址</h4>
@@ -2203,6 +2253,108 @@ input:-webkit-autofill:focus {
       <div class="card" style="margin-top:14px">
         <h4>路由与压缩链</h4>
         <div class="meta" id="perfRoutes"></div>
+      </div>
+    </section>
+
+    <section id="monitor" class="page">
+      <div class="section-head"><div><h3>API 实时使用监控</h3><p>实时查看正在处理的 API 请求、使用者身份、来源 IP 和完整回传内容，并可强制断开连接或管理历史日志。</p></div><span class="pill" id="monitorLivePill"><span class="monitor-live-dot"></span>实时</span></div>
+      <div class="stats">
+        <div class="stat"><div class="label">活跃连接</div><div class="value" id="monitorActiveStat">–</div><div class="sub" id="monitorActiveSub">正在处理</div></div>
+        <div class="stat"><div class="label">近 24 小时</div><div class="value" id="monitorLast24">–</div><div class="sub">已记录请求</div></div>
+        <div class="stat"><div class="label">日志总数</div><div class="value" id="monitorTotalStat">–</div><div class="sub" id="monitorRetentionHint">–</div></div>
+        <div class="stat"><div class="label">断开 / 丢弃</div><div class="value" id="monitorAbortedStat">–</div><div class="sub">强制断开 / 队列溢出</div></div>
+      </div>
+      <div class="card">
+        <div class="section-head">
+          <div><h4>实时连接</h4><p class="hint">监控 /api、/admin/api、/account/api、/submit、/catalog.json、/health 以及主题包/预览图/头像/截图下载，每 1 秒自动刷新；正在处理和最近完成的请求都会显示在这里。</p></div>
+          <div class="row" style="margin:0">
+            <span class="pill" id="monitorWatchPill">追踪 0</span>
+            <label class="check"><input id="monitorAutoRefresh" type="checkbox" checked> 自动刷新</label>
+            <button id="monitorRefreshBtn" type="button">立即刷新</button>
+          </div>
+        </div>
+        <div class="monitor-filters monitor-hide-filters">
+          <input id="monitorHideIps" class="sort-select" type="search" placeholder="隐藏 IP（逗号分隔，支持 *）" style="min-width:210px">
+          <input id="monitorHideUsers" class="sort-select" type="search" placeholder="隐藏用户/令牌（逗号分隔）" style="min-width:210px">
+          <button id="monitorHideClear" type="button">清除隐藏规则</button>
+          <span class="field-hint" style="margin:0">保存在本浏览器，同时作用于实时连接、日志和导出</span>
+        </div>
+        <div class="monitor-filters monitor-hide-filters">
+          <input id="monitorWatchIps" class="sort-select" type="search" placeholder="追踪 IP（逗号分隔，支持 *）" style="min-width:210px">
+          <input id="monitorWatchUsers" class="sort-select" type="search" placeholder="追踪用户/令牌（逗号分隔）" style="min-width:210px">
+          <label class="check"><input id="monitorWatchOnly" type="checkbox"> 只看追踪</label>
+          <select id="monitorIpFamily" class="sort-select" title="按 IP 协议筛选" style="min-width:120px">
+            <option value="">全部协议</option>
+            <option value="ipv4">IPv4</option>
+            <option value="ipv6">IPv6</option>
+          </select>
+          <button id="monitorWatchClear" type="button">清除追踪规则</button>
+          <span class="field-hint" style="margin:0">追踪项会高亮显示</span>
+        </div>
+        <div class="table-wrap monitor-live-wrap" id="monitorActiveWrap">
+          <table class="table">
+            <thead><tr><th>接口 / 功能</th><th>使用者</th><th>来源 IP</th><th>开始时间</th><th>状态</th><th>已持续</th><th style="text-align:right">操作</th></tr></thead>
+            <tbody id="monitorActiveRows"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="monitorActiveEmpty">当前没有活跃连接，最近也没有新的请求</div>
+        <p class="field-hint" id="monitorSettingsHint">–</p>
+        <p class="field-hint">来源 IP 优先读取 X-Forwarded-For / X-Real-IP，其次使用 TCP 对端地址；显示 127.0.0.1/::1 时请检查 Lucky 是否转发客户端 IP。</p>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <div class="section-head"><div><h4>连接日志</h4><p class="hint">所有已完成的 API 请求自动保存为日志，包含请求参数、响应内容、请求头和 Cookie。日志可能含有敏感信息，请谨慎导出；隐藏规则同时作用于日志与导出。</p></div><span class="pill" id="monitorLogPill">–</span></div>
+        <div class="monitor-filters">
+          <div class="search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+            <input id="monitorSearch" type="search" placeholder="搜索路径、功能、IP 或用户">
+          </div>
+          <input id="monitorUserFilter" class="sort-select" type="search" placeholder="按用户筛选" style="min-width:140px">
+          <input id="monitorIpFilter" class="sort-select" type="search" placeholder="按 IP 筛选" style="min-width:140px">
+          <select id="monitorAuthFilter" class="sort-select" title="按身份筛选">
+            <option value="">全部身份</option>
+            <option value="admin">管理员</option>
+            <option value="user">登录用户</option>
+            <option value="theme_token">主题令牌</option>
+            <option value="none">未登录</option>
+          </select>
+          <select id="monitorStatusFilter" class="sort-select" title="按状态筛选">
+            <option value="">全部状态</option>
+            <option value="2xx">成功 (2xx)</option>
+            <option value="3xx">重定向 (3xx)</option>
+            <option value="4xx">客户端错误 (4xx)</option>
+            <option value="5xx">服务端错误 (5xx)</option>
+            <option value="aborted">已断开</option>
+          </select>
+          <select id="monitorMethodFilter" class="sort-select" title="按方法筛选">
+            <option value="">全部方法</option>
+            <option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option>
+          </select>
+          <button id="monitorFilterBtn" type="button">筛选</button>
+          <button id="monitorResetBtn" type="button">重置</button>
+        </div>
+        <div class="monitor-toolbar">
+          <button class="primary" id="monitorExportBtn" type="button">导出日志</button>
+          <button id="monitorLogReloadBtn" type="button">刷新日志</button>
+          <button class="danger" id="monitorDeleteSelectedBtn" type="button">删除选中</button>
+          <button class="danger" id="monitorClearBtn" type="button">清空日志</button>
+          <span class="spacer"></span>
+          <span class="comment-retention" id="monitorLogInfo">–</span>
+        </div>
+        <div class="table-wrap">
+          <table class="table monitor-log-table">
+            <thead><tr>
+              <th class="monitor-check"><input id="monitorSelectAll" type="checkbox" title="全选当前页"></th>
+              <th>时间</th><th>接口 / 功能</th><th>使用者</th><th>IP</th><th>状态</th><th>耗时</th><th>大小</th><th style="text-align:right">操作</th>
+            </tr></thead>
+            <tbody id="monitorLogRows"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="monitorLogEmpty">没有符合条件的连接日志</div>
+        <div class="comment-pager">
+          <span class="comment-retention" id="monitorLogPageInfo"></span>
+          <button class="small" id="monitorPrev" type="button">上一页</button>
+          <button class="small" id="monitorNext" type="button">下一页</button>
+        </div>
       </div>
     </section>
 
@@ -2437,6 +2589,13 @@ input:-webkit-autofill:focus {
       <button id="tokenRevealDone" type="button">我已保存</button>
     </div>
   </div>
+</dialog>
+<dialog class="theme-detail-dialog api-log-dialog" id="apiLogDialog">
+  <div class="theme-detail-head">
+    <h3 id="apiLogTitle">连接详情</h3>
+    <button class="btn small" id="apiLogClose" type="button">关闭</button>
+  </div>
+  <div class="theme-detail-body" id="apiLogBody"></div>
 </dialog>
 
 <script>
@@ -4550,6 +4709,10 @@ const AUDIT_ACTIONS = {
   'theme.token.create': '创建访问令牌',
   'theme.token.update': '更新访问令牌',
   'theme.token.delete': '删除访问令牌',
+  'api.abort': '断开 API 连接',
+  'api.logs.delete': '删除 API 日志',
+  'api.logs.clear': '清空 API 日志',
+  'api.logs.export': '导出 API 日志',
 };
 const AUDIT_TARGETS = {
   user: '用户',
@@ -4561,6 +4724,8 @@ const AUDIT_TARGETS = {
   network: '网络',
   storage: '存储',
   service: '服务',
+  api_connection: 'API 连接',
+  api_log: 'API 日志',
 };
 function auditActionLabel(value) {
   return AUDIT_ACTIONS[value] || value || '未知操作';
@@ -4931,6 +5096,8 @@ async function loadNetwork() {
     const settings = data.settings || {};
     $('networkBind').value = settings.bind || '';
     $('networkPort').value = settings.port || '';
+    $('networkIpFamily').value = settings.ipFamily || 'auto';
+    $('networkOutboundFamily').value = settings.outboundIpFamily || 'auto';
     $('networkDomains').value = (settings.domains || []).join('\n');
     $('networkPublicUrl').value = settings.publicUrl || '';
     $('networkAdminUrl').value = settings.adminUrl || '';
@@ -4942,6 +5109,8 @@ async function loadNetwork() {
     $('networkPill').textContent = data.systemctlDisabled ? '本地模式' : '已连接';
     $('networkDiag').innerHTML = [
       `<div class="kv"><span>监听地址</span><b class="url">${escapeHtml(`${settings.bind || '–'}:${settings.port || '–'}`)}</b></div>`,
+      `<div class="kv"><span>监听协议</span><b>${escapeHtml(settings.ipFamily || 'auto')}</b></div>`,
+      `<div class="kv"><span>出站协议</span><b>${escapeHtml(settings.outboundIpFamily || 'auto')}</b></div>`,
       `<div class="kv"><span>反代目标</span><b class="url">${escapeHtml(data.upstream || '–')}</b></div>`,
       `<div class="kv"><span>systemctl</span><b>${data.systemctlDisabled ? '已禁用' : '可用'}</b></div>`,
       `<div class="kv"><span>公开域名</span><b>${escapeHtml((settings.domains || []).join(', ') || '–')}</b></div>`,
@@ -4956,6 +5125,8 @@ function networkPayload() {
   return {
     bind: $('networkBind').value.trim(),
     port: Number($('networkPort').value),
+    ipFamily: $('networkIpFamily').value || 'auto',
+    outboundIpFamily: $('networkOutboundFamily').value || 'auto',
     domains: $('networkDomains').value.split(/\n|,/).map(item => item.trim()).filter(Boolean),
     publicUrl: $('networkPublicUrl').value.trim(),
     adminUrl: $('networkAdminUrl').value.trim(),
@@ -4963,6 +5134,18 @@ function networkPayload() {
     githubCallback: $('networkGithubCallback').value.trim(),
   };
 }
+
+$('networkIpFamily').addEventListener('change', () => {
+  const family = $('networkIpFamily').value;
+  const bind = $('networkBind').value.trim();
+  if (family === 'ipv4') {
+    if (bind === '::1') $('networkBind').value = '127.0.0.1';
+    else if (bind === '::') $('networkBind').value = '0.0.0.0';
+  } else if (family === 'ipv6') {
+    if (bind === '127.0.0.1') $('networkBind').value = '::1';
+    else if (bind === '0.0.0.0') $('networkBind').value = '::';
+  }
+});
 
 $('networkTest').addEventListener('click', async () => {
   try {
@@ -5991,6 +6174,7 @@ async function loadCurrentPageData() {
   if (currentPage === 'follows') await loadFollows();
   if (currentPage === 'comments') await loadCommentsAdmin(0);
   if (currentPage === 'performance') await loadPerformanceStats();
+  if (currentPage === 'monitor' && monitorAutoRefresh) await loadMonitorLive();
 }
 
 function restartRefreshTimer() {
@@ -6005,6 +6189,11 @@ function restartRefreshTimer() {
     if (currentPage === 'performance') loadPerformanceStats();
     else loadPerformanceLive();
   }, 5000);
+  if (monitorLiveTimer) clearInterval(monitorLiveTimer);
+  monitorLiveTimer = setInterval(() => {
+    if (document.hidden) return;
+    if (currentPage === 'monitor' && monitorAutoRefresh) loadMonitorLive();
+  }, 1000);
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -6104,6 +6293,12 @@ const PAGE_GUIDES = {
     abilities: ['调整压缩、下载缓冲、上传并发和线程数', '查看 5 个分库的文件、表和行数', '查看实时下载/上传速度和活跃资源'],
     steps: ['先看实时状态和压缩率', '按需调整参数并保存', '编码/线程/DB 连接池修改后重启'],
   },
+  monitor: {
+    title: 'API 实时使用监控',
+    what: '实时展示正在处理的 API 请求及其调用者、来源 IP、功能和回传内容，并保存完整的连接日志。',
+    abilities: ['查看活跃连接和最近完成的请求', '识别管理员、登录用户、主题令牌和未登录 IP', '按 IP/用户隐藏记录', '指定 IP/用户追踪并高亮', '查看请求头、Cookie、请求参数和响应内容', '强制断开连接并使其会话立即失效', '按条件筛选、导出、单条/批量删除或清空日志'],
+    steps: ['在实时连接中查看当前占用', '点击“详情”检查请求与响应内容', '对异常连接执行“断开”', '在连接日志中筛选、导出或清理记录'],
+  },
   auth: {
     title: '认证与邮件',
     what: '配置邮箱验证、SMTP 和 GitHub 登录，以及网页会话时长。',
@@ -6151,6 +6346,7 @@ const PAGE_LABELS = {
   storage: 'Storage & quota',
   network: 'Network',
   performance: 'Performance',
+  monitor: 'API monitor',
   auth: 'Auth',
   settings: 'Settings',
   access: 'Access & API',
@@ -6169,6 +6365,7 @@ const PAGE_TITLES = {
   storage: '存储与配额',
   network: '网络配置',
   performance: '性能与数据库',
+  monitor: '接口监控',
   auth: '认证设置',
   settings: '控制台设置',
   access: '接入信息与 API',
@@ -6187,6 +6384,7 @@ const PAGE_LEADS = {
   storage: '统一管理配额、数据目录、资源后端和 NAS / OpenList 导入来源。',
   network: '配置管理服务监听地址、端口、公开域名和访问地址。',
   performance: '查看和调整压缩、并发、数据库结构与实时性能指标。',
+  monitor: '实时查看 API 使用者、完整请求/响应内容和连接日志。',
   auth: '配置邮箱验证、SMTP 和 GitHub OAuth。',
   settings: '管理管理员账户、访问令牌、站点信息、存储与外观。',
   access: '镜像地址、管理入口、接口列表和调用示例。',
@@ -6223,6 +6421,7 @@ function showPage(id, smooth = false) {
   if (page === 'comments') loadCommentsAdmin(0);
   if (page === 'network') loadNetwork();
   if (page === 'performance') loadPerformance();
+  if (page === 'monitor') { loadMonitorLive(); loadMonitorLogs(0); }
   if (page === 'auth') loadAuthSettings();
   window.scrollTo({ top: 0, behavior: smooth ? 'smooth' : 'auto' });
 }
@@ -6706,6 +6905,786 @@ document.querySelectorAll('[data-tag-target]').forEach(group => {
   input.addEventListener('input', sync);
   sync();
 });
+
+/* ── API monitor ───────────────────────────────────────────────────── */
+let monitorLiveTimer = null;
+let monitorAutoRefresh = true;
+let monitorLiveData = { active: [], recent: [], stats: {} };
+let monitorLogItems = [];
+let monitorLogTotal = 0;
+let monitorLogPage = 0;
+const MONITOR_PAGE_SIZE = 25;
+let monitorSelected = new Set();
+let monitorLiveBusy = false;
+let monitorLogBusy = false;
+let monitorHideIps = '';
+let monitorHideUsers = '';
+let monitorWatchIps = '';
+let monitorWatchUsers = '';
+let monitorWatchOnly = false;
+let monitorIpFamily = '';
+const MONITOR_HIDE_IPS_KEY = 'sukisu-monitor-hide-ips';
+const MONITOR_HIDE_USERS_KEY = 'sukisu-monitor-hide-users';
+const MONITOR_WATCH_IPS_KEY = 'sukisu-monitor-watch-ips';
+const MONITOR_WATCH_USERS_KEY = 'sukisu-monitor-watch-users';
+try {
+  monitorHideIps = localStorage.getItem(MONITOR_HIDE_IPS_KEY) || '';
+  monitorHideUsers = localStorage.getItem(MONITOR_HIDE_USERS_KEY) || '';
+  monitorWatchIps = localStorage.getItem(MONITOR_WATCH_IPS_KEY) || '';
+  monitorWatchUsers = localStorage.getItem(MONITOR_WATCH_USERS_KEY) || '';
+} catch (_) {}
+
+const MONITOR_AUTH_LABELS = {
+  admin: '管理员',
+  user: '登录用户',
+  theme_token: '主题令牌',
+  none: '未登录',
+};
+
+function monitorAuthLabel(kind) {
+  return MONITOR_AUTH_LABELS[kind] || kind || '未知';
+}
+
+function monitorUserHtml(item) {
+  const isToken = item.authKind === 'theme_token';
+  const name = item.username
+    ? (item.displayName || item.username)
+    : (isToken ? (item.displayName || '主题访问令牌') : '未登录');
+  const account = item.username ? `<span class="tag">@${escapeHtml(item.username)}</span>` : '';
+  return `<span class="monitor-auth"><b>${escapeHtml(name)}</b>${account}<span class="tag">${escapeHtml(monitorAuthLabel(item.authKind))}</span></span>`;
+}
+
+function monitorHideTerms(value) {
+  return String(value || '')
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function monitorWildcardMatch(value, pattern) {
+  const escaped = pattern
+    .split('*')
+    .map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
+    .join('.*');
+  try {
+    return new RegExp('^' + escaped + '$', 'i').test(value);
+  } catch (_) {
+    return false;
+  }
+}
+
+function monitorIpFamilyOf(value) {
+  return String(value || '').includes(':') ? 'ipv6' : 'ipv4';
+}
+
+function monitorMatchesIpFamily(item) {
+  return !monitorIpFamily || monitorIpFamilyOf(item.ip) === monitorIpFamily;
+}
+
+function monitorIsHidden(item) {
+  const ip = String(item.ip || '');
+  if (monitorHideTerms(monitorHideIps).some(term => (
+    term.includes('*') ? monitorWildcardMatch(ip, term) : ip === term
+  ))) {
+    return true;
+  }
+  const haystack = [item.username, item.displayName].filter(Boolean).join(' ').toLowerCase();
+  if (!haystack) return false;
+  return monitorHideTerms(monitorHideUsers).some(term => haystack.includes(term.toLowerCase()));
+}
+
+function applyMonitorHideRules() {
+  monitorHideIps = ($('monitorHideIps')?.value || '').trim();
+  monitorHideUsers = ($('monitorHideUsers')?.value || '').trim();
+  try {
+    localStorage.setItem(MONITOR_HIDE_IPS_KEY, monitorHideIps);
+    localStorage.setItem(MONITOR_HIDE_USERS_KEY, monitorHideUsers);
+  } catch (_) {}
+  if (currentPage === 'monitor') {
+    renderMonitorLive();
+    loadMonitorLogs(0);
+  }
+}
+
+function monitorIsWatched(item) {
+  const ip = String(item.ip || '');
+  if (monitorHideTerms(monitorWatchIps).some(term => (
+    term.includes('*') ? monitorWildcardMatch(ip, term) : ip === term
+  ))) {
+    return true;
+  }
+  const haystack = [item.username, item.displayName].filter(Boolean).join(' ').toLowerCase();
+  if (!haystack) return false;
+  return monitorHideTerms(monitorWatchUsers).some(term => haystack.includes(term.toLowerCase()));
+}
+
+function applyMonitorWatchRules() {
+  monitorWatchIps = ($('monitorWatchIps')?.value || '').trim();
+  monitorWatchUsers = ($('monitorWatchUsers')?.value || '').trim();
+  try {
+    localStorage.setItem(MONITOR_WATCH_IPS_KEY, monitorWatchIps);
+    localStorage.setItem(MONITOR_WATCH_USERS_KEY, monitorWatchUsers);
+  } catch (_) {}
+  if (currentPage === 'monitor') {
+    renderMonitorLive();
+    loadMonitorLogs(0);
+  }
+}
+
+function addMonitorWatch(kind, raw) {
+  const value = String(raw || '').trim();
+  if (!value) return;
+  const input = kind === 'ip' ? $('monitorWatchIps') : $('monitorWatchUsers');
+  const current = kind === 'ip' ? monitorWatchIps : monitorWatchUsers;
+  const terms = monitorHideTerms(current);
+  const exists = terms.some(term => (
+    kind === 'ip' ? term === value : term.toLowerCase() === value.toLowerCase()
+  ));
+  if (!exists) terms.push(value);
+  if (input) input.value = terms.join(', ');
+  if (kind === 'ip') monitorWatchIps = input ? input.value : terms.join(', ');
+  else monitorWatchUsers = input ? input.value : terms.join(', ');
+  applyMonitorWatchRules();
+  toast('已加入追踪：' + value);
+}
+
+function monitorStatusClass(item) {
+  if (item.aborted) return 'bad';
+  const status = Number(item.status) || 0;
+  if (status >= 200 && status < 300) return 'ok';
+  if (status >= 300 && status < 400) return 'warn';
+  if (status >= 400) return 'bad';
+  return '';
+}
+
+function monitorStatusText(item) {
+  if (item.aborted) return '已断开';
+  const status = Number(item.status) || 0;
+  return status > 0 ? String(status) : '处理中';
+}
+
+function monitorDuration(value) {
+  const ms = Math.max(0, Number(value) || 0);
+  if (ms < 1000) return ms + ' ms';
+  if (ms < 60000) return (ms / 1000).toFixed(2) + ' s';
+  return Math.floor(ms / 60000) + ' min ' + Math.round((ms % 60000) / 1000) + ' s';
+}
+
+function monitorRoleLabel(value) {
+  return { admin: '管理员', user: '普通用户' }[value] || value || '–';
+}
+
+function monitorAccountStatusLabel(value) {
+  return {
+    active: '正常',
+    pending: '待验证',
+    email_pending: '待验证',
+    rejected: '已拒绝',
+    disabled: '已禁用',
+  }[value] || value || '–';
+}
+
+function monitorEmailVerifiedLabel(value) {
+  if (value === true) return '是';
+  if (value === false) return '否';
+  return '–';
+}
+
+function monitorBytes(value) {
+  return formatTransferBytes(value);
+}
+
+function monitorCount(value) {
+  const count = Math.max(0, Number(value) || 0);
+  try {
+    return count.toLocaleString(window.SukisuI18n ? SukisuI18n.locale : 'zh-CN');
+  } catch (_) {
+    return String(count);
+  }
+}
+
+function monitorPathHtml(item) {
+  const query = item.query ? '?' + item.query : '';
+  return `<div class="monitor-path"><span class="tag">${escapeHtml(item.method || '')}</span> ${escapeHtml(item.path || '')}${escapeHtml(query)}<small>${escapeHtml(item.function || '')}</small></div>`;
+}
+
+function monitorSizeText(item) {
+  return '↑ ' + monitorBytes(item.requestBytes) + ' · ↓ ' + monitorBytes(item.responseBytes);
+}
+
+function monitorHeaderValue(headers, name) {
+  if (!headers) return '';
+  const target = String(name).toLowerCase();
+  const key = Object.keys(headers).find(item => item.toLowerCase() === target);
+  if (!key) return '';
+  const value = headers[key];
+  return Array.isArray(value) ? value.join('; ') : String(value ?? '');
+}
+
+function monitorHeaderTable(headers, emptyText) {
+  const entries = headers && typeof headers === 'object' ? Object.entries(headers) : [];
+  if (!entries.length) return `<div class="api-log-empty">${escapeHtml(emptyText)}</div>`;
+  return `<table class="api-log-table">${entries.map(([name, value]) => {
+    const text = Array.isArray(value) ? value.join('\n') : String(value ?? '');
+    return `<tr><td>${escapeHtml(name)}</td><td>${escapeHtml(text)}</td></tr>`;
+  }).join('')}</table>`;
+}
+
+function monitorCookieTable(headers) {
+  const raw = monitorHeaderValue(headers, 'cookie');
+  if (!raw) return '<div class="api-log-empty">没有携带 Cookie</div>';
+  const rows = raw.split(';').map(part => {
+    const item = part.trim();
+    if (!item) return null;
+    const index = item.indexOf('=');
+    return index < 0
+      ? { name: item, value: '' }
+      : { name: item.slice(0, index), value: item.slice(index + 1) };
+  }).filter(Boolean);
+  if (!rows.length) return '<div class="api-log-empty">没有携带 Cookie</div>';
+  return `<table class="api-log-table">${rows.map(row => `<tr><td>${escapeHtml(row.name)}</td><td>${escapeHtml(row.value)}</td></tr>`).join('')}</table>`;
+}
+
+function monitorBodyHtml(body, contentType, bytes, truncated) {
+  if (!body || body.kind === 'empty') {
+    const size = Number(bytes || (body && body.bytes) || 0);
+    return `<div class="api-log-empty">没有内容${size ? '（' + monitorBytes(size) + '）' : ''}</div>`;
+  }
+  if (body.kind === 'text') {
+    let text = body.text || '';
+    let formatted = text;
+    try { formatted = JSON.stringify(JSON.parse(text), null, 2); } catch (_) {}
+    const cut = body.truncated || truncated;
+    return `<pre class="api-log-pre" data-i18n-ignore>${escapeHtml(formatted)}</pre>`
+      + (cut ? `<p class="field-hint">内容已按监控上限截断，原始大小 ${monitorBytes(body.bytes || bytes)}</p>` : '');
+  }
+  if (body.kind === 'binary') {
+    return `<p class="field-hint">二进制内容（${escapeHtml(body.contentType || contentType || 'unknown')}，${monitorBytes(body.bytes || bytes)}），以下为前 512 字节的十六进制。</p><pre class="api-log-pre" data-i18n-ignore>${escapeHtml(body.previewHex || '')}</pre>`;
+  }
+  return `<pre class="api-log-pre" data-i18n-ignore>${escapeHtml(JSON.stringify(body, null, 2))}</pre>`;
+}
+
+function monitorDetailSection(title, content, open = false) {
+  return `<details class="api-log-section"${open ? ' open' : ''}><summary><span>${escapeHtml(title)}</span></summary>${content}</details>`;
+}
+
+function monitorDetailKv(pairs) {
+  return `<div class="api-log-kv">${pairs.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><b>${escapeHtml(value ?? '–')}</b></div>`).join('')}</div>`;
+}
+
+function renderMonitorLive() {
+  const stats = monitorLiveData.stats || {};
+  const allActive = Array.isArray(monitorLiveData.active) ? monitorLiveData.active : [];
+  const allRecent = Array.isArray(monitorLiveData.recent) ? monitorLiveData.recent : [];
+  let active = allActive.filter(item => monitorMatchesIpFamily(item));
+  let recent = allRecent.filter(item => monitorMatchesIpFamily(item));
+  const familyActive = active.length;
+  const familyRecent = recent.length;
+  active = active.filter(item => !monitorIsHidden(item));
+  recent = recent.filter(item => !monitorIsHidden(item));
+  const hidden = (familyActive - active.length) + (familyRecent - recent.length);
+  const trackedVisible = [...active, ...recent].filter(monitorIsWatched).length;
+  if (monitorWatchOnly) {
+    active = active.filter(monitorIsWatched);
+    recent = recent.filter(monitorIsWatched);
+  }
+
+  if ($('monitorActiveStat')) $('monitorActiveStat').textContent = String(active.length);
+  if ($('monitorLast24')) $('monitorLast24').textContent = monitorCount(stats.last24h || 0);
+  if ($('monitorTotalStat')) $('monitorTotalStat').textContent = monitorCount(stats.total || 0);
+  if ($('monitorAbortedStat')) $('monitorAbortedStat').textContent = `${monitorCount(stats.aborted || 0)} / ${monitorCount(stats.dropped || 0)}`;
+  if ($('monitorRetentionHint')) {
+    $('monitorRetentionHint').textContent = stats.retention > 0
+      ? `最多保留 ${monitorCount(stats.retention)} 条`
+      : '不自动清理';
+  }
+  if ($('monitorActiveSub')) {
+    $('monitorActiveSub').textContent = monitorWatchOnly
+      ? '只看追踪'
+      : (hidden
+        ? `已隐藏 ${hidden} 条`
+        : (stats.enabled === false ? '监控已关闭' : '正在处理'));
+  }
+  if ($('monitorWatchPill')) {
+    $('monitorWatchPill').textContent = `追踪 ${trackedVisible}`;
+    $('monitorWatchPill').className = trackedVisible ? 'pill warn' : 'pill';
+  }
+  if ($('monitorLivePill')) {
+    $('monitorLivePill').innerHTML = `<span class="monitor-live-dot"></span>${monitorAutoRefresh ? '实时' : '已暂停'}`;
+  }
+  if ($('monitorSettingsHint')) {
+    const limit = stats.bodyLimit ? monitorBytes(stats.bodyLimit) : '–';
+    const retention = stats.retention > 0 ? `${monitorCount(stats.retention)} 条` : '不限条数';
+    $('monitorSettingsHint').textContent = `监控范围：/api、/admin/api、/account/api、/submit、/catalog.json、/health、主题资源 · 正文上限 ${limit} · 日志保留 ${retention} · 队列丢弃 ${monitorCount(stats.dropped || 0)} 条`;
+  }
+
+  const rows = [];
+  active.forEach(item => {
+    const tracked = monitorIsWatched(item);
+    rows.push(`<tr class="${tracked ? 'monitor-row-tracked' : ''}">
+      <td>${monitorPathHtml(item)}</td>
+      <td>${monitorUserHtml(item)}</td>
+      <td>${escapeHtml(item.ip || '–')}</td>
+      <td>${escapeHtml(formatTime(item.startedAt))}</td>
+      <td><span class="monitor-status ${monitorStatusClass(item)}">${item.aborted ? '' : '<span class="monitor-live-dot"></span>'}${escapeHtml(monitorStatusText(item))}</span>${tracked ? ' <span class="pill warn">追踪</span>' : ''}</td>
+      <td>${monitorDuration(item.elapsedMs)}</td>
+      <td><div class="monitor-actions">
+        <button type="button" data-monitor-view="${escapeHtml(item.id)}">详情</button>
+        <button type="button" class="danger" data-monitor-abort="${escapeHtml(item.id)}">断开</button>
+      </div></td>
+    </tr>`);
+  });
+  if (recent.length) {
+    rows.push('<tr class="monitor-divider"><td colspan="7">最近完成</td></tr>');
+  }
+  recent.forEach(item => {
+    const tracked = monitorIsWatched(item);
+    rows.push(`<tr class="monitor-row-done ${tracked ? 'monitor-row-tracked' : ''}">
+      <td>${monitorPathHtml(item)}</td>
+      <td>${monitorUserHtml(item)}</td>
+      <td>${escapeHtml(item.ip || '–')}</td>
+      <td>${escapeHtml(formatTime(item.startedAt))}</td>
+      <td><span class="monitor-status ${monitorStatusClass(item)}">${escapeHtml(monitorStatusText(item))}</span>${tracked ? ' <span class="pill warn">追踪</span>' : ''}</td>
+      <td>${monitorDuration(item.durationMs ?? item.elapsedMs)}</td>
+      <td><div class="monitor-actions">
+        <button type="button" data-monitor-recent-view="${escapeHtml(item.id)}">详情</button>
+      </div></td>
+    </tr>`);
+  });
+  if ($('monitorActiveRows')) $('monitorActiveRows').innerHTML = rows.join('');
+  if ($('monitorActiveEmpty')) $('monitorActiveEmpty').style.display = rows.length ? 'none' : 'block';
+  if ($('monitorActiveWrap')) $('monitorActiveWrap').style.display = rows.length ? '' : 'none';
+}
+
+async function loadMonitorLive() {
+  if (monitorLiveBusy) return;
+  monitorLiveBusy = true;
+  try {
+    monitorLiveData = await api('/monitor/live');
+    if (currentPage === 'monitor') renderMonitorLive();
+  } catch (error) {
+    if (currentPage === 'monitor' && $('monitorLivePill')) {
+      $('monitorLivePill').textContent = '读取失败';
+    }
+  } finally {
+    monitorLiveBusy = false;
+  }
+}
+
+function monitorFilterParams() {
+  const params = new URLSearchParams();
+  const q = ($('monitorSearch')?.value || '').trim();
+  const user = ($('monitorUserFilter')?.value || '').trim();
+  const ip = ($('monitorIpFilter')?.value || '').trim();
+  const auth = $('monitorAuthFilter')?.value || '';
+  const status = $('monitorStatusFilter')?.value || '';
+  const method = $('monitorMethodFilter')?.value || '';
+  if (q) params.set('q', q);
+  if (user) params.set('user', user);
+  if (ip) params.set('ip', ip);
+  if (auth) params.set('auth', auth);
+  if (status) params.set('status', status);
+  if (method) params.set('method', method);
+  if (monitorHideIps) params.set('excludeIp', monitorHideIps);
+  if (monitorHideUsers) params.set('excludeUser', monitorHideUsers);
+  if (monitorIpFamily) params.set('ipFamily', monitorIpFamily);
+  if (monitorWatchOnly) {
+    params.set('watchOnly', '1');
+    if (monitorWatchIps) params.set('watchIp', monitorWatchIps);
+    if (monitorWatchUsers) params.set('watchUser', monitorWatchUsers);
+  }
+  params.set('limit', String(MONITOR_PAGE_SIZE));
+  return params;
+}
+
+async function loadMonitorLogs(page = monitorLogPage) {
+  if (monitorLogBusy) return;
+  monitorLogBusy = true;
+  monitorLogPage = Math.max(0, Number(page) || 0);
+  try {
+    const params = monitorFilterParams();
+    params.set('page', String(monitorLogPage));
+    const data = await api('/monitor/logs?' + params.toString());
+    monitorLogItems = Array.isArray(data.items) ? data.items : [];
+    monitorLogTotal = Number(data.total) || 0;
+    const visible = new Set(monitorLogItems.map(item => String(item.id)));
+    monitorSelected = new Set([...monitorSelected].filter(id => visible.has(id)));
+    renderMonitorLogs();
+  } catch (error) {
+    toast('加载连接日志失败：' + error.message, 'bad');
+  } finally {
+    monitorLogBusy = false;
+  }
+}
+
+function renderMonitorLogs() {
+  const items = monitorLogItems;
+  if ($('monitorLogRows')) {
+    $('monitorLogRows').innerHTML = items.map(item => {
+      const tracked = monitorIsWatched(item);
+      return `<tr class="${tracked ? 'monitor-row-tracked' : ''}">
+      <td class="monitor-check"><input type="checkbox" data-monitor-select="${item.id}" ${monitorSelected.has(String(item.id)) ? 'checked' : ''}></td>
+      <td>${escapeHtml(formatTime(item.startedAt))}</td>
+      <td>${monitorPathHtml(item)}</td>
+      <td>${monitorUserHtml(item)}</td>
+      <td>${escapeHtml(item.ip || '–')}</td>
+      <td><span class="monitor-status ${monitorStatusClass(item)}">${escapeHtml(monitorStatusText(item))}</span>${tracked ? ' <span class="pill warn">追踪</span>' : ''}</td>
+      <td>${monitorDuration(item.durationMs)}</td>
+      <td>${escapeHtml(monitorSizeText(item))}</td>
+      <td><div class="monitor-actions">
+        <button type="button" data-monitor-log-view="${item.id}">详情</button>
+        <button type="button" class="danger" data-monitor-log-delete="${item.id}">删除</button>
+      </div></td>
+    </tr>`;
+    }).join('');
+  }
+  if ($('monitorLogEmpty')) $('monitorLogEmpty').style.display = items.length ? 'none' : 'block';
+  const start = monitorLogTotal ? monitorLogPage * MONITOR_PAGE_SIZE + 1 : 0;
+  const end = monitorLogPage * MONITOR_PAGE_SIZE + items.length;
+  if ($('monitorLogPageInfo')) {
+    $('monitorLogPageInfo').textContent = `第 ${start}–${end} 条 / 共 ${monitorLogTotal} 条`;
+  }
+  if ($('monitorPrev')) $('monitorPrev').disabled = monitorLogPage <= 0;
+  if ($('monitorNext')) $('monitorNext').disabled = (monitorLogPage + 1) * MONITOR_PAGE_SIZE >= monitorLogTotal;
+  if ($('monitorLogInfo')) $('monitorLogInfo').textContent = `已选 ${monitorSelected.size} 条 · 当前第 ${monitorLogPage + 1} 页`;
+  if ($('monitorLogPill')) $('monitorLogPill').textContent = `共 ${monitorCount(monitorLogTotal)} 条`;
+  if ($('monitorSelectAll')) {
+    $('monitorSelectAll').checked = items.length > 0 && items.every(item => monitorSelected.has(String(item.id)));
+  }
+}
+
+async function abortMonitorConnection(id) {
+  if (!id) return;
+  if (!confirm('强制断开该连接？请求会立即中断；若携带管理员/用户登录会话，该会话也会立即失效。日志会记录本次操作。')) return;
+  try {
+    const data = await api('/monitor/active/' + encodeURIComponent(id) + '/abort', { method: 'POST', body: '{}' });
+    toast(`连接已断开，失效会话 ${Number(data.sessionsRevoked) || 0} 个`);
+    await loadMonitorLive();
+    loadMonitorLogs(monitorLogPage);
+  } catch (error) {
+    toast('断开失败：' + error.message, 'bad');
+  }
+}
+
+async function openMonitorDetail(kind, id) {
+  const dialog = $('apiLogDialog');
+  const body = $('apiLogBody');
+  if (!dialog || !body) return;
+  const title = $('apiLogTitle');
+  if (title) title.textContent = '连接详情';
+  body.innerHTML = '<div class="api-log-empty">正在读取完整连接内容…</div>';
+  if (!dialog.open) dialog.showModal();
+  try {
+    let item = null;
+    if (kind === 'active') {
+      const data = await api('/monitor/active/' + encodeURIComponent(id));
+      item = data.connection;
+    } else if (kind === 'recent') {
+      let data;
+      try {
+        data = await api('/monitor/logs/connection/' + encodeURIComponent(id));
+      } catch (error) {
+        await new Promise(resolve => setTimeout(resolve, 350));
+        data = await api('/monitor/logs/connection/' + encodeURIComponent(id));
+      }
+      item = data.log;
+    } else {
+      const data = await api('/monitor/logs/' + encodeURIComponent(id));
+      item = data.log;
+    }
+    if (!item) throw new Error('连接或日志不存在');
+    if (title) title.textContent = `${item.method || ''} ${item.path || ''}`;
+    const requestHeaders = item.requestHeaders || {};
+    const responseHeaders = item.responseHeaders || {};
+    const statusClass = monitorStatusClass(item);
+    const watchActions = `<div class="row" style="margin:0 0 2px">
+      ${item.ip ? `<button type="button" class="small" data-watch-add-ip="${escapeHtml(item.ip)}">追踪此 IP</button>` : ''}
+      ${(item.username || item.displayName) ? `<button type="button" class="small" data-watch-add-user="${escapeHtml(item.username || item.displayName)}">追踪此用户/令牌</button>` : ''}
+    </div>`;
+    body.innerHTML = watchActions + [
+      monitorDetailSection('基本信息', monitorDetailKv([
+        ['状态', monitorStatusText(item)],
+        ['功能', item.function || '–'],
+        ['使用者', item.username ? `${item.displayName || item.username} (@${item.username})` : (item.displayName || (item.authKind === 'theme_token' ? '主题访问令牌' : '未登录'))],
+        ['用户 ID', item.userId || '–'],
+        ['角色', monitorRoleLabel(item.userRole)],
+        ['账号状态', monitorAccountStatusLabel(item.userStatus)],
+        ['邮箱已验证', monitorEmailVerifiedLabel(item.emailVerified)],
+        ['身份', monitorAuthLabel(item.authKind)],
+        ['来源 IP', item.ip || '–'],
+        ['User-Agent', item.userAgent || '–'],
+        ['开始时间', formatTime(item.startedAt)],
+        ['结束时间', item.endedAt ? formatTime(item.endedAt) : '仍在处理'],
+        ['耗时', monitorDuration(item.durationMs ?? item.elapsedMs)],
+        ['请求 / 响应大小', monitorSizeText(item)],
+        ['连接 ID', item.connectionId || item.id || '–'],
+        ['错误', item.error || '–'],
+      ]), true),
+      monitorDetailSection('请求信息', monitorDetailKv([
+        ['方法', item.method || '–'],
+        ['路径', item.path || '–'],
+        ['查询参数', item.query || '–'],
+        ['请求类型', item.requestContentType || '–'],
+        ['请求大小', monitorBytes(item.requestBytes)],
+      ]), true),
+      monitorDetailSection('请求头', monitorHeaderTable(requestHeaders, '没有请求头'), true),
+      monitorDetailSection('Cookie', monitorCookieTable(requestHeaders), true),
+      monitorDetailSection('请求参数 / 请求内容', monitorBodyHtml(item.requestBody, item.requestContentType, item.requestBytes, item.requestTruncated), true),
+      monitorDetailSection('响应头', monitorHeaderTable(responseHeaders, '响应尚未返回'), false),
+      monitorDetailSection('响应内容', monitorBodyHtml(item.responseBody, item.responseContentType, item.responseBytes, item.responseTruncated), true),
+    ].join('');
+    const statusPill = `<span class="pill ${statusClass}">${escapeHtml(monitorStatusText(item))}</span>`;
+    if (title) title.innerHTML = `${escapeHtml(item.method || '')} ${escapeHtml(item.path || '')} ${statusPill}`;
+  } catch (error) {
+    body.innerHTML = `<div class="empty">读取失败：${escapeHtml(error.message)}</div>`;
+  }
+}
+
+async function deleteMonitorLogs(ids) {
+  const values = ids.map(Number).filter(value => Number.isInteger(value) && value > 0);
+  if (!values.length) return;
+  const data = await api('/monitor/logs/batch-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids: values }),
+  });
+  const deleted = Number(data.deleted) || values.length;
+  monitorSelected.clear();
+  const maxPage = Math.max(0, Math.ceil(Math.max(0, monitorLogTotal - deleted) / MONITOR_PAGE_SIZE) - 1);
+  toast(`已删除 ${deleted} 条连接日志`);
+  await loadMonitorLogs(Math.min(monitorLogPage, maxPage));
+}
+
+async function exportMonitorLogs() {
+  const params = monitorFilterParams();
+  try {
+    const response = await fetch(API + '/monitor/logs/export?' + params.toString(), {
+      credentials: 'same-origin',
+      headers: { 'X-Requested-With': 'SukiSUThemeAdmin' },
+    });
+    if (response.status === 401) {
+      redirectToLogin();
+      return;
+    }
+    if (!response.ok) {
+      let message = 'HTTP ' + response.status;
+      try { const data = await response.json(); if (data.error) message = data.error; } catch (_) {}
+      throw new Error(message);
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get('content-disposition') || '';
+    const match = /filename="([^"]+)"/.exec(disposition);
+    const filename = match ? match[1] : 'sukisu-api-logs.ndjson';
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast('连接日志已导出');
+  } catch (error) {
+    toast('导出失败：' + error.message, 'bad');
+  }
+}
+
+if ($('monitorHideIps')) $('monitorHideIps').value = monitorHideIps;
+if ($('monitorHideUsers')) $('monitorHideUsers').value = monitorHideUsers;
+['monitorHideIps', 'monitorHideUsers'].forEach(id => {
+  const element = $(id);
+  if (!element) return;
+  element.addEventListener('input', () => {
+    clearTimeout(element._monitorHideTimer);
+    element._monitorHideTimer = setTimeout(applyMonitorHideRules, 300);
+  });
+});
+if ($('monitorHideClear')) {
+  $('monitorHideClear').addEventListener('click', () => {
+    if ($('monitorHideIps')) $('monitorHideIps').value = '';
+    if ($('monitorHideUsers')) $('monitorHideUsers').value = '';
+    applyMonitorHideRules();
+  });
+}
+if ($('monitorWatchIps')) $('monitorWatchIps').value = monitorWatchIps;
+if ($('monitorWatchUsers')) $('monitorWatchUsers').value = monitorWatchUsers;
+['monitorWatchIps', 'monitorWatchUsers'].forEach(id => {
+  const element = $(id);
+  if (!element) return;
+  element.addEventListener('input', () => {
+    clearTimeout(element._monitorWatchTimer);
+    element._monitorWatchTimer = setTimeout(applyMonitorWatchRules, 300);
+  });
+});
+if ($('monitorWatchOnly')) {
+  $('monitorWatchOnly').addEventListener('change', event => {
+    monitorWatchOnly = !!event.target.checked;
+    renderMonitorLive();
+    loadMonitorLogs(0);
+  });
+}
+if ($('monitorIpFamily')) {
+  $('monitorIpFamily').addEventListener('change', event => {
+    monitorIpFamily = event.target.value;
+    renderMonitorLive();
+    loadMonitorLogs(0);
+  });
+}
+if ($('monitorWatchClear')) {
+  $('monitorWatchClear').addEventListener('click', () => {
+    if ($('monitorWatchIps')) $('monitorWatchIps').value = '';
+    if ($('monitorWatchUsers')) $('monitorWatchUsers').value = '';
+    if ($('monitorWatchOnly')) $('monitorWatchOnly').checked = false;
+    monitorWatchOnly = false;
+    applyMonitorWatchRules();
+  });
+}
+if ($('apiLogBody')) {
+  $('apiLogBody').addEventListener('click', event => {
+    const ip = event.target.closest('[data-watch-add-ip]');
+    if (ip) {
+      addMonitorWatch('ip', ip.dataset.watchAddIp);
+      return;
+    }
+    const user = event.target.closest('[data-watch-add-user]');
+    if (user) addMonitorWatch('user', user.dataset.watchAddUser);
+  });
+}
+if ($('monitorAutoRefresh')) {
+  $('monitorAutoRefresh').addEventListener('change', event => {
+    monitorAutoRefresh = !!event.target.checked;
+    renderMonitorLive();
+    if (monitorAutoRefresh) loadMonitorLive();
+  });
+}
+if ($('monitorRefreshBtn')) {
+  $('monitorRefreshBtn').addEventListener('click', () => loadMonitorLive());
+}
+if ($('monitorFilterBtn')) {
+  $('monitorFilterBtn').addEventListener('click', () => loadMonitorLogs(0));
+}
+if ($('monitorResetBtn')) {
+  $('monitorResetBtn').addEventListener('click', () => {
+    ['monitorSearch', 'monitorUserFilter', 'monitorIpFilter'].forEach(id => {
+      if ($(id)) $(id).value = '';
+    });
+    ['monitorAuthFilter', 'monitorStatusFilter', 'monitorMethodFilter'].forEach(id => {
+      if ($(id)) $(id).value = '';
+    });
+    loadMonitorLogs(0);
+  });
+}
+['monitorSearch', 'monitorUserFilter', 'monitorIpFilter'].forEach(id => {
+  const element = $(id);
+  if (!element) return;
+  element.addEventListener('input', () => {
+    clearTimeout(element._monitorTimer);
+    element._monitorTimer = setTimeout(() => loadMonitorLogs(0), 350);
+  });
+});
+['monitorAuthFilter', 'monitorStatusFilter', 'monitorMethodFilter'].forEach(id => {
+  const element = $(id);
+  if (!element) return;
+  element.addEventListener('change', () => loadMonitorLogs(0));
+});
+if ($('monitorPrev')) {
+  $('monitorPrev').addEventListener('click', () => loadMonitorLogs(Math.max(0, monitorLogPage - 1)));
+}
+if ($('monitorNext')) {
+  $('monitorNext').addEventListener('click', () => loadMonitorLogs(monitorLogPage + 1));
+}
+if ($('monitorSelectAll')) {
+  $('monitorSelectAll').addEventListener('change', event => {
+    const checked = !!event.target.checked;
+    monitorLogItems.forEach(item => {
+      if (checked) monitorSelected.add(String(item.id));
+      else monitorSelected.delete(String(item.id));
+    });
+    renderMonitorLogs();
+  });
+}
+if ($('monitorLogRows')) {
+  $('monitorLogRows').addEventListener('change', event => {
+    const checkbox = event.target.closest('[data-monitor-select]');
+    if (!checkbox) return;
+    const id = String(checkbox.dataset.monitorSelect);
+    if (checkbox.checked) monitorSelected.add(id);
+    else monitorSelected.delete(id);
+    renderMonitorLogs();
+  });
+  $('monitorLogRows').addEventListener('click', async event => {
+    const view = event.target.closest('[data-monitor-log-view]');
+    if (view) {
+      openMonitorDetail('log', view.dataset.monitorLogView);
+      return;
+    }
+    const remove = event.target.closest('[data-monitor-log-delete]');
+    if (remove) {
+      if (!confirm('删除这条连接日志？此操作不可恢复。')) return;
+      try {
+        await deleteMonitorLogs([remove.dataset.monitorLogDelete]);
+      } catch (error) {
+        toast('删除失败：' + error.message, 'bad');
+      }
+    }
+  });
+}
+if ($('monitorActiveRows')) {
+  $('monitorActiveRows').addEventListener('click', event => {
+    const view = event.target.closest('[data-monitor-view]');
+    if (view) {
+      openMonitorDetail('active', view.dataset.monitorView);
+      return;
+    }
+    const recentView = event.target.closest('[data-monitor-recent-view]');
+    if (recentView) {
+      openMonitorDetail('recent', recentView.dataset.monitorRecentView);
+      return;
+    }
+    const abort = event.target.closest('[data-monitor-abort]');
+    if (abort) abortMonitorConnection(abort.dataset.monitorAbort);
+  });
+}
+if ($('monitorDeleteSelectedBtn')) {
+  $('monitorDeleteSelectedBtn').addEventListener('click', async () => {
+    if (!monitorSelected.size) {
+      toast('请先选择要删除的日志', 'bad');
+      return;
+    }
+    if (!confirm(`删除选中的 ${monitorSelected.size} 条连接日志？此操作不可恢复。`)) return;
+    try {
+      await deleteMonitorLogs([...monitorSelected]);
+    } catch (error) {
+      toast('删除失败：' + error.message, 'bad');
+    }
+  });
+}
+if ($('monitorClearBtn')) {
+  $('monitorClearBtn').addEventListener('click', async () => {
+    if (!confirm('清空全部连接日志？此操作不可恢复，管理员操作日志会保留。')) return;
+    try {
+      const data = await api('/monitor/logs/clear', { method: 'POST', body: '{}' });
+      monitorSelected.clear();
+      toast(`已清空 ${Number(data.deleted) || 0} 条连接日志`);
+      await loadMonitorLogs(0);
+    } catch (error) {
+      toast('清空失败：' + error.message, 'bad');
+    }
+  });
+}
+if ($('monitorExportBtn')) {
+  $('monitorExportBtn').addEventListener('click', () => exportMonitorLogs());
+}
+if ($('monitorLogReloadBtn')) {
+  $('monitorLogReloadBtn').addEventListener('click', () => loadMonitorLogs(monitorLogPage));
+}
+if ($('apiLogClose')) {
+  $('apiLogClose').addEventListener('click', () => $('apiLogDialog').close());
+}
+if ($('apiLogDialog')) {
+  $('apiLogDialog').addEventListener('click', event => {
+    if (event.target === $('apiLogDialog')) $('apiLogDialog').close();
+  });
+}
 
 (async () => {
   if (!(await loadSession())) return;

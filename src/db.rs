@@ -457,6 +457,47 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS audit_log_created_idx ON audit_log(created_at);
 CREATE INDEX IF NOT EXISTS audit_log_actor_idx ON audit_log(actor_id, created_at);
+CREATE TABLE IF NOT EXISTS api_request_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_id TEXT NOT NULL,
+    method TEXT NOT NULL,
+    path TEXT NOT NULL,
+    query TEXT NOT NULL DEFAULT '',
+    function TEXT NOT NULL,
+    status INTEGER NOT NULL DEFAULT 0,
+    user_id TEXT,
+    username TEXT,
+    display_name TEXT,
+    user_role TEXT,
+    user_status TEXT,
+    email_verified INTEGER,
+    auth_kind TEXT NOT NULL DEFAULT 'none',
+    ip TEXT NOT NULL DEFAULT '',
+    user_agent TEXT NOT NULL DEFAULT '',
+    request_headers TEXT NOT NULL DEFAULT '{}',
+    request_content_type TEXT NOT NULL DEFAULT '',
+    request_body TEXT,
+    request_bytes INTEGER NOT NULL DEFAULT 0,
+    request_truncated INTEGER NOT NULL DEFAULT 0,
+    response_headers TEXT NOT NULL DEFAULT '{}',
+    response_content_type TEXT NOT NULL DEFAULT '',
+    response_body TEXT,
+    response_bytes INTEGER NOT NULL DEFAULT 0,
+    response_truncated INTEGER NOT NULL DEFAULT 0,
+    started_at TEXT NOT NULL,
+    ended_at TEXT NOT NULL,
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    aborted INTEGER NOT NULL DEFAULT 0,
+    error TEXT
+);
+CREATE INDEX IF NOT EXISTS api_request_logs_created_idx
+    ON api_request_logs(started_at);
+CREATE INDEX IF NOT EXISTS api_request_logs_user_idx
+    ON api_request_logs(user_id, started_at);
+CREATE INDEX IF NOT EXISTS api_request_logs_ip_idx
+    ON api_request_logs(ip, started_at);
+CREATE INDEX IF NOT EXISTS api_request_logs_auth_idx
+    ON api_request_logs(auth_kind, started_at);
 "#;
 
 #[derive(Clone, Copy, Debug)]
@@ -509,6 +550,23 @@ fn create_schema_file(path: &Path, kind: DbKind) -> anyhow::Result<()> {
         )?;
         if has_ip == 0 {
             conn.execute("ALTER TABLE audit_log ADD COLUMN ip TEXT", [])?;
+        }
+        for (column, ddl) in [
+            ("user_role", "TEXT"),
+            ("user_status", "TEXT"),
+            ("email_verified", "INTEGER"),
+        ] {
+            let exists: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('api_request_logs') WHERE name = ?1",
+                [column],
+                |row| row.get(0),
+            )?;
+            if exists == 0 {
+                conn.execute(
+                    &format!("ALTER TABLE api_request_logs ADD COLUMN {column} {ddl}"),
+                    [],
+                )?;
+            }
         }
     }
     conn.pragma_update(None, "user_version", SPLIT_SCHEMA_VERSION)?;

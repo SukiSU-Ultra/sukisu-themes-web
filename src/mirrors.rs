@@ -121,13 +121,16 @@ fn mirrors_path() -> PathBuf {
 }
 
 impl MirrorPool {
-    pub async fn load() -> Self {
+    pub async fn load(family: crate::net::IpFamily) -> Self {
         let path = mirrors_path();
-        let client = Client::builder()
-            .timeout(CHECK_TIMEOUT)
-            .redirect(reqwest::redirect::Policy::limited(3))
-            .build()
-            .unwrap_or_else(|_| Client::new());
+        let client = crate::net::apply_client_family(
+            Client::builder()
+                .timeout(CHECK_TIMEOUT)
+                .redirect(reqwest::redirect::Policy::limited(3)),
+            family,
+        )
+        .build()
+        .unwrap_or_else(|_| Client::new());
         let pool = Self {
             path,
             state: Arc::new(RwLock::new(MirrorState::default())),

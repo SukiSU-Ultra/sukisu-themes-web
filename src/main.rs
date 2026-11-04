@@ -5,6 +5,7 @@ mod account_api;
 mod accounts;
 mod admin_users;
 mod api;
+mod api_monitor;
 mod auth;
 mod auth_settings_api;
 mod authors;
@@ -18,6 +19,7 @@ mod jobs;
 mod mailer;
 mod mirrors;
 mod models;
+mod net;
 mod network_api;
 mod oauth;
 mod package;
@@ -32,7 +34,7 @@ mod theme_tokens;
 mod uploads;
 mod util;
 
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 
 use tracing_subscriber::EnvFilter;
@@ -170,9 +172,22 @@ async fn run(settings: config::StorageSettings) -> anyhow::Result<()> {
         .bind
         .parse()
         .map_err(|_| anyhow::anyhow!("无效的 ADMIN_BIND: {}", network.bind))?;
+    match network.ip_family {
+        net::IpFamily::Ipv4 if !bind.is_ipv4() => {
+            anyhow::bail!("ADMIN_IP_FAMILY=ipv4，但 ADMIN_BIND={} 不是 IPv4", network.bind)
+        }
+        net::IpFamily::Ipv6 if !bind.is_ipv6() => {
+            anyhow::bail!("ADMIN_IP_FAMILY=ipv6，但 ADMIN_BIND={} 不是 IPv6", network.bind)
+        }
+        _ => {}
+    }
     let app = api::router(state);
     let listener = tokio::net::TcpListener::bind((bind, network.port)).await?;
     tracing::info!("sukisu-theme-web listening on {bind}:{}", network.port);
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }

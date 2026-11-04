@@ -944,17 +944,20 @@ async fn github_callback(
             return Redirect::to("/account/login?github=error").into_response();
         }
     };
+    let secure = auth::request_is_secure(&headers);
     let cookie = auth::session_cookie(
         auth::USER_SESSION_COOKIE,
         &token,
-        "/account",
+        "/",
         crate::config::web_session_ttl_secs(&state.paths),
-        auth::request_is_secure(&headers),
+        secure,
     );
+    let legacy_cookie = auth::clear_session_cookie(auth::USER_SESSION_COOKIE, "/account", secure);
     Response::builder()
         .status(StatusCode::SEE_OTHER)
         .header("Location", "/account/?github=1")
         .header("Set-Cookie", cookie)
+        .header("Set-Cookie", legacy_cookie)
         .body(axum::body::Body::empty())
         .unwrap_or_else(|_| Redirect::to("/account/").into_response())
 }
