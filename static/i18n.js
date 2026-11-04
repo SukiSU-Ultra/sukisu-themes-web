@@ -110,7 +110,7 @@
   function loadLocale(code) {
     if (code === DEFAULT_LANGUAGE || hasLocale(code)) return Promise.resolve();
     if (localePromises[code]) return localePromises[code];
-    localePromises[code] = fetch('/locales/' + encodeURIComponent(code) + '.json', { cache: 'no-store' })
+    localePromises[code] = fetch('/locales/' + encodeURIComponent(code) + '.json', { cache: 'default' })
       .then(response => {
         if (!response.ok) throw new Error('locale request failed: HTTP ' + response.status);
         return response.json();
@@ -350,10 +350,6 @@
     applyTree(document.documentElement);
     startObserver();
     document.documentElement.removeAttribute('data-i18n-loading');
-    if (current === DEFAULT_LANGUAGE) {
-      // Warm the English dictionary so switching feels instant.
-      setTimeout(() => { loadLocale('en').catch(() => {}); }, 1200);
-    }
   }
 
   if (current !== DEFAULT_LANGUAGE) {

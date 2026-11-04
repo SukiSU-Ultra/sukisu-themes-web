@@ -646,46 +646,32 @@ pub async fn publish_theme(
         }
     }
 
-    store
-        .put_at(
-            location.as_deref(),
-            &keys.package,
-            &prepared.package.data,
-            &content_type_for(&keys.package),
-        )
-        .await?;
-    store
-        .put_at(
-            location.as_deref(),
-            &keys.preview,
-            &prepared.preview.data,
-            &content_type_for(&keys.preview),
-        )
-        .await?;
-    let mut written = HashSet::new();
-    written.insert(keys.package.clone());
-    written.insert(keys.preview.clone());
+    let mut items: Vec<(&str, &[u8])> = vec![
+        (keys.package.as_str(), prepared.package.data.as_slice()),
+        (keys.preview.as_str(), prepared.preview.data.as_slice()),
+    ];
     if let (Some(avatar), Some(key)) = (&prepared.avatar, &keys.avatar) {
-        store
-            .put_at(
-                location.as_deref(),
-                key,
-                &avatar.data,
-                &content_type_for(key),
-            )
-            .await?;
-        written.insert(key.clone());
+        items.push((key.as_str(), avatar.data.as_slice()));
     }
     for (screenshot, key) in prepared.screenshots.iter().zip(keys.screenshots.iter()) {
-        store
-            .put_at(
-                location.as_deref(),
-                key,
-                &screenshot.data,
-                &content_type_for(key),
-            )
-            .await?;
-        written.insert(key.clone());
+        items.push((key.as_str(), screenshot.data.as_slice()));
+    }
+    let location_id = location.as_deref();
+    let mut written: HashSet<String> = HashSet::new();
+    for chunk in items.chunks(4) {
+        let uploads = chunk.iter().map(|&(key, data)| {
+            let store = &store;
+            async move {
+                let content_type = content_type_for(key);
+                store
+                    .put_at(location_id, key, data, &content_type)
+                    .await?;
+                Ok::<String, anyhow::Error>(key.to_string())
+            }
+        });
+        for result in futures::future::join_all(uploads).await {
+            written.insert(result?);
+        }
     }
     for key in &old_keys {
         if !written.contains(key) {

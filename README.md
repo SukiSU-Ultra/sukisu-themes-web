@@ -86,14 +86,28 @@ Rust 编写的主题镜像、投稿审核和账号系统，提供 Android 管理
 
 ## 性能与并发
 
+- 应用内置 gzip/zstd 压缩，覆盖 HTML、JS、JSON、SVG 和 `catalog.json`；图片、主题包、206 响应和已压缩内容会自动跳过。压缩率、节省字节和按内容类型统计在管理后台「性能」页实时显示。
+- 管理后台「性能」页可以调整压缩开关/编码/最小字节、下载缓冲、上传并发、统计落库间隔、页面轮询间隔、工作线程/阻塞线程和数据库连接池；部分配置保存后需要重启。
+- 下载流默认使用 64 KiB 缓冲（可调 16 KiB–1 MiB），避免 4 KiB 小读放大；主题令牌和命名令牌有 5 秒短缓存，减少热点下载路径的磁盘/DB 查询。
 - SQLite 使用 WAL，并默认开 4 个连接组成的小连接池；可用 `THEME_DB_POOL_SIZE` 调整（1-32）。读写仍由 SQLite 串行化，但读请求不再互相阻塞。
 - SQLite 连接使用 `synchronous=NORMAL`、内存临时表和 8 MB 页面缓存，适合以读为主的主题镜像。
-- 下载计数先写入内存缓冲区，每 3 秒批量落库并批量更新 `catalog.json`，不会每个请求都写数据库或重写目录文件。因此 `/health`、`/api/status` 和统计接口的下载数可能延迟约 3 秒。
+- 下载计数先写入内存缓冲区，按 `PERF_FLUSH_INTERVAL_SECS`（默认 3 秒）批量落库并批量更新 `catalog.json`，不会每个请求都写数据库或重写目录文件。因此 `/health`、`/api/status` 和统计接口的下载数可能延迟约 3 秒。
 - 已发布主题的预览图、截图、作者信息和主题索引缓存在内存中；目录 `catalog.json` 也缓存解析结果，按 mtime/写入版本失效。
 - 登录会话有 5 秒正向缓存，避免每个已登录请求都查询 SQLite；登出和会话撤销会立即清理缓存，禁用账号最多延迟 5 秒生效。
 - SQLite 使用 `synchronous=NORMAL`：断电时可能丢失最后少量已提交事务，但数据库完整性不受影响。下载计数在崩溃时最多丢失约 3 秒缓冲。
-- `catalog.json`、HTML/JS 使用 `ETag` + `304`；主题包、预览图和截图按版本号返回长缓存头，重复访问可直接命中浏览器缓存（令牌保护资源使用 `private`，不进入共享缓存）。
+- `catalog.json`、HTML/JS 使用弱 `ETag` + `304`；主题包、预览图和截图按版本号返回长缓存头，重复访问可直接命中浏览器缓存（令牌保护资源使用 `private`，不进入共享缓存）。
 - 高流量部署建议：`account.db` 放在本地 SSD，不要放 NFS/SMB；主题资源可以用 NAS/S3，但数据库必须本地；根据 CPU 和内存调整 `THEME_DB_POOL_SIZE`；系统文件描述符上限至少 4096。
+
+
+## 管理后台
+
+- 「接入信息」与「API 接口」合并为「接入与 API」，统一展示接入地址、请求头、接口列表和调用示例。
+- 「存储与配额」与「存储位置」合并为「存储与配额」，在同一页面内展示配额、目录、后端、NAS/OpenList 来源和导入。
+- 每个页面顶部都有「功能说明」卡片，说明这是什么、完整能力和使用步骤。
+- 用户与作者页使用统一的列表布局，支持按关键词、角色/状态筛选；用户详情改为独立的二级页面 `#user/<id>`，不再滚动到本页底部。
+- 管理员操作日志以中文展示操作、目标和详情，支持按用户、操作和 IP 筛选；旧日志的 IP 为空。
+- 主题预览页只读：不再提供编辑标签或删除入口；需要在「上传主题 → 主题维护」中操作。
+- 性能页新增实时下载/上传速度、活跃请求、上传任务和当前正在读取的资源；顶栏也显示实时速度。
 
 ## 上传进度与并发
 
@@ -110,6 +124,7 @@ Rust 编写的主题镜像、投稿审核和账号系统，提供 Android 管理
 - 仅对 `themes/...` 且**不带 `Range`** 的请求尝试镜像；断点续传始终留在本服务器，避免不同源的文件混在一起。
 - 选择顺序：按 `priority` 从小到大；同优先级之间轮询，避免所有下载压到同一台镜像；对候选镜像的同一路径做 `HEAD`（不支持 `HEAD` 时用 `Range: bytes=0-0`）探测，成功才重定向；4 秒总预算，全部失败则本地直接下载。
 - 探测结果缓存：成功 60 秒、失败 20 秒，避免每个分片/重试都重复探测。
+- 同一路径的冷启动探测带 single-flight：并发客户端共享一次探测，不会同时把每台镜像都打一遍。
 - 302 的 `Location` 带 `sukisu_mirror=1`；如果镜像误配成本服务器，第二次请求会识别该标记并本地服务，不会循环重定向。
 - 统计在 302 时计数一次；自指回退不会再计数。
 - 镜像必须提供相同的 `themes/<id>-v<version>.sukisu` 路径，并且文件与本服务器字节一致。管理器会跨域转发 `X-Sukisu-Theme-Token` 请求头，因此镜像要么接受同一个 token，要么公开可读。配置里的 `token` 只用于服务端探测，不会写入重定向 URL。
@@ -182,8 +197,12 @@ THEME_STORAGE_ROOT=$PWD/dev-data
 THEME_STORAGE_LIMIT_BYTES=1258291200
 EOF
 THEME_STORAGE_ENV="$PWD/dev-storage.env" THEME_DB_PATH="$PWD/dev-account.db" \
+  ./target/release/sukisu-theme-web migrate-db
+THEME_STORAGE_ENV="$PWD/dev-storage.env" THEME_DB_PATH="$PWD/dev-account.db" \
   ADMIN_BIND=127.0.0.1 ADMIN_PORT=8080 ./target/release/sukisu-theme-web
 ```
+
+首次运行 `migrate-db` 会在 `dev-account.db` 同级创建 `db-split/` 空库；已有单库时会复制数据。之后正常启动会拒绝单库布局并提示先迁移。
 
 打开 `http://127.0.0.1:8080/admin/setup` 创建管理员并设置存储配额。
 
@@ -196,6 +215,7 @@ $env:THEME_STATIC_DIR="$PWD\static"
 $env:THEME_DISABLE_SYSTEMCTL="1"
 $env:ADMIN_BIND="127.0.0.1"
 $env:ADMIN_PORT="8080"
+cargo run -- migrate-db
 cargo run
 ```
 
@@ -239,9 +259,10 @@ target/aarch64-unknown-linux-musl/release/sukisu-theme-web
 | `/etc/sukisu-theme-web/network.env` | `ADMIN_BIND`、`ADMIN_PORT`、`PUBLIC_DOMAINS` |
 | `/etc/sukisu-theme-web/account.env` | `ACCOUNT_URL`、SMTP、GitHub OAuth |
 | `/etc/sukisu-theme-web/sources.json` | 导入/可写存储位置（本地/NAS、OpenList/AList Token、配额） |
-| `/var/lib/sukisu-theme-web/account.db` | SQLite 账号数据库 |
+| `/var/lib/sukisu-theme-web/db-split/` | SQLite 分库（account/authors/social/stats/audit） |
+| `/var/lib/sukisu-theme-web/account.db` | 迁移前的单库快照（仅回滚用） |
 
-可以用 `THEME_STORAGE_ENV`、`THEME_DB_PATH`、`THEME_ADMIN_ENV`、`THEME_ADMIN_CONFIG`、`THEME_NETWORK_ENV`、`THEME_ACCOUNT_ENV`、`THEME_STATIC_DIR` 覆盖路径；`THEME_TOKEN_ENV`、`THEME_AUTHORS_FILE`、`THEME_ADMIN_PASSWORD_FILE`、`THEME_SOURCES_FILE` 分别覆盖令牌、作者、密码和导入/可写来源文件。`THEME_DB_POOL_SIZE`（默认 4，范围 1-32）控制 SQLite 连接池大小。
+可以用 `THEME_STORAGE_ENV`、`THEME_DB_PATH`、`THEME_DB_DIR`、`THEME_ADMIN_ENV`、`THEME_ADMIN_CONFIG`、`THEME_NETWORK_ENV`、`THEME_ACCOUNT_ENV`、`THEME_STATIC_DIR` 覆盖路径；`THEME_TOKEN_ENV`、`THEME_AUTHORS_FILE`、`THEME_ADMIN_PASSWORD_FILE`、`THEME_SOURCES_FILE` 分别覆盖令牌、作者、密码和导入/可写来源文件。`THEME_DB_POOL_SIZE`（默认 4，范围 1-32）控制 SQLite 连接池大小。
 
 ### `storage.env`
 
@@ -288,6 +309,19 @@ PUBLIC_URL=https://themes.example.com/
 ADMIN_URL=https://themes.example.com/admin/
 # 站点维护开关；通常由管理后台「站点维护」卡片修改
 MAINTENANCE=0
+# 性能配置；通常由管理后台「性能」页修改
+PERF_COMPRESSION_ENABLED=1
+PERF_COMPRESSION_GZIP=1
+PERF_COMPRESSION_ZSTD=1
+PERF_COMPRESSION_MIN_BYTES=256
+PERF_COMPRESSION_QUALITY=default
+PERF_DOWNLOAD_BUFFER_BYTES=65536
+PERF_UPLOAD_CONCURRENCY=4
+PERF_FLUSH_INTERVAL_SECS=3
+PERF_POLL_INTERVAL_SECS=30
+PERF_WORKER_THREADS=0
+PERF_BLOCKING_THREADS=64
+PERF_DB_POOL_SIZE=4
 ```
 
 ### `account.env`
@@ -308,6 +342,24 @@ SMTP_TLS=starttls
 ```
 
 未配置 SMTP 时无法注册邮箱账号；未配置 GitHub 时 GitHub 登录按钮隐藏。管理员也可以登录后在「认证」页修改这些配置。GitHub 登录需要在 GitHub 创建 OAuth App，并把回调地址登记为 `GITHUB_CALLBACK_URL`。
+
+### 数据库布局（分库）
+
+当前版本运行在分库布局：`account.db`（主库）+ `authors.db` + `social.db` + `stats.db` + `audit.db`，默认位于 `/var/lib/sukisu-theme-web/db-split/`。
+
+- 进程仍是同一个连接池；每条连接通过 SQLite `ATTACH` 挂载 5 个文件，所以跨库 JOIN 仍然可用。
+- SQLite 每个文件仍只有一个写者，但账号、作者、评论/关注、下载统计、审计的写可以落在不同文件上并行。
+- 跨库外键和跨库事务不可用；删除用户/作者由应用按固定顺序清理，并每小时运行孤儿修复。
+- `config.env` 中的 `THEME_DB_LAYOUT=split` 和 `THEME_DB_DIR` 记录布局与目录。
+- 新安装或从单库升级前，先停止服务并运行：
+
+```bash
+/opt/sukisu-theme-web/sukisu-theme-web-rs migrate-db
+```
+
+  首次安装（没有旧 `account.db`）会创建空的 5 个库；从单库升级会复制旧表并保留旧 `account.db` 作为回滚快照。迁移期间不要启动服务。
+- 回滚：停止服务，恢复旧二进制和迁移前的 `account.db`，删除 `config.env` 中的 `THEME_DB_LAYOUT` / `THEME_DB_DIR`，再启动。迁移后的新写入会丢失，必须以备份为准。
+- 管理后台「性能」页会显示 5 个库的文件大小、WAL、表和行数。
 
 ### 站点维护模式
 
@@ -435,7 +487,8 @@ systemctl is-active sukisu-theme-web
 | 路径 | 内容 |
 | --- | --- |
 | `/srv/sukisu-themes` | 主题包、预览图、截图、头像、meta、`catalog.json` |
-| `/var/lib/sukisu-theme-web/account.db` | SQLite（含 `-wal` / `-shm`） |
+| `/var/lib/sukisu-theme-web/db-split/` | SQLite 分库文件（含 `-wal` / `-shm`） |
+| `/var/lib/sukisu-theme-web/account.db` | 迁移前单库快照（回滚用） |
 | `/etc/sukisu-theme-web`、`/etc/sukisu-themes` | 配置和访问令牌 |
 | `/etc/sukisu-theme-web/sources.json` | 存储位置、配额和 AList Token |
 

@@ -162,6 +162,38 @@ curl -sI -H "X-Sukisu-Theme-Token: $THEME_STORE_TOKEN" \
 - 带 `Range` 的续传请求应返回 `200/206`，不应返回 `302`。
 - 详见 [`docs/MIRRORS.md`](MIRRORS.md)。
 
+## 数据库分库迁移
+
+当前二进制要求分库布局，首次启动前必须运行一次离线迁移。迁移不修改旧 `account.db`，只创建 `db-split/` 并写入 `config.env` 的 `THEME_DB_LAYOUT=split`、`THEME_DB_DIR`。
+
+```bash
+# 1. 备份旧库和配置（迁移会读旧库，但不会改它）
+BACKUP=/root/sukisu-deploy-backup/db-split-$(date +%Y%m%d-%H%M%S)
+mkdir -p "$BACKUP"
+cp -a /var/lib/sukisu-theme-web/account.db* "$BACKUP"/
+cp -a /etc/sukisu-theme-web/config.env "$BACKUP"/
+
+# 2. 停止服务，确保没有写入
+systemctl stop sukisu-theme-web
+
+# 3. 运行迁移（使用与 service 相同的 THEME_STORAGE_ENV）
+/opt/sukisu-theme-web/sukisu-theme-web-rs migrate-db
+
+# 4. 检查生成的 5 个库和配置标记
+ls -lh /var/lib/sukisu-theme-web/db-split/
+grep -E '^THEME_DB_(LAYOUT|DIR)=' /etc/sukisu-theme-web/config.env
+
+# 5. 启动并验证
+systemctl start sukisu-theme-web
+systemctl is-active sukisu-theme-web
+curl -fsS http://127.0.0.1:8080/health
+```
+
+- 首次安装没有旧库时，`migrate-db` 会创建空的 5 个库。
+- 迁移失败时旧库保持不变；修复 `db-split/` 后重试（非空目标目录会拒绝覆盖）。
+- 回滚：停服务，恢复旧二进制和迁移前的 `account.db`，删除 `config.env` 的 `THEME_DB_LAYOUT` / `THEME_DB_DIR`，再启动。迁移后的新写入会丢失。
+- 迁移成功后备份 `db-split/` 全部文件（含 `-wal` / `-shm`）。
+
 ## 部署后验证
 
 服务端：
@@ -182,6 +214,19 @@ done
 
 curl -sS -o /dev/null -w '/ %{http_code}\n' "http://127.0.0.1:8080/"
 # / 302
+```
+
+压缩与数据库：
+
+```bash
+for enc in gzip zstd; do
+  printf '%s ' "$enc"
+  curl -sS -H "Accept-Encoding: $enc" -D - -o /dev/null \
+    http://127.0.0.1:8080/i18n.js | grep -i '^content-encoding:' || echo missing
+done
+curl -sS -H 'Accept-Encoding: gzip' -o /dev/null -w 'gzip bytes %{size_download}\n' \
+  http://127.0.0.1:8080/i18n.js
+ls -lh /var/lib/sukisu-theme-web/db-split/
 ```
 
 公网：

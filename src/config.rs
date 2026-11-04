@@ -72,6 +72,29 @@ pub struct StorageSettings {
     pub s3_path_style: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DbLayout {
+    Single,
+    Split,
+}
+
+impl DbLayout {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DbLayout::Single => "single",
+            DbLayout::Split => "split",
+        }
+    }
+
+    fn parse(value: &str) -> Self {
+        if value.trim().eq_ignore_ascii_case("split") {
+            DbLayout::Split
+        } else {
+            DbLayout::Single
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Paths {
     pub root: PathBuf,
@@ -89,7 +112,16 @@ pub struct Paths {
     pub account_env: PathBuf,
     pub network_env: PathBuf,
     pub sources_file: PathBuf,
+    /// Legacy single-file database. Kept for migration and rollback.
+    pub legacy_db: PathBuf,
+    pub db_dir: PathBuf,
+    pub db_layout: DbLayout,
+    /// Account database; also the ATTACH main database in split layout.
     pub db: PathBuf,
+    pub authors_db: PathBuf,
+    pub social_db: PathBuf,
+    pub stats_db: PathBuf,
+    pub audit_db: PathBuf,
 }
 
 fn env_path(name: &str, default: &str) -> PathBuf {
@@ -136,6 +168,40 @@ pub fn set_maintenance_enabled(paths: &Paths, enabled: bool) -> io::Result<()> {
 
 pub fn load_paths(settings: &StorageSettings) -> Paths {
     let root = settings.root.clone();
+    let admin_config = env_path("THEME_ADMIN_CONFIG", "/etc/sukisu-theme-web/config.env");
+    let legacy_db = env_path("THEME_DB_PATH", "/var/lib/sukisu-theme-web/account.db");
+    let config = read_env(&admin_config);
+    let db_layout = config
+        .get("THEME_DB_LAYOUT")
+        .map(|value| DbLayout::parse(value))
+        .unwrap_or(DbLayout::Single);
+    let db_dir = config
+        .get("THEME_DB_DIR")
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            legacy_db
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .join("db-split")
+        });
+    let (db, authors_db, social_db, stats_db, audit_db) = match db_layout {
+        DbLayout::Split => (
+            db_dir.join("account.db"),
+            db_dir.join("authors.db"),
+            db_dir.join("social.db"),
+            db_dir.join("stats.db"),
+            db_dir.join("audit.db"),
+        ),
+        DbLayout::Single => (
+            legacy_db.clone(),
+            legacy_db.clone(),
+            legacy_db.clone(),
+            legacy_db.clone(),
+            legacy_db.clone(),
+        ),
+    };
     Paths {
         meta: root.join("meta"),
         pending: root.join("pending"),
@@ -150,12 +216,19 @@ pub fn load_paths(settings: &StorageSettings) -> Paths {
             "THEME_ADMIN_PASSWORD_FILE",
             "/etc/sukisu-theme-web/admin-password",
         ),
-        admin_config: env_path("THEME_ADMIN_CONFIG", "/etc/sukisu-theme-web/config.env"),
+        admin_config,
         storage_env: env_path("THEME_STORAGE_ENV", "/etc/sukisu-theme-web/storage.env"),
         account_env: env_path("THEME_ACCOUNT_ENV", "/etc/sukisu-theme-web/account.env"),
         network_env: env_path("THEME_NETWORK_ENV", "/etc/sukisu-theme-web/network.env"),
         sources_file: env_path("THEME_SOURCES_FILE", "/etc/sukisu-theme-web/sources.json"),
-        db: env_path("THEME_DB_PATH", "/var/lib/sukisu-theme-web/account.db"),
+        legacy_db,
+        db_dir,
+        db_layout,
+        db,
+        authors_db,
+        social_db,
+        stats_db,
+        audit_db,
     }
 }
 
@@ -191,6 +264,200 @@ fn parse_bool(value: &str, default: bool) -> bool {
         "0" | "false" | "no" | "off" => false,
         _ => default,
     }
+}
+
+pub const DEFAULT_DOWNLOAD_BUFFER_BYTES: usize = 64 * 1024;
+pub const MIN_DOWNLOAD_BUFFER_BYTES: usize = 16 * 1024;
+pub const MAX_DOWNLOAD_BUFFER_BYTES: usize = 1024 * 1024;
+pub const DEFAULT_UPLOAD_CONCURRENCY: usize = 4;
+pub const DEFAULT_FLUSH_INTERVAL_SECS: u64 = 3;
+pub const DEFAULT_POLL_INTERVAL_SECS: u64 = 30;
+pub const DEFAULT_BLOCKING_THREADS: usize = 64;
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PerformanceSettings {
+    pub compression_enabled: bool,
+    pub compression_gzip: bool,
+    pub compression_zstd: bool,
+    pub compression_min_bytes: usize,
+    pub compression_quality: String,
+    pub download_buffer_bytes: usize,
+    pub upload_concurrency: usize,
+    pub flush_interval_secs: u64,
+    pub poll_interval_secs: u64,
+    pub worker_threads: usize,
+    pub blocking_threads: usize,
+    pub db_pool_size: usize,
+}
+
+impl Default for PerformanceSettings {
+    fn default() -> Self {
+        Self {
+            compression_enabled: true,
+            compression_gzip: true,
+            compression_zstd: true,
+            compression_min_bytes: 256,
+            compression_quality: "default".to_string(),
+            download_buffer_bytes: DEFAULT_DOWNLOAD_BUFFER_BYTES,
+            upload_concurrency: DEFAULT_UPLOAD_CONCURRENCY,
+            flush_interval_secs: DEFAULT_FLUSH_INTERVAL_SECS,
+            poll_interval_secs: DEFAULT_POLL_INTERVAL_SECS,
+            worker_threads: 0,
+            blocking_threads: DEFAULT_BLOCKING_THREADS,
+            db_pool_size: 4,
+        }
+    }
+}
+
+pub fn read_performance_settings(paths: &Paths) -> PerformanceSettings {
+    let env = read_env(&paths.admin_config);
+    let defaults = PerformanceSettings::default();
+    let parse_usize = |key: &str, fallback: usize| {
+        env.get(key)
+            .and_then(|value| value.trim().parse::<usize>().ok())
+            .unwrap_or(fallback)
+    };
+    let parse_u64 = |key: &str, fallback: u64| {
+        env.get(key)
+            .and_then(|value| value.trim().parse::<u64>().ok())
+            .unwrap_or(fallback)
+    };
+    let quality = env
+        .get("PERF_COMPRESSION_QUALITY")
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| matches!(value.as_str(), "fastest" | "default" | "best"))
+        .unwrap_or(defaults.compression_quality);
+    PerformanceSettings {
+        compression_enabled: env
+            .get("PERF_COMPRESSION_ENABLED")
+            .map(|value| parse_bool(value, defaults.compression_enabled))
+            .unwrap_or(defaults.compression_enabled),
+        compression_gzip: env
+            .get("PERF_COMPRESSION_GZIP")
+            .map(|value| parse_bool(value, defaults.compression_gzip))
+            .unwrap_or(defaults.compression_gzip),
+        compression_zstd: env
+            .get("PERF_COMPRESSION_ZSTD")
+            .map(|value| parse_bool(value, defaults.compression_zstd))
+            .unwrap_or(defaults.compression_zstd),
+        compression_min_bytes: parse_usize(
+            "PERF_COMPRESSION_MIN_BYTES",
+            defaults.compression_min_bytes,
+        )
+        .clamp(0, 1024 * 1024),
+        compression_quality: quality,
+        download_buffer_bytes: parse_usize(
+            "PERF_DOWNLOAD_BUFFER_BYTES",
+            defaults.download_buffer_bytes,
+        )
+        .clamp(MIN_DOWNLOAD_BUFFER_BYTES, MAX_DOWNLOAD_BUFFER_BYTES),
+        upload_concurrency: parse_usize("PERF_UPLOAD_CONCURRENCY", defaults.upload_concurrency)
+            .clamp(1, 16),
+        flush_interval_secs: parse_u64("PERF_FLUSH_INTERVAL_SECS", defaults.flush_interval_secs)
+            .clamp(1, 60),
+        poll_interval_secs: parse_u64("PERF_POLL_INTERVAL_SECS", defaults.poll_interval_secs)
+            .clamp(5, 300),
+        worker_threads: parse_usize("PERF_WORKER_THREADS", defaults.worker_threads).min(64),
+        blocking_threads: parse_usize("PERF_BLOCKING_THREADS", defaults.blocking_threads)
+            .clamp(8, 512),
+        db_pool_size: parse_usize("PERF_DB_POOL_SIZE", defaults.db_pool_size).clamp(1, 32),
+    }
+}
+
+pub fn validate_performance_settings(settings: PerformanceSettings) -> Result<PerformanceSettings> {
+    if settings.compression_enabled && !settings.compression_gzip && !settings.compression_zstd {
+        bail!("启用压缩时至少要选择 gzip 或 zstd");
+    }
+    if settings.compression_min_bytes > 1024 * 1024 {
+        bail!("压缩最小字节不能超过 1 MiB");
+    }
+    if !matches!(
+        settings.compression_quality.as_str(),
+        "fastest" | "default" | "best"
+    ) {
+        bail!("压缩级别只能是 fastest、default 或 best");
+    }
+    if !(MIN_DOWNLOAD_BUFFER_BYTES..=MAX_DOWNLOAD_BUFFER_BYTES)
+        .contains(&settings.download_buffer_bytes)
+    {
+        bail!("下载缓冲需要在 16 KiB 到 1 MiB 之间");
+    }
+    if !(1..=16).contains(&settings.upload_concurrency) {
+        bail!("上传并发需要在 1 到 16 之间");
+    }
+    if !(1..=60).contains(&settings.flush_interval_secs) {
+        bail!("统计落库间隔需要在 1 到 60 秒之间");
+    }
+    if !(5..=300).contains(&settings.poll_interval_secs) {
+        bail!("页面轮询间隔需要在 5 到 300 秒之间");
+    }
+    if settings.worker_threads > 64 {
+        bail!("工作线程数不能超过 64，0 表示自动");
+    }
+    if !(8..=512).contains(&settings.blocking_threads) {
+        bail!("阻塞线程数需要在 8 到 512 之间");
+    }
+    if !(1..=32).contains(&settings.db_pool_size) {
+        bail!("数据库连接池需要在 1 到 32 之间");
+    }
+    Ok(settings)
+}
+
+pub fn write_performance_settings(paths: &Paths, settings: &PerformanceSettings) -> io::Result<()> {
+    for (key, value) in [
+        (
+            "PERF_COMPRESSION_ENABLED",
+            if settings.compression_enabled { "1" } else { "0" }.to_string(),
+        ),
+        (
+            "PERF_COMPRESSION_GZIP",
+            if settings.compression_gzip { "1" } else { "0" }.to_string(),
+        ),
+        (
+            "PERF_COMPRESSION_ZSTD",
+            if settings.compression_zstd { "1" } else { "0" }.to_string(),
+        ),
+        (
+            "PERF_COMPRESSION_MIN_BYTES",
+            settings.compression_min_bytes.to_string(),
+        ),
+        (
+            "PERF_COMPRESSION_QUALITY",
+            settings.compression_quality.clone(),
+        ),
+        (
+            "PERF_DOWNLOAD_BUFFER_BYTES",
+            settings.download_buffer_bytes.to_string(),
+        ),
+        (
+            "PERF_UPLOAD_CONCURRENCY",
+            settings.upload_concurrency.to_string(),
+        ),
+        (
+            "PERF_FLUSH_INTERVAL_SECS",
+            settings.flush_interval_secs.to_string(),
+        ),
+        (
+            "PERF_POLL_INTERVAL_SECS",
+            settings.poll_interval_secs.to_string(),
+        ),
+        (
+            "PERF_WORKER_THREADS",
+            settings.worker_threads.to_string(),
+        ),
+        (
+            "PERF_BLOCKING_THREADS",
+            settings.blocking_threads.to_string(),
+        ),
+        (
+            "PERF_DB_POOL_SIZE",
+            settings.db_pool_size.to_string(),
+        ),
+    ] {
+        set_env_key(&paths.admin_config, key, &value)?;
+    }
+    Ok(())
 }
 
 pub fn parse_storage_limit(value: &str) -> u64 {
@@ -312,6 +579,38 @@ pub fn write_atomic(path: &Path, data: &[u8], mode: u32) -> io::Result<()> {
     set_permissions(&temp, mode)?;
     if let Err(error) = fs::rename(&temp, path) {
         let _ = fs::remove_file(&temp);
+        return Err(error);
+    }
+    Ok(())
+}
+
+pub async fn write_atomic_async(path: &Path, data: &[u8], mode: u32) -> io::Result<()> {
+    static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("file");
+    let temp = path.with_file_name(format!(
+        ".{}.{}.{}.tmp",
+        file_name,
+        std::process::id(),
+        TEMP_COUNTER.fetch_add(1, Ordering::Relaxed),
+    ));
+    tokio::fs::write(&temp, data).await?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tokio::fs::set_permissions(&temp, fs::Permissions::from_mode(mode)).await?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = mode;
+    }
+    if let Err(error) = tokio::fs::rename(&temp, path).await {
+        let _ = tokio::fs::remove_file(&temp).await;
         return Err(error);
     }
     Ok(())

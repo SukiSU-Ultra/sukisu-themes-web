@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use axum::extract::{Extension, Path as AxumPath, State};
+use axum::extract::{DefaultBodyLimit, Extension, Path as AxumPath, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use bytes::Bytes;
@@ -49,6 +49,9 @@ pub fn router() -> Router<AppState> {
         .route("/uploads/init", post(init))
         .route("/uploads/{id}", get(status).delete(delete))
         .route("/uploads/{id}/{index}", post(upload_chunk))
+        .layer(DefaultBodyLimit::max(
+            MAX_CHUNK_SIZE as usize + 1024 * 1024,
+        ))
 }
 
 async fn init(
@@ -139,6 +142,17 @@ async fn upload_chunk(
     data: Bytes,
 ) -> Result<Json<Value>, ApiError> {
     let (dir, meta) = load_owned_meta(&state.paths, &session.user_id, &id).await?;
+    let _upload_permit = state
+        .upload_semaphore
+        .acquire()
+        .await
+        .map_err(|_| ApiError::internal("上传队列不可用"))?;
+    let _live_upload = state.performance.live.upload_guard();
+    state
+        .performance
+        .live
+        .upload
+        .record(data.len() as u64);
     if index >= meta.total_chunks {
         return Err(ApiError::bad("分片序号超出范围"));
     }
@@ -150,7 +164,12 @@ async fn upload_chunk(
         )));
     }
     let part = dir.join(format!("{index}.part"));
-    let temp = dir.join(format!(".{index}.part.tmp"));
+    // A completed retry is a no-op; this also makes duplicate parallel chunks
+    // safe when the client retries after a dropped response.
+    if tokio::fs::try_exists(&part).await.unwrap_or(false) {
+        return Ok(Json(status_value(&dir, &meta, false).await?));
+    }
+    let temp = dir.join(format!(".{index}.{}.part.tmp", random_hex(6)));
     tokio::fs::write(&temp, &data)
         .await
         .map_err(ApiError::internal)?;
@@ -173,24 +192,31 @@ async fn delete(
 pub async fn assemble(state: &AppState, owner_id: &str, id: &str) -> Result<FilePart, ApiError> {
     let (dir, meta) = load_owned_meta(&state.paths, owner_id, id).await?;
     let size = usize::try_from(meta.size).map_err(|_| ApiError::bad("主题包大小无效"))?;
-    let mut data = Vec::with_capacity(size);
-    for index in 0..meta.total_chunks {
-        let expected = expected_len(&meta, index);
-        let part = dir.join(format!("{index}.part"));
-        let bytes = tokio::fs::read(&part)
-            .await
-            .map_err(|_| ApiError::bad(format!("上传分片不完整，缺少第 {} 个分片", index + 1)))?;
-        if bytes.len() as u64 != expected {
-            return Err(ApiError::bad(format!(
-                "上传分片不完整，请继续上传第 {} 个分片",
-                index + 1
-            )));
+    let meta_for_task = meta.clone();
+    let dir_for_task = dir.clone();
+    let data = tokio::task::spawn_blocking(move || {
+        let mut data = Vec::with_capacity(size);
+        for index in 0..meta_for_task.total_chunks {
+            let expected = expected_len(&meta_for_task, index);
+            let part = dir_for_task.join(format!("{index}.part"));
+            let bytes = std::fs::read(&part)
+                .map_err(|_| format!("上传分片不完整，缺少第 {} 个分片", index + 1))?;
+            if bytes.len() as u64 != expected {
+                return Err(format!(
+                    "上传分片不完整，请继续上传第 {} 个分片",
+                    index + 1
+                ));
+            }
+            data.extend_from_slice(&bytes);
         }
-        data.extend_from_slice(&bytes);
-    }
-    if data.len() != size {
-        return Err(ApiError::bad("主题包大小与上传会话不一致"));
-    }
+        if data.len() != size {
+            return Err("主题包大小与上传会话不一致".to_string());
+        }
+        Ok::<Vec<u8>, String>(data)
+    })
+    .await
+    .map_err(ApiError::internal)?
+    .map_err(ApiError::bad)?;
     let ext = file_extension(&meta.filename);
     Ok(FilePart {
         filename: meta.filename,
@@ -318,15 +344,24 @@ async fn status_value(dir: &Path, meta: &UploadMeta, resumed: bool) -> Result<Va
 }
 
 async fn received_chunks(dir: &Path, meta: &UploadMeta) -> Vec<u64> {
+    let Ok(mut entries) = tokio::fs::read_dir(dir).await else {
+        return Vec::new();
+    };
     let mut received = Vec::new();
-    for index in 0..meta.total_chunks {
-        let expected = expected_len(meta, index);
-        let Ok(metadata) = tokio::fs::metadata(dir.join(format!("{index}.part"))).await else {
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let name = entry.file_name();
+        let Some(index) = name
+            .to_string_lossy()
+            .strip_suffix(".part")
+            .and_then(|value| value.parse::<u64>().ok())
+        else {
             continue;
         };
-        if metadata.is_file() && metadata.len() == expected {
+        if index < meta.total_chunks {
             received.push(index);
         }
     }
+    received.sort_unstable();
+    received.dedup();
     received
 }

@@ -55,7 +55,7 @@ pub async fn author_by_hash(db: &Database, hash: &str) -> Result<Option<Author>>
     let hash = hash.to_string();
     db.call(move |conn| {
         let mut statement = conn.prepare(&format!(
-            "SELECT {AUTHOR_COLUMNS} FROM authors WHERE hash = ?1"
+            "SELECT {AUTHOR_COLUMNS} FROM authors.authors WHERE hash = ?1"
         ))?;
         let mut rows = statement.query([hash])?;
         Ok(rows.next()?.map(author_from_row).transpose()?)
@@ -67,7 +67,7 @@ pub async fn authors_for_user(db: &Database, user_id: &str) -> Result<Vec<Author
     let user_id = user_id.to_string();
     db.call(move |conn| {
         let mut statement = conn.prepare(&format!(
-            "SELECT {AUTHOR_COLUMNS} FROM authors WHERE user_id = ?1
+            "SELECT {AUTHOR_COLUMNS} FROM authors.authors WHERE user_id = ?1
              ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END, created_at DESC"
         ))?;
         let mut rows = statement.query([user_id])?;
@@ -84,7 +84,7 @@ pub async fn active_author_for_user(db: &Database, user_id: &str) -> Result<Opti
     let user_id = user_id.to_string();
     db.call(move |conn| {
         let mut statement = conn.prepare(&format!(
-            "SELECT {AUTHOR_COLUMNS} FROM authors
+            "SELECT {AUTHOR_COLUMNS} FROM authors.authors
              WHERE user_id = ?1 AND status = 'active'
              ORDER BY approved_at DESC, created_at DESC LIMIT 1"
         ))?;
@@ -111,7 +111,7 @@ pub async fn create_author(
     let now = now_iso();
     db.call(move |conn| {
         conn.execute(
-            "INSERT INTO authors(hash, fingerprint, display_name, user_id, status, created_at, updated_at)
+            "INSERT INTO authors.authors(hash, fingerprint, display_name, user_id, status, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
              ON CONFLICT(hash) DO UPDATE SET
                  display_name = COALESCE(NULLIF(excluded.display_name, ''), authors.display_name),
@@ -145,7 +145,7 @@ pub async fn set_author_status(
             None
         };
         conn.execute(
-            "UPDATE authors
+            "UPDATE authors.authors
              SET status = ?2, approved_at = COALESCE(?3, approved_at),
                  approved_by = COALESCE(?4, approved_by), updated_at = ?5,
                  auto_revoke_at = CASE WHEN ?2 = 'active' THEN auto_revoke_at ELSE NULL END
@@ -159,14 +159,68 @@ pub async fn set_author_status(
 
 pub async fn delete_author(db: &Database, hash: &str) -> Result<usize> {
     let hash = hash.to_string();
-    db.call(move |conn| Ok(conn.execute("DELETE FROM authors WHERE hash = ?1", [&hash])?))
-        .await
+    db.call(move |conn| {
+        conn.execute(
+            "DELETE FROM social.user_follows WHERE author_hash = ?1",
+            [&hash],
+        )?;
+        conn.execute(
+            "DELETE FROM authors.author_restrictions WHERE author_hash = ?1",
+            [&hash],
+        )?;
+        Ok(conn.execute("DELETE FROM authors.authors WHERE hash = ?1", [&hash])?)
+    })
+    .await
 }
 
 pub async fn delete_authors_for_user(db: &Database, user_id: &str) -> Result<usize> {
     let user_id = user_id.to_string();
-    db.call(move |conn| Ok(conn.execute("DELETE FROM authors WHERE user_id = ?1", [&user_id])?))
-        .await
+    db.call(move |conn| {
+        let mut statement =
+            conn.prepare("SELECT hash FROM authors.authors WHERE user_id = ?1")?;
+        let hashes = statement
+            .query_map([&user_id], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        for hash in &hashes {
+            conn.execute(
+                "DELETE FROM social.user_follows WHERE author_hash = ?1",
+                [hash],
+            )?;
+            conn.execute(
+                "DELETE FROM authors.author_restrictions WHERE author_hash = ?1",
+                [hash],
+            )?;
+        }
+        conn.execute(
+            "DELETE FROM social.user_follows WHERE follower_id = ?1",
+            [&user_id],
+        )?;
+        conn.execute(
+            "DELETE FROM social.theme_comment_mentions WHERE user_id = ?1",
+            [&user_id],
+        )?;
+        conn.execute(
+            "DELETE FROM social.theme_comments WHERE user_id = ?1",
+            [&user_id],
+        )?;
+        conn.execute(
+            "DELETE FROM authors.author_requests WHERE user_id = ?1",
+            [&user_id],
+        )?;
+        conn.execute(
+            "DELETE FROM authors.author_reset_history WHERE user_id = ?1",
+            [&user_id],
+        )?;
+        conn.execute(
+            "DELETE FROM authors.submissions WHERE user_id = ?1",
+            [&user_id],
+        )?;
+        Ok(conn.execute(
+            "DELETE FROM authors.authors WHERE user_id = ?1",
+            [&user_id],
+        )?)
+    })
+    .await
 }
 
 pub async fn bind_author_to_user(
@@ -181,7 +235,7 @@ pub async fn bind_author_to_user(
     let now = now_iso();
     db.call(move |conn| {
         conn.execute(
-            "UPDATE authors
+            "UPDATE authors.authors
              SET user_id = ?2,
                  display_name = COALESCE(?3, display_name),
                  updated_at = ?4
@@ -199,7 +253,7 @@ pub async fn ensure_author_code(db: &Database, hash: &str) -> Result<(String, i6
         let transaction = conn.transaction()?;
         let row = transaction
             .query_row(
-                "SELECT code, next_theme_seq FROM authors WHERE hash = ?1",
+                "SELECT code, next_theme_seq FROM authors.authors WHERE hash = ?1",
                 [&hash],
                 |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, i64>(1)?)),
             )
@@ -211,13 +265,13 @@ pub async fn ensure_author_code(db: &Database, hash: &str) -> Result<(String, i6
             Some(code) => code,
             None => {
                 let max: i64 = transaction.query_row(
-                    "SELECT COALESCE(MAX(CAST(code AS INTEGER)), 11009) FROM authors WHERE code GLOB '[0-9]*'",
+                    "SELECT COALESCE(MAX(CAST(code AS INTEGER)), 11009) FROM authors.authors WHERE code GLOB '[0-9]*'",
                     [],
                     |row| row.get(0),
                 )?;
                 let code = (max + 1).max(11010).to_string();
                 transaction.execute(
-                    "UPDATE authors SET code = ?2, updated_at = ?3 WHERE hash = ?1",
+                    "UPDATE authors.authors SET code = ?2, updated_at = ?3 WHERE hash = ?1",
                     params![hash, code, now_iso()],
                 )?;
                 code
@@ -241,7 +295,7 @@ pub async fn allocate_theme_id(db: &Database, hash: &str) -> Result<String> {
             let transaction = conn.transaction()?;
             let row = transaction
                 .query_row(
-                    "SELECT code, next_theme_seq FROM authors WHERE hash = ?1",
+                    "SELECT code, next_theme_seq FROM authors.authors WHERE hash = ?1",
                     [&hash],
                     |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, i64>(1)?)),
                 )
@@ -255,7 +309,7 @@ pub async fn allocate_theme_id(db: &Database, hash: &str) -> Result<String> {
                 Some(code) => code,
                 None => {
                     let max: i64 = transaction.query_row(
-                        "SELECT COALESCE(MAX(CAST(code AS INTEGER)), 11009) FROM authors WHERE code GLOB '[0-9]*'",
+                        "SELECT COALESCE(MAX(CAST(code AS INTEGER)), 11009) FROM authors.authors WHERE code GLOB '[0-9]*'",
                         [],
                         |row| row.get(0),
                     )?;
@@ -263,7 +317,7 @@ pub async fn allocate_theme_id(db: &Database, hash: &str) -> Result<String> {
                 }
             };
             transaction.execute(
-                "UPDATE authors SET code = ?2, next_theme_seq = ?3, updated_at = ?4 WHERE hash = ?1",
+                "UPDATE authors.authors SET code = ?2, next_theme_seq = ?3, updated_at = ?4 WHERE hash = ?1",
                 params![hash, &code, seq + 1, now_iso()],
             )?;
             transaction.commit()?;
@@ -292,7 +346,7 @@ pub async fn set_auto_publish(db: &Database, hash: &str, enabled: bool) -> Resul
     let now = now_iso();
     db.call(move |conn| {
         conn.execute(
-            "UPDATE authors SET auto_publish = ?2, updated_at = ?3 WHERE hash = ?1",
+            "UPDATE authors.authors SET auto_publish = ?2, updated_at = ?3 WHERE hash = ?1",
             params![hash, if enabled { 1 } else { 0 }, now],
         )?;
         Ok(())
@@ -312,7 +366,7 @@ pub async fn set_auto_revoke_at(db: &Database, hash: &str, at: Option<&str>) -> 
     let now = now_iso();
     db.call(move |conn| {
         conn.execute(
-            "UPDATE authors SET auto_revoke_at = ?2, updated_at = ?3 WHERE hash = ?1",
+            "UPDATE authors.authors SET auto_revoke_at = ?2, updated_at = ?3 WHERE hash = ?1",
             params![hash, at, now],
         )?;
         Ok(())
@@ -327,9 +381,9 @@ pub async fn locked_author_hashes(db: &Database, user_id: &str) -> Result<HashSe
     db.call(move |conn| {
         let mut locked = HashSet::new();
         let mut statement = conn.prepare(
-            "SELECT old_hash FROM author_reset_history WHERE user_id = ?1
+            "SELECT old_hash FROM authors.author_reset_history WHERE user_id = ?1
              UNION
-             SELECT author_hash FROM author_requests
+             SELECT author_hash FROM authors.author_requests
              WHERE user_id = ?1 AND status = 'pending' AND author_hash IS NOT NULL",
         )?;
         let mut rows = statement.query([user_id])?;
@@ -379,7 +433,7 @@ pub async fn revoke_inactive_authors(db: &Database, paths: &Paths) -> Result<usi
     let candidates: Vec<(String, Option<String>)> = db
         .call(move |conn| {
             let mut statement = conn.prepare(
-                "SELECT hash, display_name FROM authors
+                "SELECT hash, display_name FROM authors.authors
                  WHERE status = 'active' AND auto_revoke_at IS NOT NULL
                    AND auto_revoke_at <= ?1
                  LIMIT 500",
@@ -419,7 +473,7 @@ pub async fn touch_author(db: &Database, hash: &str) -> Result<()> {
     let now = now_iso();
     db.call(move |conn| {
         conn.execute(
-            "UPDATE authors SET last_used_at = ?2, updated_at = ?2 WHERE hash = ?1",
+            "UPDATE authors.authors SET last_used_at = ?2, updated_at = ?2 WHERE hash = ?1",
             params![hash, now],
         )?;
         Ok(())
@@ -433,7 +487,7 @@ pub async fn update_author_name(db: &Database, hash: &str, name: &str) -> Result
     let now = now_iso();
     db.call(move |conn| {
         conn.execute(
-            "UPDATE authors SET display_name = ?2, updated_at = ?3 WHERE hash = ?1",
+            "UPDATE authors.authors SET display_name = ?2, updated_at = ?3 WHERE hash = ?1",
             params![hash, name, now],
         )?;
         Ok(())
@@ -447,7 +501,7 @@ pub async fn list_authors(db: &Database) -> Result<Vec<serde_json::Value>> {
             "SELECT a.hash, a.fingerprint, a.display_name, a.user_id, a.status,
                     a.approved_at, a.last_used_at, u.username, u.display_name,
                     a.code, a.next_theme_seq, a.auto_revoke_at, u.role, u.is_super_admin
-             FROM authors a LEFT JOIN users u ON u.id = a.user_id
+             FROM authors.authors a LEFT JOIN users u ON u.id = a.user_id
              ORDER BY CASE a.status
                  WHEN 'pending' THEN 0 WHEN 'active' THEN 1 ELSE 2 END,
                  a.approved_at DESC, a.created_at DESC
@@ -494,7 +548,7 @@ pub async fn restrictions_for(db: &Database, hash: &str) -> Result<HashSet<Strin
     db.call(move |conn| {
         let value: Option<String> = conn
             .query_row(
-                "SELECT features FROM author_restrictions WHERE author_hash = ?1",
+                "SELECT features FROM authors.author_restrictions WHERE author_hash = ?1",
                 params![hash],
                 |row| row.get(0),
             )
@@ -513,7 +567,7 @@ pub async fn restrictions_for(db: &Database, hash: &str) -> Result<HashSet<Strin
 pub async fn all_restrictions(db: &Database) -> Result<HashMap<String, HashSet<String>>> {
     db.call(move |conn| {
         let mut statement =
-            conn.prepare("SELECT author_hash, features FROM author_restrictions")?;
+            conn.prepare("SELECT author_hash, features FROM authors.author_restrictions")?;
         let mut rows = statement.query([])?;
         let mut items = HashMap::new();
         while let Some(row) = rows.next()? {
@@ -544,7 +598,7 @@ pub async fn set_restrictions(
     let now = now_iso();
     db.call(move |conn| {
         conn.execute(
-            "INSERT INTO author_restrictions(author_hash, features, updated_at, updated_by)
+            "INSERT INTO authors.author_restrictions(author_hash, features, updated_at, updated_by)
              VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(author_hash) DO UPDATE SET
                  features = excluded.features,
@@ -564,7 +618,7 @@ pub async fn has_restriction(db: &Database, hash: &str, feature: &str) -> Result
 pub async fn count_pending_author_requests(db: &Database) -> Result<i64> {
     db.call(|conn| {
         Ok(conn.query_row(
-            "SELECT COUNT(*) FROM author_requests WHERE status = 'pending'",
+            "SELECT COUNT(*) FROM authors.author_requests WHERE status = 'pending'",
             [],
             |row| row.get(0),
         )?)
@@ -584,9 +638,9 @@ pub async fn author_requests(
             "SELECT r.id, r.kind, r.status, r.author_hash, r.display_name,
                     r.created_at, r.reviewed_at, r.reviewed_by, r.reject_reason,
                     u.id, u.username, u.display_name, a.status
-             FROM author_requests r
+             FROM authors.author_requests r
              JOIN users u ON u.id = r.user_id
-             LEFT JOIN authors a ON a.hash = r.author_hash
+             LEFT JOIN authors.authors a ON a.hash = r.author_hash
              WHERE 1 = 1",
         );
         let mut values: Vec<String> = Vec::new();
@@ -725,7 +779,7 @@ pub async fn create_author_request(
     let request_id = id.clone();
     db.call(move |conn| {
         conn.execute(
-            "INSERT INTO author_requests
+            "INSERT INTO authors.author_requests
              (id, user_id, kind, author_hash, display_name, status, note, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7)",
             params![
@@ -758,7 +812,7 @@ pub async fn author_request_by_id(db: &Database, id: &str) -> Result<Option<Auth
     db.call(move |conn| {
         let mut statement = conn.prepare(
             "SELECT id, user_id, kind, author_hash, display_name, status
-             FROM author_requests WHERE id = ?1",
+             FROM authors.author_requests WHERE id = ?1",
         )?;
         let mut rows = statement.query([id])?;
         Ok(rows.next()?.map(|row| AuthorRequestRecord {
@@ -789,7 +843,7 @@ pub async fn review_author_request(
     let now = now_iso();
     db.call(move |conn| {
         conn.execute(
-            "UPDATE author_requests
+            "UPDATE authors.author_requests
              SET status = ?2, reviewed_at = ?3, reviewed_by = ?4,
                  reject_reason = ?5, generated_author_hash = ?6
              WHERE id = ?1",
@@ -833,7 +887,7 @@ pub async fn reset_author(db: &Database, user_id: &str, actor: &str) -> Result<(
         let now = now_iso();
         db.call(move |conn| {
             conn.execute(
-                "INSERT INTO author_reset_history(user_id, old_hash, new_hash, created_at, created_by)
+                "INSERT INTO authors.author_reset_history(user_id, old_hash, new_hash, created_at, created_by)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![user_id, old_hash, new_hash, now, actor],
             )?;
@@ -906,7 +960,7 @@ pub async fn import_legacy_authors(db: &Database, paths: &Paths) -> Result<bool>
         let now = now_iso();
         db.call(move |conn| {
             conn.execute(
-                "INSERT INTO authors(hash, fingerprint, display_name, status, approved_at, last_used_at, created_at, updated_at)
+                "INSERT INTO authors.authors(hash, fingerprint, display_name, status, approved_at, last_used_at, created_at, updated_at)
                  VALUES (?1, ?2, NULLIF(?3, ''), 'active', NULLIF(?4, ''), NULLIF(?5, ''), ?6, ?6)
                  ON CONFLICT(hash) DO NOTHING",
                 params![hash, fingerprint, name, approved_at, last_used_at, now],
@@ -934,7 +988,7 @@ mod tests {
     #[tokio::test]
     async fn allocates_author_codes_and_sequences() {
         let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(&dir.path().join("test.db")).await.unwrap();
+        let db = Database::open_test(dir.path()).await.unwrap();
         let hash1 = author_key("aaaaaaaaaaaaaaaa");
         let author1 = create_author(
             &db,
@@ -1008,7 +1062,14 @@ mod tests {
             account_env: root.join("account.env"),
             network_env: root.join("network.env"),
             sources_file: root.join("sources.json"),
-            db: root.join("account.db"),
+            legacy_db: root.join("account.db"),
+            db_dir: root.join("db-split"),
+            db_layout: crate::config::DbLayout::Split,
+            db: root.join("db-split/account.db"),
+            authors_db: root.join("db-split/authors.db"),
+            social_db: root.join("db-split/social.db"),
+            stats_db: root.join("db-split/stats.db"),
+            audit_db: root.join("db-split/audit.db"),
         }
     }
 
@@ -1030,9 +1091,69 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn deleting_user_cleans_social_and_author_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open_test(dir.path()).await.unwrap();
+        seed_user(&db, "u1", "alice").await;
+        db.call(|conn| {
+            conn.execute(
+                "INSERT INTO authors.authors(hash, fingerprint, display_name, user_id, status,
+                                             created_at, updated_at)
+                 VALUES ('h1', 'fp', 'Alice', 'u1', 'active',
+                         '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+                [],
+            )?;
+            conn.execute(
+                "INSERT INTO social.user_follows(follower_id, author_hash, created_at)
+                 VALUES ('u1', 'h1', '2026-01-01T00:00:00Z')",
+                [],
+            )?;
+            conn.execute(
+                "INSERT INTO social.theme_comments(id, theme_id, user_id, content, created_at, updated_at)
+                 VALUES ('c1', '11010-01', 'u1', 'hi', '2026-01-01T00:00:00Z',
+                         '2026-01-01T00:00:00Z')",
+                [],
+            )?;
+            conn.execute(
+                "INSERT INTO social.theme_comment_mentions(comment_id, user_id, created_at)
+                 VALUES ('c1', 'u1', '2026-01-01T00:00:00Z')",
+                [],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert_eq!(delete_authors_for_user(&db, "u1").await.unwrap(), 1);
+        crate::accounts::delete_user(&db, "u1").await.unwrap();
+        let counts: (i64, i64, i64, i64, i64) = db
+            .call(|conn| {
+                Ok((
+                    conn.query_row("SELECT COUNT(*) FROM social.user_follows", [], |row| {
+                        row.get(0)
+                    })?,
+                    conn.query_row("SELECT COUNT(*) FROM social.theme_comments", [], |row| {
+                        row.get(0)
+                    })?,
+                    conn.query_row(
+                        "SELECT COUNT(*) FROM social.theme_comment_mentions",
+                        [],
+                        |row| row.get(0),
+                    )?,
+                    conn.query_row("SELECT COUNT(*) FROM authors.authors", [], |row| {
+                        row.get(0)
+                    })?,
+                    conn.query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))?,
+                ))
+            })
+            .await
+            .unwrap();
+        assert_eq!(counts, (0, 0, 0, 0, 0));
+    }
+
+    #[tokio::test]
     async fn detects_pending_author_requests() {
         let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(&dir.path().join("pending.db"))
+        let db = Database::open_test(dir.path())
             .await
             .unwrap();
         seed_user(&db, "u1", "alice").await;
@@ -1060,7 +1181,7 @@ mod tests {
     #[tokio::test]
     async fn binds_latest_published_theme_to_new_license() {
         let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(&dir.path().join("bind.db")).await.unwrap();
+        let db = Database::open_test(dir.path()).await.unwrap();
         seed_user(&db, "u1", "alice").await;
         let paths = test_paths(dir.path());
         std::fs::create_dir_all(&paths.meta).unwrap();
@@ -1119,7 +1240,7 @@ mod tests {
     #[tokio::test]
     async fn revokes_expired_licenses_without_a_theme() {
         let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(&dir.path().join("revoke.db")).await.unwrap();
+        let db = Database::open_test(dir.path()).await.unwrap();
         seed_user(&db, "u1", "alice").await;
         let paths = test_paths(dir.path());
         std::fs::create_dir_all(&paths.meta).unwrap();

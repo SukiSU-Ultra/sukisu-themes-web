@@ -2454,7 +2454,11 @@ async fn download_published_theme(
         .map_err(|_| ApiError::not_found("主题包不存在"))?;
     state.record_theme_download(&meta.id);
     let filename = format!("{}-v{}.sukisu", meta.id, meta.version);
-    let mut response = crate::api::serve_object_response(object, "private, no-store")?;
+    let mut response = crate::api::serve_object_response(
+        object,
+        "private, no-store",
+        state.download_buffer_bytes(),
+    )?;
     let disposition =
         axum::http::HeaderValue::from_str(&format!("attachment; filename=\"{filename}\""))
             .map_err(ApiError::internal)?;
@@ -2568,7 +2572,11 @@ async fn download_my_theme(
         .map_err(|_| ApiError::not_found("主题包不存在"))?;
     state.record_theme_download(&meta.id);
     let filename = format!("{}-v{}.sukisu", meta.id, meta.version);
-    let mut response = crate::api::serve_object_response(object, "private, no-store")?;
+    let mut response = crate::api::serve_object_response(
+        object,
+        "private, no-store",
+        state.download_buffer_bytes(),
+    )?;
     let disposition =
         axum::http::HeaderValue::from_str(&format!("attachment; filename=\"{filename}\""))
             .map_err(ApiError::internal)?;
@@ -2941,7 +2949,7 @@ async fn account_preview(
         .serve(&path, None)
         .await
         .map_err(|_| ApiError::not_found("资源不存在"))?;
-    crate::api::serve_object_response(object, cache_control)
+    crate::api::serve_object_response(object, cache_control, state.download_buffer_bytes())
 }
 
 struct ResolvedAuthor {
@@ -3155,6 +3163,12 @@ async fn submit_theme(
     if pending_count >= crate::config::MAX_PENDING_SUBMISSIONS {
         return Err(ApiError::too_many("待审核队列已满，请稍后再试"));
     }
+    let _upload_permit = state
+        .upload_semaphore
+        .acquire()
+        .await
+        .map_err(|_| ApiError::internal("上传队列不可用"))?;
+    let _live_upload = state.performance.live.upload_guard();
     let mut form = crate::uploads::parse_multipart(multipart)
         .await
         .map_err(ApiError::bad)?;

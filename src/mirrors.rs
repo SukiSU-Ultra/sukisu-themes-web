@@ -76,6 +76,9 @@ pub struct MirrorPool {
     client: Client,
     /// Rotates mirrors that share the same priority.
     cursor: Arc<AtomicUsize>,
+    /// Per-path probe lock so concurrent first downloads do not all probe the
+    /// same cold mirror path.
+    inflight: Arc<tokio::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
 }
 
 #[derive(serde::Deserialize)]
@@ -130,6 +133,7 @@ impl MirrorPool {
             state: Arc::new(RwLock::new(MirrorState::default())),
             client,
             cursor: Arc::new(AtomicUsize::new(0)),
+            inflight: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         };
         pool.reload().await;
         pool
@@ -218,6 +222,19 @@ impl MirrorPool {
         if mirrors.is_empty() {
             return None;
         }
+        // A cold path is probed once; waiters re-use the cache entry written
+        // by the first request instead of probing every mirror again.
+        let probe_lock = {
+            let mut inflight = self.inflight.lock().await;
+            if inflight.len() > 4096 {
+                inflight.clear();
+            }
+            inflight
+                .entry(path.to_string())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                .clone()
+        };
+        let _probe_guard = probe_lock.lock().await;
         // Keep priority order, but rotate mirrors that share a priority so one
         // edge does not receive every download.
         let mut ordered = Vec::with_capacity(mirrors.len());
@@ -370,6 +387,7 @@ mod tests {
             state: Arc::new(RwLock::new(state)),
             client: Client::new(),
             cursor: Arc::new(AtomicUsize::new(0)),
+            inflight: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         };
         let mut headers = HeaderMap::new();
         headers.insert(RANGE, "bytes=10-".parse().unwrap());

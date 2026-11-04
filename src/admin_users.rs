@@ -789,6 +789,9 @@ async fn author_request_reject(
 struct AuditQuery {
     limit: Option<i64>,
     offset: Option<i64>,
+    actor: Option<String>,
+    action: Option<String>,
+    ip: Option<String>,
 }
 
 async fn audit(
@@ -797,9 +800,16 @@ async fn audit(
 ) -> ApiResult<Json<Value>> {
     let limit = query.limit.unwrap_or(20).clamp(1, 200);
     let offset = query.offset.unwrap_or(0).max(0);
-    let (log, total) = accounts::audit_log(&state.db, limit, offset)
-        .await
-        .map_err(ApiError::internal)?;
+    let (log, total) = accounts::audit_log(
+        &state.db,
+        limit,
+        offset,
+        query.actor.as_deref(),
+        query.action.as_deref(),
+        query.ip.as_deref(),
+    )
+    .await
+    .map_err(ApiError::internal)?;
     Ok(Json(json!({
         "ok": true,
         "items": log,

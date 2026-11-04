@@ -26,7 +26,7 @@ pub async fn author_exists(db: &Database, author_hash: &str) -> anyhow::Result<b
     let author_hash = author_hash.trim().to_string();
     db.call(move |conn| {
         let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM authors WHERE hash = ?1",
+            "SELECT COUNT(*) FROM authors.authors WHERE hash = ?1",
             [author_hash],
             |row| row.get(0),
         )?;
@@ -46,7 +46,7 @@ pub async fn follow(
     let created_at = now_iso();
     db.call(move |conn| {
         let changed = conn.execute(
-            "INSERT OR IGNORE INTO user_follows(follower_id, author_hash, created_at)
+            "INSERT OR IGNORE INTO social.user_follows(follower_id, author_hash, created_at)
              VALUES (?1, ?2, ?3)",
             params![follower_id, author_hash, created_at],
         )?;
@@ -64,7 +64,7 @@ pub async fn unfollow(
     let author_hash = author_hash.trim().to_string();
     db.call(move |conn| {
         let changed = conn.execute(
-            "DELETE FROM user_follows WHERE follower_id = ?1 AND author_hash = ?2",
+            "DELETE FROM social.user_follows WHERE follower_id = ?1 AND author_hash = ?2",
             params![follower_id, author_hash],
         )?;
         Ok(changed > 0)
@@ -80,8 +80,8 @@ pub async fn following_authors(
     db.call(move |conn| {
         let mut statement = conn.prepare(
             "SELECT f.author_hash, COALESCE(a.display_name, '')
-             FROM user_follows f
-             LEFT JOIN authors a ON a.hash = f.author_hash
+             FROM social.user_follows f
+             LEFT JOIN authors.authors a ON a.hash = f.author_hash
              WHERE f.follower_id = ?1
              ORDER BY f.created_at DESC",
         )?;
@@ -104,7 +104,7 @@ pub async fn following_count(db: &Database, user_id: &str) -> anyhow::Result<i64
     let user_id = user_id.to_string();
     db.call(move |conn| {
         let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM user_follows WHERE follower_id = ?1",
+            "SELECT COUNT(*) FROM social.user_follows WHERE follower_id = ?1",
             [user_id],
             |row| row.get(0),
         )?;
@@ -119,8 +119,8 @@ pub async fn follower_count(db: &Database, user_id: &str) -> anyhow::Result<i64>
     db.call(move |conn| {
         let count: i64 = conn.query_row(
             "SELECT COUNT(DISTINCT f.follower_id)
-             FROM user_follows f
-             JOIN authors a ON a.hash = f.author_hash
+             FROM social.user_follows f
+             JOIN authors.authors a ON a.hash = f.author_hash
              WHERE a.user_id = ?1 AND a.status = 'active'",
             [user_id],
             |row| row.get(0),
@@ -134,7 +134,7 @@ pub async fn author_follower_count(db: &Database, author_hash: &str) -> anyhow::
     let author_hash = author_hash.to_string();
     db.call(move |conn| {
         let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM user_follows WHERE author_hash = ?1",
+            "SELECT COUNT(*) FROM social.user_follows WHERE author_hash = ?1",
             [author_hash],
             |row| row.get(0),
         )?;
@@ -163,8 +163,8 @@ pub async fn leaderboard_users(db: &Database) -> anyhow::Result<Vec<LeaderboardU
                     GROUP_CONCAT(DISTINCT a.hash),
                     COUNT(DISTINCT f.follower_id)
              FROM users u
-             JOIN authors a ON a.user_id = u.id AND a.status = 'active'
-             LEFT JOIN user_follows f ON f.author_hash = a.hash
+             JOIN authors.authors a ON a.user_id = u.id AND a.status = 'active'
+             LEFT JOIN social.user_follows f ON f.author_hash = a.hash
              WHERE u.status NOT IN ('rejected', 'disabled')
              GROUP BY u.id, u.username, u.display_name, u.avatar",
         )?;
@@ -207,7 +207,7 @@ pub async fn leaderboard_authors(db: &Database) -> anyhow::Result<Vec<Leaderboar
     db.call(|conn| {
         let mut statement = conn.prepare(
             "SELECT a.hash, a.display_name, a.created_at
-             FROM authors a
+             FROM authors.authors a
              JOIN users u ON u.id = a.user_id
              WHERE a.status = 'active' AND u.status NOT IN ('rejected', 'disabled')",
         )?;
@@ -255,9 +255,9 @@ async fn admin_list(
                         COALESCE(a.user_id, ''),
                         COALESCE(ou.username, ''),
                         f.created_at
-                 FROM user_follows f
+                 FROM social.user_follows f
                  JOIN users u ON u.id = f.follower_id
-                 LEFT JOIN authors a ON a.hash = f.author_hash
+                 LEFT JOIN authors.authors a ON a.hash = f.author_hash
                  LEFT JOIN users ou ON ou.id = a.user_id
                  WHERE ?1 = 0
                     OR lower(u.username) LIKE ?2
@@ -283,7 +283,7 @@ async fn admin_list(
             for row in rows {
                 values.push(row?);
             }
-            let total: i64 = conn.query_row("SELECT COUNT(*) FROM user_follows", [], |row| row.get(0))?;
+            let total: i64 = conn.query_row("SELECT COUNT(*) FROM social.user_follows", [], |row| row.get(0))?;
             Ok((values, total))
         })
         .await
@@ -303,7 +303,7 @@ mod tests {
     #[tokio::test]
     async fn leaderboard_counts_followers_once_per_account_with_multiple_identities() {
         let directory = tempfile::tempdir().unwrap();
-        let db = Database::open(&directory.path().join("leaderboard.db"))
+        let db = Database::open_test(directory.path())
             .await
             .unwrap();
         db.call(|conn| {
@@ -318,7 +318,7 @@ mod tests {
             // revoked hash must not appear, and carol following both of
             // Alice's identities still counts as one follower.
             conn.execute(
-                "INSERT INTO authors(hash, fingerprint, display_name, user_id, status, created_at, updated_at)
+                "INSERT INTO authors.authors(hash, fingerprint, display_name, user_id, status, created_at, updated_at)
                  VALUES ('h1', 'f1', 'Alice One', 'alice', 'active', '2026-01-02T00:00:00Z', '2026-01-02T00:00:00Z'),
                         ('h2', 'f2', NULL, 'alice', 'active', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
                         ('h3', 'f3', 'Alice Gone', 'alice', 'revoked', '2026-01-03T00:00:00Z', '2026-01-03T00:00:00Z'),
@@ -327,7 +327,7 @@ mod tests {
                 [],
             )?;
             conn.execute(
-                "INSERT INTO user_follows(follower_id, author_hash, created_at)
+                "INSERT INTO social.user_follows(follower_id, author_hash, created_at)
                  VALUES ('bob', 'h1', '2026-01-05T00:00:00Z'),
                         ('carol', 'h1', '2026-01-05T00:00:00Z'),
                         ('carol', 'h2', '2026-01-06T00:00:00Z'),

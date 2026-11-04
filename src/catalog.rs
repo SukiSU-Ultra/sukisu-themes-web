@@ -405,7 +405,7 @@ pub async fn rebuild_catalog(store: &AssetStore, paths: &Paths) -> Result<Vec<Ca
             }
         }
     }
-    let stats = crate::db::load_theme_stats(&paths.db);
+    let stats = crate::db::load_theme_stats(&paths.stats_db);
     let mut themes = Vec::new();
     for meta in metas {
         if let Some(entry) = build_catalog_entry(store, &meta, &stats).await {
@@ -494,7 +494,7 @@ pub fn refresh_catalog_stats(paths: &Paths) -> Result<bool> {
         return Ok(false);
     };
     let mut catalog = (*catalog).clone();
-    let stats = crate::db::load_theme_stats(&paths.db);
+    let stats = crate::db::load_theme_stats(&paths.stats_db);
     let mut changed = false;
     for theme in &mut catalog.themes {
         let current = stats.get(&theme.id).copied().unwrap_or_default();
@@ -1001,7 +1001,14 @@ mod tests {
             account_env: root.join("account.env"),
             network_env: root.join("network.env"),
             sources_file: root.join("sources.json"),
-            db: root.join("account.db"),
+            legacy_db: root.join("account.db"),
+            db_dir: root.join("db-split"),
+            db_layout: crate::config::DbLayout::Split,
+            db: root.join("db-split/account.db"),
+            authors_db: root.join("db-split/authors.db"),
+            social_db: root.join("db-split/social.db"),
+            stats_db: root.join("db-split/stats.db"),
+            audit_db: root.join("db-split/audit.db"),
         }
     }
 

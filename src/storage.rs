@@ -13,7 +13,7 @@ use tokio::sync::RwLock;
 use walkdir::WalkDir;
 
 use crate::config::{
-    write_atomic, Backend, Paths, StorageSettings, ASSET_DIRS, DISK_RESERVE_BYTES,
+    write_atomic_async, Backend, Paths, StorageSettings, ASSET_DIRS, DISK_RESERVE_BYTES,
 };
 use crate::jobs::JobProgress;
 use crate::util::{content_type_for, normalize_asset_key, parse_byte_range, sha256_hex, ByteRange};
@@ -586,7 +586,9 @@ impl AssetStore {
                 let path = store
                     .resolve(key)
                     .ok_or_else(|| anyhow::anyhow!("无效的资源路径"))?;
-                write_atomic(&path, data, 0o644).context("写入本地资源失败")?;
+                write_atomic_async(&path, data, 0o644)
+                    .await
+                    .context("写入本地资源失败")?;
                 Ok(())
             }
             AssetStore::S3(store) => {
@@ -906,23 +908,39 @@ impl AssetStore {
             }
             AssetStore::S3(store) => {
                 let s3_key = format!("{}{}", store.prefix, key);
-                let size = self.size(&key).await;
-                if size == 0 {
-                    return Err(ServeError::NotFound);
-                }
-                let range_value = match parse_byte_range(range, size) {
-                    ByteRange::Full => None,
-                    ByteRange::Partial { start, end } => Some(format!("bytes={start}-{end}")),
-                    ByteRange::Invalid => return Err(ServeError::RangeNotSatisfiable(size)),
+                // Full downloads do not need a separate HEAD: the GET already
+                // returns Content-Length. Resumed ranges still need the total
+                // size to parse suffix/range headers and answer 416 locally.
+                let (size, range_value) = if range.is_some() {
+                    let size = self.size(&key).await;
+                    if size == 0 {
+                        return Err(ServeError::NotFound);
+                    }
+                    let value = match parse_byte_range(range, size) {
+                        ByteRange::Full => None,
+                        ByteRange::Partial { start, end } => {
+                            Some(format!("bytes={start}-{end}"))
+                        }
+                        ByteRange::Invalid => {
+                            return Err(ServeError::RangeNotSatisfiable(size))
+                        }
+                    };
+                    (size, value)
+                } else {
+                    (0, None)
                 };
                 let mut request = store.client.get_object().bucket(&store.bucket).key(&s3_key);
                 if let Some(value) = &range_value {
                     request = request.range(value);
                 }
-                let response = request
-                    .send()
-                    .await
-                    .map_err(|error| ServeError::Other(anyhow::anyhow!(error.to_string())))?;
+                let response = request.send().await.map_err(|error| {
+                    if let aws_sdk_s3::error::SdkError::ServiceError(service) = &error {
+                        if service.err().is_no_such_key() {
+                            return ServeError::NotFound;
+                        }
+                    }
+                    ServeError::Other(anyhow::anyhow!(error.to_string()))
+                })?;
                 let content_length = response
                     .content_length()
                     .map(|value| value.max(0) as u64)
@@ -1150,7 +1168,14 @@ mod tests {
             account_env: primary.path().join("account.env"),
             network_env: primary.path().join("network.env"),
             sources_file: primary.path().join("sources.json"),
-            db: primary.path().join("account.db"),
+            legacy_db: primary.path().join("account.db"),
+            db_dir: primary.path().join("db-split"),
+            db_layout: crate::config::DbLayout::Split,
+            db: primary.path().join("db-split/account.db"),
+            authors_db: primary.path().join("db-split/authors.db"),
+            social_db: primary.path().join("db-split/social.db"),
+            stats_db: primary.path().join("db-split/stats.db"),
+            audit_db: primary.path().join("db-split/audit.db"),
         };
         std::fs::create_dir_all(&paths.meta).unwrap();
         std::fs::create_dir_all(&paths.pending).unwrap();

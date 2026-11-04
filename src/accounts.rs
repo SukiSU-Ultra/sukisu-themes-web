@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use anyhow::{anyhow, Result};
+use rusqlite::types::Value as SqlValue;
 use rusqlite::{params, OptionalExtension};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -612,12 +613,13 @@ pub async fn audit(
     let target_type = target_type.map(str::to_string);
     let target_id = target_id.map(str::to_string);
     let detail = detail.map(str::to_string);
+    let ip = crate::api::current_request_ip();
     let now = now_iso();
     db.call(move |conn| {
         conn.execute(
-            "INSERT INTO audit_log(actor_id, action, target_type, target_id, detail, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![actor_id, action, target_type, target_id, detail, now],
+            "INSERT INTO audit.audit_log(actor_id, action, target_type, target_id, detail, ip, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![actor_id, action, target_type, target_id, detail, ip, now],
         )?;
         Ok(())
     })
@@ -806,7 +808,7 @@ pub async fn record_submission(
     let now = now_iso();
     db.call(move |conn| {
         conn.execute(
-            "INSERT INTO submissions
+            "INSERT INTO authors.submissions
              (id, user_id, theme_id, name, version, status, submitted_at, auto_published)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              ON CONFLICT(id) DO UPDATE SET status = excluded.status, auto_published = excluded.auto_published",
@@ -840,7 +842,7 @@ pub async fn finish_submission(
     let now = now_iso();
     db.call(move |conn| {
         conn.execute(
-            "UPDATE submissions
+            "UPDATE authors.submissions
              SET status = ?2, reviewed_at = ?3, reviewed_by = ?4, reject_reason = ?5
              WHERE id = ?1",
             params![id, status, now, reviewer, reason],
@@ -860,7 +862,7 @@ pub async fn withdraw_theme_submissions(
     let now = now_iso();
     db.call(move |conn| {
         conn.execute(
-            "UPDATE submissions
+            "UPDATE authors.submissions
              SET status = 'withdrawn', reviewed_at = ?3, reviewed_by = ?2, reject_reason = NULL
              WHERE user_id = ?1 AND theme_id = ?4 AND status = 'approved'",
             params![user_id, user_id, now, theme_id],
@@ -876,7 +878,7 @@ pub async fn restore_theme_submissions(db: &Database, user_id: &str, theme_id: &
     let now = now_iso();
     db.call(move |conn| {
         conn.execute(
-            "UPDATE submissions
+            "UPDATE authors.submissions
              SET status = 'approved', reviewed_at = ?3, reviewed_by = ?2, reject_reason = NULL
              WHERE user_id = ?1 AND theme_id = ?4 AND status = 'withdrawn'",
             params![user_id, user_id, now, theme_id],
@@ -891,7 +893,7 @@ pub async fn delete_theme_submissions(db: &Database, user_id: &str, theme_id: &s
     let theme_id = theme_id.to_string();
     db.call(move |conn| {
         conn.execute(
-            "DELETE FROM submissions WHERE user_id = ?1 AND theme_id = ?2",
+            "DELETE FROM authors.submissions WHERE user_id = ?1 AND theme_id = ?2",
             params![user_id, theme_id],
         )?;
         Ok(())
@@ -905,7 +907,7 @@ pub async fn submission_owned(db: &Database, id: &str, user_id: &str) -> Result<
     db.call(move |conn| {
         Ok(conn
             .query_row(
-                "SELECT status FROM submissions WHERE id = ?1 AND user_id = ?2",
+                "SELECT status FROM authors.submissions WHERE id = ?1 AND user_id = ?2",
                 params![id, user_id],
                 |row| row.get(0),
             )
@@ -919,7 +921,7 @@ pub async fn delete_submission(db: &Database, id: &str, user_id: &str) -> Result
     let user_id = user_id.to_string();
     db.call(move |conn| {
         conn.execute(
-            "DELETE FROM submissions WHERE id = ?1 AND user_id = ?2",
+            "DELETE FROM authors.submissions WHERE id = ?1 AND user_id = ?2",
             params![id, user_id],
         )?;
         Ok(())
@@ -932,7 +934,7 @@ pub async fn user_submissions(db: &Database, user_id: &str) -> Result<Vec<serde_
     db.call(move |conn| {
         let mut statement = conn.prepare(
             "SELECT id, theme_id, name, version, status, submitted_at, reviewed_at, reject_reason, auto_published
-             FROM submissions WHERE user_id = ?1 ORDER BY submitted_at DESC LIMIT 200",
+             FROM authors.submissions WHERE user_id = ?1 ORDER BY submitted_at DESC LIMIT 200",
         )?;
         let mut rows = statement.query([user_id])?;
         let mut items = Vec::new();
@@ -958,15 +960,44 @@ pub async fn audit_log(
     db: &Database,
     limit: i64,
     offset: i64,
+    actor: Option<&str>,
+    action: Option<&str>,
+    ip: Option<&str>,
 ) -> Result<(Vec<serde_json::Value>, i64)> {
+    let actor = actor.map(str::trim).filter(|value| !value.is_empty()).map(str::to_string);
+    let action = action.map(str::trim).filter(|value| !value.is_empty()).map(str::to_string);
+    let ip = ip.map(str::trim).filter(|value| !value.is_empty()).map(str::to_string);
     db.call(move |conn| {
-        let total: i64 = conn.query_row("SELECT COUNT(*) FROM audit_log", [], |row| row.get(0))?;
-        let mut statement = conn.prepare(
-            "SELECT a.id, a.actor_id, u.username, a.action, a.target_type, a.target_id, a.detail, a.created_at
-             FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id
-             ORDER BY a.id DESC LIMIT ?1 OFFSET ?2",
+        let mut where_sql = String::from(" WHERE 1 = 1");
+        let mut values: Vec<SqlValue> = Vec::new();
+        if let Some(actor) = &actor {
+            where_sql.push_str(" AND (u.username LIKE ? OR a.actor_id = ?)");
+            values.push(SqlValue::Text(format!("%{actor}%")));
+            values.push(SqlValue::Text(actor.clone()));
+        }
+        if let Some(action) = &action {
+            where_sql.push_str(" AND a.action LIKE ?");
+            values.push(SqlValue::Text(format!("%{action}%")));
+        }
+        if let Some(ip) = &ip {
+            where_sql.push_str(" AND a.ip LIKE ?");
+            values.push(SqlValue::Text(format!("%{ip}%")));
+        }
+        let total: i64 = conn.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM audit.audit_log a
+                 LEFT JOIN users u ON u.id = a.actor_id{where_sql}"
+            ),
+            rusqlite::params_from_iter(values.iter()),
+            |row| row.get(0),
         )?;
-        let mut rows = statement.query(rusqlite::params![limit, offset])?;
+        let mut statement = conn.prepare(&format!(
+            "SELECT a.id, a.actor_id, u.username, a.action, a.target_type, a.target_id,
+                    a.detail, a.ip, a.created_at
+             FROM audit.audit_log a LEFT JOIN users u ON u.id = a.actor_id{where_sql}
+             ORDER BY a.id DESC LIMIT {limit} OFFSET {offset}"
+        ))?;
+        let mut rows = statement.query(rusqlite::params_from_iter(values.iter()))?;
         let mut items = Vec::new();
         while let Some(row) = rows.next()? {
             items.push(serde_json::json!({
@@ -977,7 +1008,8 @@ pub async fn audit_log(
                 "targetType": row.get::<_, Option<String>>(4)?,
                 "targetId": row.get::<_, Option<String>>(5)?,
                 "detail": row.get::<_, Option<String>>(6)?,
-                "createdAt": row.get::<_, String>(7)?,
+                "ip": row.get::<_, Option<String>>(7)?,
+                "createdAt": row.get::<_, String>(8)?,
             }));
         }
         Ok((items, total))
@@ -1055,5 +1087,47 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn audit_log_filters_by_actor_action_and_ip() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open_test(dir.path()).await.unwrap();
+        db.call(|conn| {
+            conn.execute(
+                "INSERT INTO users(id, username, display_name, status, created_at, updated_at)
+                 VALUES ('u1', 'alice', 'Alice', 'active', '2026-01-01T00:00:00Z',
+                         '2026-01-01T00:00:00Z')",
+                [],
+            )?;
+            conn.execute(
+                "INSERT INTO audit.audit_log(actor_id, action, target_type, target_id, detail, ip, created_at)
+                 VALUES ('u1', 'user.approve', 'user', 'u2', 'ok', '1.2.3.4', '2026-01-01T00:00:00Z')",
+                [],
+            )?;
+            conn.execute(
+                "INSERT INTO audit.audit_log(actor_id, action, target_type, target_id, detail, ip, created_at)
+                 VALUES ('u1', 'theme.approve', 'theme', 't1', 'ok', '5.6.7.8', '2026-01-01T00:00:01Z')",
+                [],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let (items, total) = audit_log(
+            &db,
+            10,
+            0,
+            Some("alice"),
+            Some("user.approve"),
+            Some("1.2.3.4"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(total, 1);
+        assert_eq!(items[0]["action"], "user.approve");
+        assert_eq!(items[0]["ip"], "1.2.3.4");
+        let (_, total) = audit_log(&db, 10, 0, None, None, Some("5.6")).await.unwrap();
+        assert_eq!(total, 1);
     }
 }

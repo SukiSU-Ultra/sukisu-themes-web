@@ -1216,6 +1216,144 @@ pre { background: var(--code-bg); border-color: var(--line); border-radius: 12px
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
+.section-block {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+.table-wrap { width: 100%; overflow-x: auto; }
+.directory-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.directory-toolbar .search { flex: 1 1 260px; min-width: 220px; }
+.directory-toolbar .sort-select { flex: 0 0 180px; width: 180px; min-width: 150px; max-width: 100%; }
+.user-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) minmax(110px, .8fr) minmax(150px, 1fr) minmax(120px, .8fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.user-row:last-child, .author-row:last-child { border-bottom: 0; }
+.user-row:hover, .author-row:hover { background: var(--bg-elv); }
+.user-identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.user-identity .avatar-small {
+  width: 34px; height: 34px; border-radius: 11px; flex: 0 0 auto;
+  display: grid; place-items: center; font-weight: 800;
+  background: var(--brand-soft); color: var(--brand); border: 1px solid var(--line);
+}
+.user-identity b, .user-identity span { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-identity span { color: var(--muted); font-size: 11px; margin-top: 2px; }
+.user-cell { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--muted); font-size: 12px; }
+.user-cell .cell-label { display: none; color: var(--faint); font-size: 10px; }
+.user-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.user-actions button { padding: 6px 10px; font-size: 11px; }
+.author-row {
+  display: grid;
+  grid-template-columns: 26px minmax(220px, 1.7fr) minmax(150px, 1.1fr) minmax(100px, .7fr) minmax(120px, .8fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.author-row .author-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.author-row .author-main b, .author-row .author-main span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.author-row .author-main .author-fp { max-width: 100%; }
+.author-row .author-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.author-row .author-actions button { padding: 6px 10px; font-size: 11px; }
+.author-row .author-check { display: flex; align-items: center; justify-content: center; }
+.detail-page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.detail-page-head h3 { margin: 4px 0 0; }
+.back-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 8px 13px; color: var(--muted); background: var(--bg-alt);
+  cursor: pointer; font: inherit; font-size: 12px;
+}
+.back-link:hover { border-color: var(--brand); color: var(--brand); }
+.page-guide {
+  margin-bottom: 20px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--bg-alt);
+}
+.page-guide > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  font-weight: 750;
+}
+.page-guide > summary::-webkit-details-marker { display: none; }
+.page-guide > summary::before {
+  content: '?';
+  display: grid; place-items: center;
+  width: 22px; height: 22px; margin-right: 8px;
+  border-radius: 50%;
+  background: var(--brand-soft); color: var(--brand);
+  font-size: 12px; font-weight: 800;
+}
+.page-guide > summary > span:first-child { display: flex; align-items: center; }
+.guide-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 15px;
+}
+.guide-grid > div { padding: 12px 14px; border: 1px solid var(--line); border-radius: 13px; background: var(--bg); }
+.guide-grid b { display: block; margin-bottom: 7px; font-size: 12px; color: var(--text); }
+.guide-grid p, .guide-grid li { color: var(--muted); font-size: 12px; line-height: 1.65; }
+.guide-grid ul, .guide-grid ol { margin: 0; padding-left: 18px; }
+.guide-grid p { margin: 0; }
+.realtime-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.realtime-card {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg);
+}
+.realtime-card .label { color: var(--faint); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.realtime-card .value { margin-top: 6px; font-family: var(--font-mono); font-size: 21px; font-weight: 750; color: var(--text); }
+.realtime-card .sub { margin-top: 4px; color: var(--muted); font-size: 11px; }
+.resource-list { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
+.resource-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.resource-item code { color: var(--code-text); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 1050px) {
+  .user-row { grid-template-columns: minmax(200px, 2fr) minmax(100px, .8fr) minmax(140px, 1fr) auto; }
+  .user-row .user-cell:nth-child(4) { display: none; }
+  .author-row { grid-template-columns: 26px minmax(200px, 1.7fr) minmax(140px, 1fr) auto; }
+  .author-row .author-row-extra { display: none; }
+}
+@media (max-width: 820px) {
+  .guide-grid, .realtime-grid { grid-template-columns: 1fr 1fr; }
+  .user-row, .author-row { grid-template-columns: 1fr; align-items: start; }
+  .user-cell .cell-label { display: inline; }
+  .user-actions, .author-row .author-actions { justify-content: flex-start; }
+}
+@media (max-width: 560px) {
+  .guide-grid, .realtime-grid { grid-template-columns: 1fr; }
+  .page-guide > summary { flex-direction: column; align-items: flex-start; }
+  .page-guide > summary .pill { display: none; }
+}
 .notify-wrap { position: relative; }
 .notify-btn { position: relative; }
 .notify-badge {
@@ -1310,7 +1448,7 @@ pre { background: var(--code-bg); border-color: var(--line); border-radius: 12px
 }
 @media (max-width: 980px) {
   .sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
-  nav { flex-wrap: wrap; overflow: visible; }
+  nav { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; }
   nav a { white-space: nowrap; }
   .nav-label { display: none; }
   body::before { opacity: .2; }
@@ -1376,13 +1514,12 @@ input:-webkit-autofill:focus {
       <a href="#themes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="m4 16 4.5-4.5 3 3 3-3L20 16"/><circle cx="15.5" cy="8.5" r="1.6"/></svg>主题预览</a>
       <a href="#upload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>上传主题</a>
       <div class="nav-label">系统</div>
-      <a href="#storage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/><path d="M4.5 11.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg>存储</a>
-      <a href="#locations"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h3l2 2h6A2.5 2.5 0 0 1 20 9.5v7A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Z"/><path d="M8 12h8M8 15h5"/></svg>存储位置</a>
-      <a href="#api"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 9 4 12l4 3M16 9l4 3-4 3M13 5l-2 14"/></svg>API 接口</a>
+      <a href="#storage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/><path d="M4.5 11.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg>存储与配额</a>
       <a href="#network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.4 3.6 5.3 3.6 8.5s-1.2 6.1-3.6 8.5c-2.4-2.4-3.6-5.3-3.6-8.5S9.6 5.9 12 3.5Z"/></svg>网络</a>
+      <a href="#performance"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 18a8 8 0 1 1 16 0"/><path d="m12 14 4-5"/><circle cx="12" cy="18" r="1.6"/></svg>性能</a>
       <a href="#auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="m4 7 8 6 8-6"/></svg>认证</a>
       <a href="#settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H10a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V10a1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.6 1Z"/></svg>设置</a>
-      <a href="#access"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><circle cx="12" cy="8" r=".8" fill="currentColor" stroke="none"/></svg>接入信息</a>
+      <a href="#access"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><circle cx="12" cy="8" r=".8" fill="currentColor" stroke="none"/></svg>接入与 API</a>
     </nav>
     <div class="side-foot">
       <div class="side-line"><span><span class="dot" id="sideDot"></span><span id="sideStatus">连接中</span></span><b id="sideThemes">–</b></div>
@@ -1428,6 +1565,7 @@ input:-webkit-autofill:focus {
           </div>
         </div>
         <div class="pill status-pill"><span class="dot" id="topDot"></span><span id="topStatus">连接中…</span></div>
+        <div class="pill live-speed-pill" id="liveSpeedPill" title="服务器实时下载 / 上传速度">↓ 0 B/s · ↑ 0 B/s</div>
         <div class="user-chip"><span class="avatar-sm" id="topAvatar">A</span><span class="user-name" id="topUser">admin</span></div>
         <button class="icon-btn" id="logoutTop" title="退出登录" aria-label="退出登录">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h9"/></svg>
@@ -1441,6 +1579,8 @@ input:-webkit-autofill:focus {
         </button>
       </div>
     </div>
+
+    <div id="pageGuide"></div>
 
     <section id="overview" class="page active">
       <div class="stats stats-5">
@@ -1507,34 +1647,47 @@ input:-webkit-autofill:focus {
     </section>
 
     <section id="users" class="page">
-      <div class="section-head"><div><h3>用户</h3><p>管理账号、作者绑定和用户资料。</p></div><span class="pill" id="usersPill">–</span></div>
+      <div class="section-head"><div><h3>用户</h3><p>管理账号、审核状态、作者绑定和用户资料。</p></div><span class="pill" id="usersPill">–</span></div>
       <div class="stats">
         <div class="stat"><div class="label">用户总数</div><div class="value" id="usersStatTotal">–</div><div class="sub">已注册账号</div></div>
         <div class="stat"><div class="label">待验证邮箱</div><div class="value" id="usersStatPending">–</div><div class="sub">验证后即可使用</div></div>
         <div class="stat"><div class="label">作者申请</div><div class="value" id="usersStatAuthors">–</div><div class="sub">待处理绑定/重置</div></div>
         <div class="stat"><div class="label">已禁用</div><div class="value" id="usersStatDisabled">–</div><div class="sub">不能登录或投稿</div></div>
       </div>
-      <div class="toolbar">
-        <div class="search">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
-          <input id="userSearch" type="search" placeholder="搜索用户名、显示名、邮箱…">
+      <div class="card">
+        <div class="directory-toolbar">
+          <div class="search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+            <input id="userSearch" type="search" placeholder="搜索用户名、显示名、邮箱…">
+          </div>
+          <select id="userRoleFilter" class="sort-select" title="按角色筛选">
+            <option value="">全部角色</option>
+            <option value="admin">管理员</option>
+            <option value="user">普通用户</option>
+          </select>
+          <div class="row" id="userTabs">
+            <button data-user-status="pending" class="active">待验证邮箱 <span class="tab-count" id="usersTabPending">0</span></button>
+            <button data-user-status="author">作者申请 <span class="tab-count" id="usersTabAuthors">0</span></button>
+            <button data-user-status="all">全部用户 <span class="tab-count" id="usersTabTotal">0</span></button>
+            <button data-user-status="disabled">已禁用 <span class="tab-count" id="usersTabDisabled">0</span></button>
+          </div>
         </div>
-        <div class="row" id="userTabs">
-          <button data-user-status="pending" class="active">待验证邮箱 <span class="tab-count" id="usersTabPending">0</span></button>
-          <button data-user-status="author">作者申请 <span class="tab-count" id="usersTabAuthors">0</span></button>
-          <button data-user-status="all">全部用户 <span class="tab-count" id="usersTabTotal">0</span></button>
-          <button data-user-status="disabled">已禁用 <span class="tab-count" id="usersTabDisabled">0</span></button>
-        </div>
-      </div>
-      <div id="userList"></div>
-      <div class="empty" id="userEmpty">没有符合条件的用户</div>
-      <div class="card hidden" id="userDetail">
-        <div class="section-head"><div><h3 id="userDetailName">用户详情</h3><p id="userDetailMeta">–</p></div><button id="closeUserDetail">关闭</button></div>
-        <div id="userDetailBody"></div>
+        <div id="userList" class="user-directory"></div>
+        <div class="empty" id="userEmpty">没有符合条件的用户</div>
       </div>
       <details class="card audit-details" id="auditDetails" style="margin-top:14px">
         <summary><span>管理员操作日志</span><span class="pill" id="auditPill">展开</span></summary>
         <p class="hint">最近的审核、禁用、作者绑定和重置操作。</p>
+        <div class="directory-toolbar">
+          <div class="search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+            <input id="auditActorFilter" type="search" placeholder="按用户筛选">
+          </div>
+          <input id="auditIpFilter" class="sort-select" type="search" placeholder="按 IP 筛选" style="min-width:150px">
+          <select id="auditActionFilter" class="sort-select" title="按操作筛选"><option value="">全部操作</option></select>
+          <button id="auditFilterBtn" type="button">筛选</button>
+          <button id="auditResetBtn" type="button">重置</button>
+        </div>
         <div class="list" id="auditList"></div>
         <div class="comment-pager">
           <span class="comment-retention" id="auditPageInfo"></span>
@@ -1542,6 +1695,15 @@ input:-webkit-autofill:focus {
           <button class="small" id="auditNext" type="button">下一页</button>
         </div>
       </details>
+    </section>
+
+    <section id="user-detail" class="page">
+      <div class="detail-page-head">
+        <button class="back-link" id="userDetailBack" type="button">← 返回用户列表</button>
+        <span class="pill" id="userDetailStatus">–</span>
+      </div>
+      <div class="section-head"><div><h3 id="userDetailName">用户详情</h3><p id="userDetailMeta">–</p></div></div>
+      <div class="card" id="userDetailBody"></div>
     </section>
 
     <section id="follows" class="page">
@@ -1574,16 +1736,31 @@ input:-webkit-autofill:focus {
     </section>
 
     <section id="authors" class="page">
-      <div class="section-head"><div><h3>自动审批作者</h3><p>首次投稿审核通过后，作者 ID 会获得许可；以后使用同一 ID 投稿将自动发布。</p></div><span class="pill" id="authorsPill">0 位</span></div>
-      <div class="author-batch" id="authorBatchBar">
-        <label><input type="checkbox" id="authorSelectAll"> 全选</label>
-        <span class="comment-retention" id="authorSelectedCount">已选 0 位</span>
-        <button type="button" data-author-batch="revoke">批量撤销</button>
-        <button type="button" data-author-batch="disable">批量停用</button>
-        <button type="button" class="danger" data-author-batch="delete">批量删除</button>
+      <div class="section-head"><div><h3>作者许可</h3><p>首次投稿审核通过后，作者 ID 会获得许可；以后使用同一 ID 投稿将自动发布。</p></div><span class="pill" id="authorsPill">0 位</span></div>
+      <div class="card">
+        <div class="directory-toolbar">
+          <div class="search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+            <input id="authorSearch" type="search" placeholder="搜索作者名称、账号、指纹…">
+          </div>
+          <select id="authorStatusFilter" class="sort-select" title="按作者状态筛选">
+            <option value="">全部状态</option>
+            <option value="active">已启用</option>
+            <option value="pending">待审核</option>
+            <option value="revoked">已撤销</option>
+            <option value="retired">已停用</option>
+          </select>
+        </div>
+        <div class="author-batch" id="authorBatchBar">
+          <label><input type="checkbox" id="authorSelectAll"> 全选</label>
+          <span class="comment-retention" id="authorSelectedCount">已选 0 位</span>
+          <button type="button" data-author-batch="revoke">批量撤销</button>
+          <button type="button" data-author-batch="disable">批量停用</button>
+          <button type="button" class="danger" data-author-batch="delete">批量删除</button>
+        </div>
+        <div id="authorsList" class="author-directory"></div>
+        <div class="empty" id="authorsEmpty"><b>还没有自动审批作者</b>批准第一篇投稿后，作者 ID 会出现在这里。</div>
       </div>
-      <div id="authorsList"></div>
-      <div class="empty" id="authorsEmpty"><b>还没有自动审批作者</b>批准第一篇投稿后，作者 ID 会出现在这里。</div>
     </section>
 
     <section id="comments" class="page">
@@ -1600,6 +1777,7 @@ input:-webkit-autofill:focus {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
             <input id="commentSearch" type="search" placeholder="搜索留言内容、用户、主题…">
           </div>
+          <input id="commentUserFilter" class="sort-select" type="search" placeholder="按用户筛选" style="min-width:150px">
           <select id="commentThemeFilter" class="sort-select" title="按主题筛选"><option value="">全部主题</option></select>
           <select id="commentVisibilityFilter" class="sort-select" title="按可见性筛选">
             <option value="">全部可见性</option>
@@ -1721,10 +1899,20 @@ input:-webkit-autofill:focus {
           </div>
         </form>
       </div>
+      <div class="card" style="margin-top:14px">
+        <h4>主题维护</h4>
+        <p class="hint">主题预览页是只读的；需要修改标签或删除主题时，在这里选择主题并操作。</p>
+        <div class="directory-toolbar">
+          <select id="maintainTheme" class="sort-select" style="min-width:260px"><option value="">选择主题</option></select>
+          <button id="maintainTags" type="button">编辑标签</button>
+          <button class="danger" id="maintainDelete" type="button">删除主题</button>
+        </div>
+        <p class="field-hint" id="maintainHint">预览页不会保存任何修改。</p>
+      </div>
     </section>
 
     <section id="storage" class="page">
-      <div class="section-head"><div><h3>存储</h3><p>配置站点数据目录，或把主题资源放到 S3 兼容对象存储；修改目录或后端后管理服务会自动重启。</p></div><span class="pill" id="storageBackendPill">本地</span></div>
+      <div class="section-head"><div><h3>存储与配额</h3><p>统一配置配额、数据目录、资源后端和 NAS / OpenList 导入来源。</p></div><span class="pill" id="storageBackendPill">本地</span></div>
       <div class="card">
         <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/><path d="M4.5 11.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg>当前状态</h4>
         <div class="storage-grid">
@@ -1794,9 +1982,8 @@ input:-webkit-autofill:focus {
         <div class="storage-bar"><i id="storageJobBar"></i></div>
         <p class="hint" id="storageJobText" style="margin-top:10px">等待中</p>
       </div>
-    </section>
 
-    <section id="locations" class="page">
+      <div class="section-block" id="storage-locations">
       <div class="section-head"><div><h3>存储位置</h3><p>主存储负责上传和发布；NAS、OpenList/AList 作为只读来源，浏览后把主题导入主存储。</p></div><span class="pill" id="locationsPill">–</span></div>
       <div class="stats">
         <div class="stat"><div class="label">主存储</div><div class="value" id="locationsPrimary">–</div><div class="sub" id="locationsPrimarySub">–</div></div>
@@ -1862,22 +2049,6 @@ input:-webkit-autofill:focus {
         </div>
         <div class="row"><button class="primary" id="importBtn">导入并发布</button><span class="field-hint" id="importJobHint" style="margin:0"></span></div>
       </div>
-    </section>
-
-    <section id="api" class="page">
-      <div class="section-head"><div><h3>API 接口</h3><p>客户端和后台实际使用的端点，可直接复制。</p></div></div>
-      <div class="card">
-        <table class="table">
-          <thead><tr><th style="width:64px">方法</th><th>端点地址</th><th style="width:150px">认证</th><th style="width:44px"></th></tr></thead>
-          <tbody id="endpointRows"></tbody>
-        </table>
-      </div>
-      <div class="card" style="margin-top:14px">
-        <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 9 4 12l4 3M16 9l4 3-4 3M13 5l-2 14"/></svg>请求示例</h4>
-        <p class="hint">拉取主题目录（令牌放在请求头里）：</p>
-        <pre id="curlExample">curl -H "X-Sukisu-Theme-Token: $THEME_TOKEN" \
-  &lt;catalog-url&gt;</pre>
-        <div class="row"><button id="copyCurl">复制命令</button></div>
       </div>
     </section>
 
@@ -1972,6 +2143,66 @@ input:-webkit-autofill:focus {
       <div class="card" style="margin-top:14px">
         <h4>网络诊断</h4>
         <div class="meta" id="networkDiag"></div>
+      </div>
+    </section>
+
+    <section id="performance" class="page">
+      <div class="section-head"><div><h3>性能与数据库</h3><p>查看压缩率、并发参数、数据库结构和实时运行指标。</p></div><span class="pill" id="perfPill">–</span></div>
+      <div class="stats">
+        <div class="stat"><div class="label">压缩率</div><div class="value" id="perfRatio">–</div><div class="sub" id="perfSaved">–</div></div>
+        <div class="stat"><div class="label">压缩响应</div><div class="value" id="perfCompressed">–</div><div class="sub" id="perfResponses">–</div></div>
+        <div class="stat"><div class="label">gzip / zstd</div><div class="value" id="perfEncodings">–</div><div class="sub">编码次数</div></div>
+        <div class="stat"><div class="label">数据库</div><div class="value" id="perfDbSize">–</div><div class="sub" id="perfDbLayout">–</div></div>
+      </div>
+      <div class="card">
+        <div class="section-head"><div><h4>实时状态</h4><p class="hint">服务器当前下载/上传速度、活跃请求和正在读取的资源。</p></div><span class="pill" id="perfLivePill">采样中</span></div>
+        <div class="realtime-grid">
+          <div class="realtime-card"><div class="label">下载速度</div><div class="value" id="perfDownloadSpeed">–</div><div class="sub">近 5 秒平均</div></div>
+          <div class="realtime-card"><div class="label">上传速度</div><div class="value" id="perfUploadSpeed">–</div><div class="sub">近 5 秒平均</div></div>
+          <div class="realtime-card"><div class="label">活跃请求</div><div class="value" id="perfActiveRequests">–</div><div class="sub" id="perfActiveAssets">资源请求 –</div></div>
+          <div class="realtime-card"><div class="label">上传任务</div><div class="value" id="perfActiveUploads">–</div><div class="sub">当前并发</div></div>
+        </div>
+        <div class="resource-list" id="perfResources"><div class="resource-item"><span>当前没有正在读取的资源</span><b>–</b></div></div>
+        <p class="field-hint" id="perfConnection">浏览器连接信息：读取中…</p>
+      </div>
+      <div class="card">
+        <h4>压缩</h4>
+        <div class="form-grid">
+          <label class="check"><input id="perfCompressionEnabled" type="checkbox"> 启用压缩</label>
+          <label class="check"><input id="perfGzip" type="checkbox"> gzip</label>
+          <label class="check"><input id="perfZstd" type="checkbox"> zstd</label>
+          <div><label for="perfMinBytes">最小字节</label><input id="perfMinBytes" type="number" min="0" max="1048576"></div>
+          <div><label for="perfQuality">压缩级别</label><select id="perfQuality"><option value="fastest">Fastest</option><option value="default">Default</option><option value="best">Best</option></select></div>
+        </div>
+        <div class="row"><button class="primary" id="perfSaveCompression">保存压缩配置</button><span class="pill" id="perfRestartHint">–</span></div>
+        <p class="field-hint">编码与级别保存后需要重启；开关和最小字节即时生效。</p>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h4>并发与 IO</h4>
+        <div class="form-grid">
+          <div><label for="perfDownloadBuffer">下载缓冲（字节）</label><input id="perfDownloadBuffer" type="number" min="16384" max="1048576"></div>
+          <div><label for="perfUploadConcurrency">上传并发</label><input id="perfUploadConcurrency" type="number" min="1" max="16"></div>
+          <div><label for="perfFlushInterval">统计落库间隔（秒）</label><input id="perfFlushInterval" type="number" min="1" max="60"></div>
+          <div><label for="perfPollInterval">页面轮询间隔（秒）</label><input id="perfPollInterval" type="number" min="5" max="300"></div>
+          <div><label for="perfWorkerThreads">工作线程（0=自动）</label><input id="perfWorkerThreads" type="number" min="0" max="64"></div>
+          <div><label for="perfBlockingThreads">阻塞线程</label><input id="perfBlockingThreads" type="number" min="8" max="512"></div>
+          <div><label for="perfDbPoolSize">数据库连接池</label><input id="perfDbPoolSize" type="number" min="1" max="32"></div>
+        </div>
+        <div class="row"><button class="primary" id="perfSaveRuntime">保存运行配置</button><button id="perfRestart">重启服务</button></div>
+        <p class="field-hint">上传并发、线程数和编码需要重启；下载缓冲、落库间隔和轮询间隔即时生效。</p>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h4>压缩分类</h4>
+        <div class="meta" id="perfCategories"></div>
+        <div class="row"><button id="perfResetStats">重置统计</button></div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h4>数据库结构</h4>
+        <div class="meta" id="perfDatabase"></div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h4>路由与压缩链</h4>
+        <div class="meta" id="perfRoutes"></div>
       </div>
     </section>
 
@@ -2080,7 +2311,7 @@ input:-webkit-autofill:focus {
             <div class="kv"><span>可用 / 异常</span><b id="settingsLocationsState">–</b></div>
             <div class="kv"><span>主存储</span><b id="settingsLocationsPrimary">–</b></div>
           </div>
-          <div class="row"><a class="pill" href="#locations" style="text-decoration:none">管理存储位置</a></div>
+          <div class="row"><a class="pill" href="#storage" style="text-decoration:none">管理存储位置</a></div>
         </div>
         <div class="card">
           <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M19.1 4.9l-1.6 1.6M6.5 17.5l-1.6 1.6"/></svg>外观</h4>
@@ -2102,8 +2333,10 @@ input:-webkit-autofill:focus {
     </section>
 
     <section id="access" class="page">
-      <div class="section-head"><div><h3>接入信息</h3><p>把下面的地址和请求头填进 SukiSU 管理器。</p></div></div>
+      <div class="section-head"><div><h3>接入信息与 API</h3><p>镜像地址、管理入口、接口列表和调用示例集中在这里。</p></div></div>
       <div class="card">
+        <h4>接入方式</h4>
+        <p class="hint">把下面的地址和请求头填进 SukiSU 管理器；接口列表中的受保护端点都需要同一个令牌。</p>
         <div class="meta">
           <div class="kv"><span>镜像基础地址</span><b class="url" id="publicUrl">–</b></div>
           <div class="kv"><span>目录 API</span><b class="url" id="catalogUrl">–</b></div>
@@ -2112,6 +2345,23 @@ input:-webkit-autofill:focus {
           <div class="kv"><span>管理 API 基础</span><b class="url" id="adminApiBase">–</b></div>
           <div class="kv"><span>请求头</span><b class="url">X-Sukisu-Theme-Token</b></div>
         </div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h4>接口列表</h4>
+        <p class="hint">客户端和后台实际使用的端点，可直接复制。</p>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th style="width:64px">方法</th><th>端点地址</th><th style="width:150px">认证</th><th style="width:44px"></th></tr></thead>
+            <tbody id="endpointRows"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 9 4 12l4 3M16 9l4 3-4 3M13 5l-2 14"/></svg>请求示例</h4>
+        <p class="hint">拉取主题目录（令牌放在请求头里）：</p>
+        <pre id="curlExample">curl -H "X-Sukisu-Theme-Token: $THEME_TOKEN" \
+  &lt;catalog-url&gt;</pre>
+        <div class="row"><button id="copyCurl">复制命令</button></div>
       </div>
     </section>
     <footer class="site-footer">
@@ -2874,6 +3124,7 @@ let adminCommentTotal = 0;
 let adminCommentOffset = 0;
 let adminCommentLimit = 50;
 let adminCommentQuery = '';
+let adminCommentUser = '';
 let adminCommentTheme = '';
 let adminCommentVisibility = '';
 let adminCommentLoading = false;
@@ -2995,10 +3246,7 @@ function renderThemeGrid() {
         </div>
         <div class="theme-desc">${renderInlineMarkdown(theme.description || '暂无描述')}</div>
         <div class="theme-tags">${tags}</div>
-        <div class="theme-actions">
-          <button class="theme-tags-edit" data-id="${escapeHtml(theme.id)}">编辑标签</button>
-          <button class="theme-delete" data-id="${escapeHtml(theme.id)}">删除</button>
-        </div>
+        <div class="theme-actions"><span class="pill">只读预览</span></div>
       </div>`;
     const image = card.querySelector('.theme-preview img');
     if (image) {
@@ -3016,14 +3264,6 @@ function renderThemeGrid() {
       });
     }
     card.addEventListener('click', () => openThemeDetail(theme));
-    card.querySelector('.theme-delete').addEventListener('click', event => {
-      event.stopPropagation();
-      deleteTheme(theme.id);
-    });
-    card.querySelector('.theme-tags-edit').addEventListener('click', event => {
-      event.stopPropagation();
-      openThemeTags(theme);
-    });
     grid.appendChild(card);
   });
 }
@@ -3072,7 +3312,7 @@ function openThemeDetail(theme) {
         <h4>留言与回复</h4>
         <div class="row" style="margin:0">
           <span class="comment-retention" id="themeDetailRetention"></span>
-          <button class="danger small" id="themeDetailClearComments" type="button">清空该主题留言</button>
+          <span class="pill">只读预览</span>
         </div>
       </div>
       <div class="comment-list" id="themeDetailCommentList"><div class="comment-empty">正在加载留言…</div></div>
@@ -3107,7 +3347,7 @@ function commentBadgesHtml(item) {
   return badges.join('');
 }
 
-function adminCommentItemHtml(item) {
+function adminCommentItemHtml(item, readOnly = false) {
   const name = item.displayName || item.username || '匿名用户';
   const initial = String(name).trim().slice(0, 1) || '?';
   const avatar = item.avatarUrl
@@ -3121,14 +3361,14 @@ function adminCommentItemHtml(item) {
     commentBadgesHtml(item) +
     '<span>' + escapeHtml(formatTime(item.createdAt)) + '</span></div>' +
     '<div class="comment-content">' + renderCommentMarkdown(item.content || '') + '</div>' +
-    '<div class="comment-actions"><button type="button" class="danger" data-admin-comment-delete="' +
-    escapeHtml(item.id) + '">删除</button></div>' +
+    (readOnly ? '' : '<div class="comment-actions"><button type="button" class="danger" data-admin-comment-delete="' +
+    escapeHtml(item.id) + '">删除</button></div>') +
     '</div></div>';
 }
 
-function adminCommentThreadHtml(thread) {
-  const replies = (thread.replies || []).map(adminCommentItemHtml).join('');
-  return '<div class="comment-thread">' + adminCommentItemHtml(thread) +
+function adminCommentThreadHtml(thread, readOnly = false) {
+  const replies = (thread.replies || []).map(reply => adminCommentItemHtml(reply, readOnly)).join('');
+  return '<div class="comment-thread">' + adminCommentItemHtml(thread, readOnly) +
     (replies ? '<div class="comment-replies">' + replies + '</div>' : '') +
     '</div>';
 }
@@ -3144,7 +3384,7 @@ async function loadThemeDetailComments(themeId) {
     const retention = $('themeDetailRetention');
     if (retention) retention.textContent = commentRetentionLabel(themeDetailRetentionDays);
     list.innerHTML = threads.length
-      ? threads.map(adminCommentThreadHtml).join('')
+      ? threads.map(thread => adminCommentThreadHtml(thread, true)).join('')
       : '<div class="comment-empty">这个主题还没有留言。</div>';
   } catch (error) {
     list.innerHTML = '<div class="comment-empty">' + escapeHtml(error.message) + '</div>';
@@ -3213,6 +3453,7 @@ async function loadCommentsAdmin(offset = 0) {
     offset: String(adminCommentOffset),
   });
   if (adminCommentQuery) params.set('q', adminCommentQuery);
+  if (adminCommentUser) params.set('user', adminCommentUser);
   if (adminCommentTheme) params.set('theme', adminCommentTheme);
   if (adminCommentVisibility) params.set('visibility', adminCommentVisibility);
   const list = $('commentAdminList');
@@ -3342,6 +3583,14 @@ $('commentThemeFilter').addEventListener('change', () => {
   adminCommentTheme = $('commentThemeFilter').value;
   loadCommentsAdmin(0);
 });
+let commentUserTimer = 0;
+$('commentUserFilter').addEventListener('input', () => {
+  clearTimeout(commentUserTimer);
+  commentUserTimer = setTimeout(() => {
+    adminCommentUser = $('commentUserFilter').value.trim();
+    loadCommentsAdmin(0);
+  }, 250);
+});
 $('commentVisibilityFilter').addEventListener('change', () => {
   adminCommentVisibility = $('commentVisibilityFilter').value;
   loadCommentsAdmin(0);
@@ -3434,25 +3683,50 @@ function renderAuthors(authors) {
   );
   populateUploadAuthors();
   populateImportAuthors();
+  const query = ($('authorSearch')?.value || '').trim().toLowerCase();
+  const statusFilter = $('authorStatusFilter')?.value || '';
+  const filtered = authorItems.filter(author => {
+    if (statusFilter && author.status !== statusFilter) return false;
+    if (!query) return true;
+    return [
+      author.name,
+      author.username,
+      author.userDisplayName,
+      author.fingerprint,
+      author.hash,
+      author.code,
+    ].some(value => String(value || '').toLowerCase().includes(query));
+  });
   const list = $('authorsList');
   list.innerHTML = '';
-  $('authorsPill').textContent = authorItems.length + ' 位';
-  $('authorsEmpty').style.display = authorItems.length ? 'none' : 'block';
+  $('authorsPill').textContent = query || statusFilter
+    ? `${filtered.length} / ${authorItems.length} 位`
+    : `${authorItems.length} 位`;
+  $('authorsEmpty').style.display = filtered.length ? 'none' : 'block';
+  $('authorsEmpty').innerHTML = query || statusFilter
+    ? '<b>没有符合条件的作者</b>换个筛选条件试试。'
+    : '<b>还没有自动审批作者</b>批准第一篇投稿后，作者 ID 会出现在这里。';
   const restrictionLabels = {
     upload: '禁止投稿',
     comment: '禁止评论',
     auto_publish: '禁止自动发布',
   };
-  authorItems.forEach(author => {
-    const card = document.createElement('div');
-    card.className = 'author-card';
+  const statusLabels = {
+    active: '已启用',
+    pending: '待审核',
+    revoked: '已撤销',
+    retired: '已停用',
+  };
+  filtered.forEach(author => {
+    const row = document.createElement('div');
+    row.className = 'author-row';
     const manageable = author.canRestrict !== false;
     const removable = manageable && (author.status === 'revoked' || author.status === 'retired');
     let actionHtml;
     if (!manageable) {
       actionHtml = '<span class="pill warn">受保护</span><button class="restrict-author">用户详情</button>';
     } else if (removable) {
-      actionHtml = `<span class="pill bad">${author.status === 'retired' ? '已停用' : '已撤销'}</span><button class="reject delete-author">删除</button><button class="restrict-author">功能限制</button>`;
+      actionHtml = '<button class="reject delete-author">删除</button><button class="restrict-author">功能限制</button>';
     } else {
       actionHtml = '<button class="revoke">撤销许可</button><button class="restrict-author">功能限制</button>';
     }
@@ -3466,35 +3740,47 @@ function renderAuthors(authors) {
       : '';
     const restrictionHtml = (author.restrictions || [])
       .map(feature => `<span class="pill warn">${escapeHtml(restrictionLabels[feature] || feature)}</span>`)
-      .join('');
-    card.innerHTML = `
+      .join('') || '<span class="pill">无限制</span>';
+    const owner = author.username
+      ? `@${escapeHtml(author.username)}${author.userDisplayName ? ' · ' + escapeHtml(author.userDisplayName) : ''}`
+      : '未绑定账号';
+    row.innerHTML = `
       <label class="author-check"><input type="checkbox" class="author-select" ${checked ? 'checked' : ''} ${manageable ? '' : 'disabled'}></label>
-      ${avatar}
-      <span class="author-fp">${escapeHtml(author.fingerprint || author.hash)}</span>
-      <span class="author-meta">
-        <b>${escapeHtml(author.name || '未命名作者')}</b>
-        <span>${author.code ? '编号 ' + escapeHtml(author.code) + ' · ' : ''}${author.username ? '@' + escapeHtml(author.username) : '未绑定账号'} · ${escapeHtml(author.status || 'active')}</span>
-        <span>批准：${formatTime(author.approvedAt)} · 最近：${formatTime(author.lastUsedAt)}</span>
-        ${revokeAt}
-        ${restrictionHtml}
-      </span>
-      <span class="author-actions">${actionHtml}</span>`;
-    const checkbox = card.querySelector('.author-select');
+      <div class="author-main">
+        ${avatar}
+        <div><b>${escapeHtml(author.name || '未命名作者')}</b><span>${author.code ? '编号 ' + escapeHtml(author.code) + ' · ' : ''}${escapeHtml(author.fingerprint || author.hash)}</span></div>
+      </div>
+      <div class="user-cell"><span class="cell-label">归属</span>${owner}</div>
+      <div class="user-cell"><span class="cell-label">状态</span><span class="pill ${author.status === 'active' ? 'ok' : (author.status === 'pending' ? 'warn' : 'bad')}">${escapeHtml(statusLabels[author.status] || author.status || '未知')}</span></div>
+      <div class="author-row-extra" style="display:flex;flex-wrap:wrap;gap:5px">${restrictionHtml}${revokeAt}</div>
+      <div class="author-actions">${actionHtml}</div>`;
+    const checkbox = row.querySelector('.author-select');
     checkbox.addEventListener('change', () => {
       if (checkbox.checked) selectedAuthorHashes.add(author.hash);
       else selectedAuthorHashes.delete(author.hash);
       updateAuthorBatchBar();
     });
-    const revoke = card.querySelector('.revoke');
+    const revoke = row.querySelector('.revoke');
     if (revoke) revoke.addEventListener('click', () => revokeAuthor(author.hash, author.fingerprint));
-    const remove = card.querySelector('.delete-author');
+    const remove = row.querySelector('.delete-author');
     if (remove) remove.addEventListener('click', () => deleteAuthor(author.hash, author.fingerprint));
-    const restrict = card.querySelector('.restrict-author');
-    if (restrict) restrict.addEventListener('click', () => openAuthorRestrictions(author));
-    list.appendChild(card);
+    const restrict = row.querySelector('.restrict-author');
+    if (restrict) {
+      restrict.addEventListener('click', () => {
+        if (!manageable && author.userId) openUserDetailPage(author.userId);
+        else openAuthorRestrictions(author);
+      });
+    }
+    list.appendChild(row);
   });
   updateAuthorBatchBar();
 }
+
+$('authorSearch').addEventListener('input', () => {
+  clearTimeout(renderAuthors.timer);
+  renderAuthors.timer = setTimeout(() => renderAuthors(authorItems), 200);
+});
+$('authorStatusFilter').addEventListener('change', () => renderAuthors(authorItems));
 
 function updateAuthorBatchBar() {
   const manageable = authorItems.filter(author => author.canRestrict !== false);
@@ -3735,6 +4021,7 @@ async function loadThemes() {
     const data = await api('/themes?sort=' + encodeURIComponent(themeSort));
     renderThemes(data.themes || []);
     populateUploadThemes(data.themes || []);
+    populateMaintainThemes(data.themes || []);
   } catch (error) {
     $('themePill').textContent = '加载失败';
     $('themeEmpty').style.display = 'block';
@@ -3756,6 +4043,7 @@ async function loadPending() {
 
 let userStatus = 'pending';
 let userQuery = '';
+let userItems = [];
 let selectedUserId = null;
 let currentPage = 'overview';
 
@@ -3764,10 +4052,24 @@ function setUserStatus(status) {
   document.querySelectorAll('[data-user-status]').forEach(item => {
     item.classList.toggle('active', item.dataset.userStatus === userStatus);
   });
-  selectedUserId = null;
-  $('userDetail').classList.add('hidden');
   loadUsers();
 }
+
+function openUserDetailPage(id) {
+  if (!id) return;
+  selectedUserId = id;
+  const hash = '#user/' + encodeURIComponent(id);
+  if (location.hash !== hash) history.pushState(null, '', hash);
+  showPage('user-detail', true);
+}
+
+$('userDetailBack').addEventListener('click', () => {
+  selectedUserId = null;
+  if (location.hash !== '#users') history.pushState(null, '', '#users');
+  showPage('users', true);
+  loadUsers();
+});
+
 
 function userStatusText(status) {
   return ({ email_pending: '待验证邮箱', pending: '待审核', active: '已启用', rejected: '已拒绝', disabled: '已禁用' })[status] || status || '未知';
@@ -3931,43 +4233,48 @@ document.addEventListener('click', event => {
 });
 
 function renderUsers(users) {
+  userItems = users || [];
+  const roleFilter = $('userRoleFilter')?.value || '';
+  const filtered = roleFilter
+    ? userItems.filter(user => user.role === roleFilter)
+    : userItems;
   const list = $('userList');
   list.innerHTML = '';
-  $('userEmpty').style.display = users.length ? 'none' : 'block';
-  users.forEach(user => {
-    const card = document.createElement('div');
-    card.className = 'pending-card user-card';
-    const authorText = user.authorName ? `${user.authorName} · ${user.authorStatus || ''}` : '未绑定作者';
+  $('userEmpty').style.display = filtered.length ? 'none' : 'block';
+  $('userEmpty').innerHTML = '没有符合条件的用户';
+  filtered.forEach(user => {
+    const row = document.createElement('div');
+    row.className = 'user-row';
     const superTarget = user.isSuperAdmin === true;
     const superPill = superTarget ? ' <span class="pill warn">超级管理员</span>' : '';
-    const authorAvatar = user.authorAvatarUrl
-      ? `<img class="author-avatar" src="${escapeHtml(user.authorAvatarUrl)}" alt="">`
-      : '';
-    card.innerHTML = `
-      <div class="pending-body">
-        <div class="section-head" style="margin:0 0 8px">
-          <div><h4 style="margin:0">${escapeHtml(user.displayName || user.username)} ${userPill(user.status)}${superPill}</h4>
-          <p class="hint" style="margin:4px 0 0">@${escapeHtml(user.username)}${user.email ? ' · ' + escapeHtml(user.email) : ''}</p></div>
-          <span class="pill">${escapeHtml(user.role === 'admin' ? '管理员' : '普通用户')}</span>
-        </div>
-        <div class="meta">
-          <div class="kv"><span>邮箱验证</span><b>${user.emailVerified ? '已完成' : '未完成'}</b></div>
-          <div class="kv"><span>作者身份</span><b>${authorAvatar}${escapeHtml(authorText)}</b></div>
-          <div class="kv"><span>注册时间</span><b>${escapeHtml(formatTime(user.createdAt))}</b></div>
-        </div>
-        <div class="row" style="margin-top:12px"></div>
-      </div>`;
-    const actions = card.querySelector('.row');
+    const authorStatusLabels = { active: '已启用', pending: '待审核', revoked: '已撤销', retired: '已停用' };
+    const authorText = user.authorName
+      ? `${user.authorName} · ${authorStatusLabels[user.authorStatus] || user.authorStatus || ''}`
+      : '未绑定作者';
+    const initial = String(user.displayName || user.username || 'U').trim().slice(0, 1).toUpperCase() || 'U';
+    row.innerHTML = `
+      <div class="user-identity">
+        <span class="avatar-small">${escapeHtml(initial)}</span>
+        <div><b>${escapeHtml(user.displayName || user.username)}${superPill}</b><span>@${escapeHtml(user.username)}${user.email ? ' · ' + escapeHtml(user.email) : ''}</span></div>
+      </div>
+      <div class="user-cell"><span class="cell-label">状态</span>${userPill(user.status)}</div>
+      <div class="user-cell"><span class="cell-label">作者</span>${escapeHtml(authorText)}</div>
+      <div class="user-cell"><span class="cell-label">注册</span>${escapeHtml(formatTime(user.createdAt))}</div>
+      <div class="user-actions"></div>`;
+    const actions = row.querySelector('.user-actions');
     const add = (label, action, kind) => {
       const button = document.createElement('button');
       button.textContent = label;
       if (kind === 'primary') button.className = 'primary';
       if (kind === 'danger') button.className = 'reject';
-      button.addEventListener('click', () => runUserAction(user, action));
+      button.addEventListener('click', event => {
+        event.stopPropagation();
+        runUserAction(user, action);
+      });
       actions.appendChild(button);
     };
     if (user.status === 'pending' || user.status === 'email_pending') {
-      if (user.emailVerified) add('通过审核', 'approve', 'primary');
+      if (user.emailVerified) add('通过', 'approve', 'primary');
       add('拒绝', 'reject', 'danger');
     }
     if (user.status === 'active') {
@@ -3980,15 +4287,17 @@ function renderUsers(users) {
       add('启用', 'enable');
       if (user.role !== 'admin') add('删除', 'delete', 'danger');
     }
-    add('查看详情', 'detail');
-    list.appendChild(card);
+    add('详情', 'detail', 'primary');
+    row.addEventListener('click', () => openUserDetailPage(user.id));
+    actions.addEventListener('click', event => event.stopPropagation());
+    list.appendChild(row);
   });
 }
 
 async function runUserAction(user, action) {
   try {
     if (action === 'detail') {
-      await loadUserDetail(user.id);
+      openUserDetailPage(user.id);
       return;
     }
     if (action === 'reject') {
@@ -4022,7 +4331,10 @@ async function deleteUser(user) {
     const data = await api(`/users/${user.id}/delete`, { method: 'POST', body: '{}' });
     toast(data.message || '账号已删除');
     selectedUserId = null;
-    $('userDetail').classList.add('hidden');
+    if (currentPage === 'user-detail') {
+      if (location.hash !== '#users') history.pushState(null, '', '#users');
+      showPage('users', true);
+    }
     await loadUsers();
     await refresh(true);
   } catch (error) { toast(error.message, 'bad'); }
@@ -4033,7 +4345,11 @@ async function loadUserDetail(id) {
     const data = await api(`/users/${id}`);
     selectedUserId = id;
     const user = data.user;
-    $('userDetail').classList.remove('hidden');
+    const statusPill = $('userDetailStatus');
+    if (statusPill) {
+      statusPill.textContent = userStatusText(user.status);
+      statusPill.className = 'pill ' + userTone(user.status);
+    }
     $('userDetailName').textContent = user.displayName || user.username;
     $('userDetailMeta').innerHTML = `<span>@${escapeHtml(user.username)}</span> · <span>${escapeHtml(user.email || '无邮箱')}</span> · <span>${escapeHtml(userStatusText(user.status))}</span>`;
     const authorsHtml = (data.authors || []).map(author => {
@@ -4057,7 +4373,7 @@ async function loadUserDetail(id) {
     $('userDetailBody').innerHTML = `
       <div class="meta">
         <div class="kv"><span>用户 ID</span><b class="author-fp">${escapeHtml(user.id)}</b></div>
-        <div class="kv"><span>角色</span><b>${escapeHtml(user.role)}</b></div>
+        <div class="kv"><span>角色</span><b>${escapeHtml(user.role === 'admin' ? '管理员' : '普通用户')}</b></div>
         <div class="kv"><span>邮箱验证</span><b>${user.emailVerified ? '已完成' : '未完成'}</b></div>
         <div class="kv"><span>主题数量</span><b>${data.themeCount || 0}</b></div>
         <div class="kv"><span>注册时间</span><b>${escapeHtml(formatTime(user.createdAt))}</b></div>
@@ -4085,7 +4401,6 @@ async function loadUserDetail(id) {
     if (canDelete) {
       $('detailDelete').addEventListener('click', () => deleteUser(user));
     }
-    $('userDetail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (error) {
     toast(error.message, 'bad');
   }
@@ -4190,19 +4505,144 @@ async function reviewAuthorRequest(id, action) {
 
 let auditOffset = 0;
 let auditTotal = 0;
+let auditActorFilter = '';
+let auditIpFilter = '';
+let auditActionFilter = '';
 const AUDIT_PAGE_SIZE = 20;
+const AUDIT_ACTIONS = {
+  'user.approve': '通过用户审核',
+  'user.reject': '拒绝用户',
+  'user.disable': '禁用账号',
+  'user.enable': '启用账号',
+  'user.delete': '删除账号',
+  'user.reset_password': '重置密码',
+  'user.role': '修改用户角色',
+  'admin.username': '修改管理员用户名',
+  'author.bind': '绑定作者',
+  'author.bind_latest_theme': '绑定最新主题',
+  'author.reset': '重置作者 ID',
+  'author.revoke': '撤销作者许可',
+  'author.delete': '删除作者许可',
+  'author.batch': '批量处理作者',
+  'author.restrictions': '修改作者限制',
+  'author.auto_revoke': '自动撤销作者许可',
+  'author.request.approve': '批准作者申请',
+  'author.request.reject': '拒绝作者申请',
+  'theme.approve': '批准主题',
+  'theme.reject': '拒绝主题',
+  'theme.tags': '修改主题标签',
+  'theme.withdraw.self': '撤回主题',
+  'theme.restore.self': '恢复主题',
+  'theme.delete.self': '删除主题',
+  'theme.submit.auto': '自动发布投稿',
+  'submission.delete.self': '删除投稿记录',
+  'comment.delete': '删除留言',
+  'comment.clear': '清空留言',
+  'comment.settings': '修改留言设置',
+  'site.maintenance': '切换维护模式',
+  'auth.settings': '修改认证配置',
+  'network.update': '修改网络配置',
+  'performance.update': '修改性能配置',
+  'performance.restart': '重启服务',
+  'storage.import': '导入存储主题',
+  'storage.source.save': '保存存储来源',
+  'storage.source.delete': '删除存储来源',
+  'theme.token.create': '创建访问令牌',
+  'theme.token.update': '更新访问令牌',
+  'theme.token.delete': '删除访问令牌',
+};
+const AUDIT_TARGETS = {
+  user: '用户',
+  author: '作者',
+  theme: '主题',
+  comment: '留言',
+  theme_token: '访问令牌',
+  config: '配置',
+  network: '网络',
+  storage: '存储',
+  service: '服务',
+};
+function auditActionLabel(value) {
+  return AUDIT_ACTIONS[value] || value || '未知操作';
+}
+function auditTargetLabel(value) {
+  return AUDIT_TARGETS[value] || value || '';
+}
+function auditDetailText(value) {
+  if (!value) return '';
+  return String(value)
+    .replace(/\bactive\b/g, '已启用')
+    .replace(/\bdisabled\b/g, '已禁用')
+    .replace(/\bpending\b/g, '待审核')
+    .replace(/\brevoked\b/g, '已撤销')
+    .replace(/\bretired\b/g, '已停用')
+    .replace(/\brejected\b/g, '已拒绝')
+    .replace(/\brevoke\b/g, '撤销')
+    .replace(/\bdisable\b/g, '停用')
+    .replace(/\bdelete\b/g, '删除')
+    .replace(/\bapprove\b/g, '通过')
+    .replace(/\breject\b/g, '拒绝')
+    .replace(/\bcompression=/g, '压缩=')
+    .replace(/\bgzip=/g, 'gzip=')
+    .replace(/\bzstd=/g, 'zstd=')
+    .replace(/\bmin=/g, '最小字节=')
+    .replace(/\bquality=/g, '级别=')
+    .replace(/\bbuffer=/g, '缓冲=')
+    .replace(/\bupload=/g, '上传并发=')
+    .replace(/\bflush=/g, '落库间隔=')
+    .replace(/\bpoll=/g, '轮询间隔=')
+    .replace(/\bworkers=/g, '工作线程=')
+    .replace(/\bblocking=/g, '阻塞线程=')
+    .replace(/\bdomains=/g, '域名=')
+    .replace(/\bpublic=/g, '公开地址=')
+    .replace(/\bsmtp=/g, 'SMTP=')
+    .replace(/\bgithub=/g, 'GitHub=')
+    .replace(/\bsessionDays=/g, '会话天数=')
+    .replace(/\bsession_days=/g, '会话天数=')
+    .replace(/\brole=/g, '角色=')
+    .replace(/\baction=/g, '操作=')
+    .replace(/\bhashes=/g, '作者=')
+    .replace(/\bunchanged\b/g, '未修改')
+    .replace(/\btrue\b/g, '是')
+    .replace(/\bfalse\b/g, '否')
+    .replace(/\badmin\b/g, '管理员')
+    .replace(/\buser\b/g, '普通用户');
+}
+function populateAuditActionFilter() {
+  const select = $('auditActionFilter');
+  if (!select || select.dataset.ready) return;
+  Object.entries(AUDIT_ACTIONS)
+    .sort((left, right) => left[1].localeCompare(right[1], 'zh-CN'))
+    .forEach(([value, label]) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      select.appendChild(option);
+    });
+  select.dataset.ready = '1';
+}
 
 async function loadAudit(offset = auditOffset) {
   const details = $('auditDetails');
   if (!details || !details.open) return;
   auditOffset = Math.max(0, offset);
+  auditActorFilter = ($('auditActorFilter')?.value || '').trim();
+  auditIpFilter = ($('auditIpFilter')?.value || '').trim();
+  auditActionFilter = $('auditActionFilter')?.value || '';
+  const params = new URLSearchParams({
+    limit: String(AUDIT_PAGE_SIZE),
+    offset: String(auditOffset),
+  });
+  if (auditActorFilter) params.set('actor', auditActorFilter);
+  if (auditIpFilter) params.set('ip', auditIpFilter);
+  if (auditActionFilter) params.set('action', auditActionFilter);
   try {
-    const data = await api(`/audit?limit=${AUDIT_PAGE_SIZE}&offset=${auditOffset}`);
+    const data = await api('/audit?' + params.toString());
     const items = data.items || [];
     auditTotal = Number(data.total) || 0;
     $('auditList').innerHTML = items.length ? items.map(item => `
-      <div class="item"><div class="item-head"><b>${escapeHtml(item.action)}</b><span class="pill">${escapeHtml(item.actor || 'system')}</span></div>
-      <div class="item-meta">${escapeHtml(item.targetType || '')} ${escapeHtml(item.targetId || '')} · ${escapeHtml(formatTime(item.createdAt))}${item.detail ? '<br>' + escapeHtml(item.detail) : ''}</div></div>`).join('') : '<div class="empty">还没有操作记录</div>';
+      <div class="item"><div class="item-head"><b>${escapeHtml(auditActionLabel(item.action))}</b><span class="pill">${escapeHtml(item.actor || '系统')}</span></div>
+      <div class="item-meta">${escapeHtml(auditTargetLabel(item.targetType))} ${escapeHtml(item.targetId || '')}${item.ip ? ' · IP ' + escapeHtml(item.ip) : ''} · ${escapeHtml(formatTime(item.createdAt))}${item.detail ? '<br>' + escapeHtml(auditDetailText(item.detail)) : ''}</div></div>`).join('') : '<div class="empty">没有符合条件的操作记录</div>';
     const start = auditTotal ? auditOffset + 1 : 0;
     const end = auditOffset + items.length;
     $('auditPageInfo').textContent = `第 ${start}–${end} 条 / 共 ${auditTotal} 条`;
@@ -4211,6 +4651,23 @@ async function loadAudit(offset = auditOffset) {
     $('auditPill').textContent = '折叠';
   } catch (_) {}
 }
+
+populateAuditActionFilter();
+$('auditFilterBtn').addEventListener('click', () => loadAudit(0));
+$('auditResetBtn').addEventListener('click', () => {
+  if ($('auditActorFilter')) $('auditActorFilter').value = '';
+  if ($('auditIpFilter')) $('auditIpFilter').value = '';
+  if ($('auditActionFilter')) $('auditActionFilter').value = '';
+  loadAudit(0);
+});
+['auditActorFilter', 'auditIpFilter', 'auditActionFilter'].forEach(id => {
+  const element = $(id);
+  if (!element) return;
+  element.addEventListener(id === 'auditActionFilter' ? 'change' : 'input', () => {
+    clearTimeout(element._auditTimer);
+    element._auditTimer = setTimeout(() => loadAudit(0), 300);
+  });
+});
 
 $('auditDetails').addEventListener('toggle', () => {
   const details = $('auditDetails');
@@ -4246,12 +4703,11 @@ $('userSearch').addEventListener('input', () => {
   clearTimeout(loadUsers.timer);
   loadUsers.timer = setTimeout(loadUsers, 250);
 });
+$('userRoleFilter').addEventListener('change', () => {
+  if (userStatus !== 'author') renderUsers(userItems);
+});
 document.querySelectorAll('[data-user-status]').forEach(button => {
   button.addEventListener('click', () => setUserStatus(button.dataset.userStatus));
-});
-$('closeUserDetail').addEventListener('click', () => {
-  $('userDetail').classList.add('hidden');
-  selectedUserId = null;
 });
 
 let followsCache = [];
@@ -4293,6 +4749,181 @@ function renderFollows() {
 }
 
 if ($('followSearch')) $('followSearch').addEventListener('input', renderFollows);
+
+let performanceData = null;
+let performanceSettings = null;
+let pollIntervalMs = 15000;
+let refreshTimer = null;
+let performanceStatsTimer = null;
+let refreshInFlight = false;
+
+function applyPerformanceForm(settings) {
+  $('perfCompressionEnabled').checked = settings.compressionEnabled !== false;
+  $('perfGzip').checked = settings.compressionGzip !== false;
+  $('perfZstd').checked = settings.compressionZstd !== false;
+  $('perfMinBytes').value = settings.compressionMinBytes ?? 256;
+  $('perfQuality').value = settings.compressionQuality || 'default';
+  $('perfDownloadBuffer').value = settings.downloadBufferBytes || 65536;
+  $('perfUploadConcurrency').value = settings.uploadConcurrency || 4;
+  $('perfFlushInterval').value = settings.flushIntervalSecs || 3;
+  $('perfPollInterval').value = settings.pollIntervalSecs || 30;
+  $('perfWorkerThreads').value = settings.workerThreads || 0;
+  $('perfBlockingThreads').value = settings.blockingThreads || 64;
+  $('perfDbPoolSize').value = settings.dbPoolSize || 4;
+}
+
+function performancePayload() {
+  return {
+    compressionEnabled: $('perfCompressionEnabled').checked,
+    compressionGzip: $('perfGzip').checked,
+    compressionZstd: $('perfZstd').checked,
+    compressionMinBytes: Number($('perfMinBytes').value) || 0,
+    compressionQuality: $('perfQuality').value,
+    downloadBufferBytes: Number($('perfDownloadBuffer').value) || 65536,
+    uploadConcurrency: Number($('perfUploadConcurrency').value) || 4,
+    flushIntervalSecs: Number($('perfFlushInterval').value) || 3,
+    pollIntervalSecs: Number($('perfPollInterval').value) || 30,
+    workerThreads: Number($('perfWorkerThreads').value) || 0,
+    blockingThreads: Number($('perfBlockingThreads').value) || 64,
+    dbPoolSize: Number($('perfDbPoolSize').value) || 4,
+  };
+}
+
+function performancePercent(value) {
+  return ((Number(value) || 0) * 100).toFixed(1) + '%';
+}
+
+function renderPerformance(data) {
+  const compression = data.compression || {};
+  const database = data.database || {};
+  $('perfRatio').textContent = performancePercent(compression.ratio);
+  $('perfSaved').textContent = formatStorage(Number(compression.savedBytes) || 0) + ' 已节省';
+  $('perfCompressed').textContent = formatCount(compression.compressed || 0);
+  $('perfResponses').textContent = '总响应 ' + formatCount(compression.responses || 0);
+  $('perfEncodings').textContent = formatCount(compression.gzip || 0) + ' / ' + formatCount(compression.zstd || 0);
+  $('perfDbSize').textContent = formatStorage(Number(database.size) || 0);
+  $('perfDbLayout').textContent = (database.layout || 'single') + ' · ' + (database.poolSize || '–') + ' 连接';
+  const settings = data.settings || {};
+  $('perfPill').textContent = settings.compressionEnabled === false ? '压缩已关闭' : '压缩已启用';
+  $('perfPill').className = 'pill ' + (settings.compressionEnabled === false ? 'warn' : 'ok');
+  $('perfRestartHint').textContent = data.restartRequiredFor?.length ? '编码/线程修改需重启' : '热配置即时生效';
+  $('perfCategories').innerHTML = (compression.categories || []).map(item => `
+    <div class="kv"><span>${escapeHtml(item.name)}</span><b>${formatCount(item.compressed || 0)} 次 · ${performancePercent(item.ratio)}</b></div>
+  `).join('') || '<div class="kv"><span>暂无数据</span><b>–</b></div>';
+  const databases = database.databases || [];
+  $('perfDatabase').innerHTML = databases.map(file => {
+    const tables = (file.details?.tables || []).map(item =>
+      `<span class="pill" style="margin:3px 4px 0 0">${escapeHtml(item.name)} · ${formatCount(item.rows || 0)}</span>`
+    ).join(' ');
+    return [
+      `<div class="kv"><span>${escapeHtml(file.name || 'database')}</span><b class="url">${escapeHtml(file.path || '–')}</b></div>`,
+      `<div class="kv"><span>大小 / WAL</span><b>${formatStorage(Number(file.size) || 0)} / ${formatStorage(Number(file.walSize) || 0)}</b></div>`,
+      `<div class="kv"><span>Journal / 页大小</span><b>${escapeHtml(file.details?.journalMode || '–')} / ${formatCount(file.details?.pageSize || 0)}</b></div>`,
+      `<div class="kv"><span>表</span><b>${tables || '–'}</b></div>`,
+    ].join('');
+  }).join('') || '<div class="kv"><span>暂无数据</span><b>–</b></div>';
+  $('perfRoutes').innerHTML = [
+    ...(data.routes || []).map(item =>
+      `<div class="kv"><span>${escapeHtml(item.group)}</span><b>${escapeHtml((item.paths || []).join(', '))} · ${escapeHtml(item.access)}</b></div>`
+    ),
+    `<div class="kv"><span>压缩链</span><b>${escapeHtml((data.pipeline || []).join(' → '))}</b></div>`,
+  ].join('');
+}
+
+function renderPerformanceLive(data) {
+  const live = data || {};
+  const download = Number(live.downloadBytesPerSec) || 0;
+  const upload = Number(live.uploadBytesPerSec) || 0;
+  $('perfDownloadSpeed').textContent = formatStorage(download) + '/s';
+  $('perfUploadSpeed').textContent = formatStorage(upload) + '/s';
+  if ($('liveSpeedPill')) {
+    $('liveSpeedPill').textContent = `↓ ${formatStorage(download)}/s · ↑ ${formatStorage(upload)}/s`;
+  }
+  $('perfActiveRequests').textContent = formatCount(live.activeRequests || 0);
+  $('perfActiveAssets').textContent = '资源请求 ' + formatCount(live.activeAssets || 0);
+  $('perfActiveUploads').textContent = formatCount(live.activeUploads || 0);
+  const resources = live.resources || [];
+  $('perfResources').innerHTML = resources.length
+    ? resources.map(item => `<div class="resource-item"><code>${escapeHtml(item.path)}</code><b>${formatCount(item.active || 0)} 个请求</b></div>`).join('')
+    : '<div class="resource-item"><span>当前没有正在读取的资源</span><b>–</b></div>';
+  $('perfLivePill').textContent = '实时 · ' + formatTime(Math.floor(Date.now() / 1000));
+  $('perfLivePill').className = 'pill ok';
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (!connection) {
+    $('perfConnection').textContent = '浏览器连接信息：当前浏览器未提供。';
+    return;
+  }
+  const parts = [];
+  if (connection.effectiveType) parts.push('网络类型 ' + connection.effectiveType);
+  if (connection.downlink) parts.push('下行约 ' + connection.downlink + ' Mbps');
+  if (connection.rtt) parts.push('RTT ' + connection.rtt + ' ms');
+  if (connection.saveData) parts.push('省流模式');
+  $('perfConnection').textContent = '浏览器连接信息：' + (parts.join(' · ') || '未知');
+}
+
+async function loadPerformance() {
+  try {
+    const data = await api('/performance');
+    performanceData = data;
+    performanceSettings = data.settings || {};
+    applyPerformanceForm(performanceSettings);
+    renderPerformance(data);
+    if (performanceSettings.pollIntervalSecs) {
+      pollIntervalMs = Math.max(5, Number(performanceSettings.pollIntervalSecs) || 30) * 1000;
+      if (refreshTimer) restartRefreshTimer();
+    }
+    await loadPerformanceLive();
+  } catch (error) {
+    toast('性能状态读取失败：' + error.message, 'bad');
+  }
+}
+
+async function loadPerformanceLive() {
+  try {
+    const data = await api('/performance/live');
+    renderPerformanceLive(data);
+  } catch (_) {
+    $('perfLivePill').textContent = '采样中断';
+    $('perfLivePill').className = 'pill warn';
+  }
+}
+
+async function savePerformance() {
+  try {
+    const data = await api('/performance', {
+      method: 'POST',
+      body: JSON.stringify(performancePayload()),
+    });
+    toast(data.message || '性能配置已保存');
+    if (data.restartRequired) {
+      $('perfRestartHint').textContent = '需要重启服务';
+    }
+    await loadPerformance();
+  } catch (error) {
+    toast('保存失败：' + error.message, 'bad');
+  }
+}
+
+$('perfSaveCompression').addEventListener('click', savePerformance);
+$('perfSaveRuntime').addEventListener('click', savePerformance);
+$('perfResetStats').addEventListener('click', async () => {
+  try {
+    await api('/performance/stats/reset', { method: 'POST', body: '{}' });
+    toast('压缩统计已重置');
+    await loadPerformance();
+  } catch (error) {
+    toast('重置失败：' + error.message, 'bad');
+  }
+});
+$('perfRestart').addEventListener('click', async () => {
+  if (!confirm('重启管理服务？当前请求会在几秒内中断。')) return;
+  try {
+    const data = await api('/performance/restart', { method: 'POST', body: '{}' });
+    toast(data.message || '服务即将重启');
+  } catch (error) {
+    toast('重启失败：' + error.message, 'bad');
+  }
+});
 
 async function loadNetwork() {
   try {
@@ -4496,6 +5127,40 @@ function populateUploadThemes(themes) {
   });
   if (current && Array.from(select.options).some(option => option.value === current)) select.value = current;
 }
+
+function populateMaintainThemes(themes) {
+  const select = $('maintainTheme');
+  if (!select) return;
+  if (themes) themeItems = themes;
+  const current = select.value;
+  select.innerHTML = '<option value="">选择主题</option>';
+  themeItems.forEach(theme => {
+    const option = document.createElement('option');
+    option.value = theme.id;
+    option.textContent = `${theme.id} · ${theme.name || ''} · v${theme.version}`;
+    select.appendChild(option);
+  });
+  if (current && Array.from(select.options).some(option => option.value === current)) select.value = current;
+}
+
+function maintainThemeSelection() {
+  const id = $('maintainTheme')?.value || '';
+  const theme = themeItems.find(item => item.id === id);
+  if (!theme) {
+    toast('请先选择一个主题', 'bad');
+    return null;
+  }
+  return theme;
+}
+
+$('maintainTags').addEventListener('click', () => {
+  const theme = maintainThemeSelection();
+  if (theme) openThemeTags(theme);
+});
+$('maintainDelete').addEventListener('click', () => {
+  const theme = maintainThemeSelection();
+  if (theme) deleteTheme(theme.id);
+});
 
 async function refreshAutoThemeId() {
   if (!($('upAuthorHash') && $('upAutoId'))) return;
@@ -4798,7 +5463,7 @@ async function loadLocations() {
     renderSources();
     populateImportSources();
     populateImportAuthors();
-    if (currentPage === 'locations' && $('importSource').value) {
+    if (currentPage === 'storage' && $('importSource').value) {
       await browseImport($('importPath').value || '/');
     }
   } catch (error) {
@@ -4843,7 +5508,7 @@ function renderSources() {
       $('importSource').value = source.id;
       importPath = source.type === 'alist' ? (source.alist?.root || '/') : '/';
       $('importPath').value = importPath;
-      $('locations').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      $('storage-locations').scrollIntoView({ behavior: 'smooth', block: 'start' });
       browseImport(importPath);
     });
     card.querySelector('[data-act="test"]').addEventListener('click', () => testSource(source));
@@ -5304,13 +5969,56 @@ document.addEventListener('sukisu:languagechange', () => {
   if (storageSources.length) populateImportSources();
 });
 
-async function refresh(silent = false) {
+async function loadPerformanceStats() {
+  try {
+    const [stats, live] = await Promise.all([
+      api('/performance/stats'),
+      api('/performance/live'),
+    ]);
+    if (performanceData) {
+      performanceData.compression = stats.compression || performanceData.compression;
+      renderPerformance(performanceData);
+    }
+    renderPerformanceLive(live);
+  } catch (_) {}
+}
+
+async function loadCurrentPageData() {
+  if (currentPage === 'themes' || currentPage === 'upload') await loadThemes();
+  if (currentPage === 'upload' || currentPage === 'authors') await loadAuthors();
+  if (currentPage === 'pending') await loadPending();
+  if (currentPage === 'users') await loadUsers();
+  if (currentPage === 'follows') await loadFollows();
+  if (currentPage === 'comments') await loadCommentsAdmin(0);
+  if (currentPage === 'performance') await loadPerformanceStats();
+}
+
+function restartRefreshTimer() {
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(() => {
+    if (document.hidden) return;
+    refresh(true);
+  }, Math.max(5000, pollIntervalMs));
+  if (performanceStatsTimer) clearInterval(performanceStatsTimer);
+  performanceStatsTimer = setInterval(() => {
+    if (document.hidden) return;
+    if (currentPage === 'performance') loadPerformanceStats();
+    else loadPerformanceLive();
+  }, 5000);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refresh(true);
+});
+
+async function refresh(silent = false, includePage = true) {
+  if (refreshInFlight) return;
+  refreshInFlight = true;
   const btn = $('refreshBtn');
   if (!silent) btn.classList.add('spin');
   try {
     render(await api('/status'));
-    await Promise.all([loadThemes(), loadPending(), loadAuthors()]);
-    if (currentPage === 'users') await loadUsers();
+    if (includePage) await loadCurrentPageData();
   } catch (error) {
     $('topStatus').textContent = '连接失败';
     $('sideStatus').textContent = '连接失败';
@@ -5318,31 +6026,140 @@ async function refresh(silent = false) {
     setDot($('sideDot'), 'inactive');
     if (!silent) toast('无法读取状态：' + error.message, 'bad');
   } finally {
+    refreshInFlight = false;
     btn.classList.remove('spin');
   }
+}
+
+const PAGE_GUIDES = {
+  overview: {
+    title: '概览',
+    what: '站点运行状态的首页，汇总主题数量、下载量、访问令牌、服务状态和存储用量。',
+    abilities: ['查看核心指标和热门主题', '检查令牌、服务与存储状态', '快速进入主题预览、待审核和设置'],
+    steps: ['先看服务状态和存储用量', '点击卡片进入对应模块', '定期用刷新按钮更新状态'],
+  },
+  users: {
+    title: '用户与作者',
+    what: '统一管理注册用户、审核状态、作者身份和账号权限。',
+    abilities: ['按状态/角色/关键词筛选用户', '通过、拒绝、禁用、启用或删除账号', '绑定作者、重置作者 ID、设置管理员', '查看管理员操作日志'],
+    steps: ['用筛选栏定位账号', '点击“详情”进入二级详情页', '在详情页执行审核或作者操作'],
+  },
+  'user-detail': {
+    title: '用户详情',
+    what: '单个账号的完整资料、作者身份和最近投稿，是用户管理的二级页面。',
+    abilities: ['查看资料、作者绑定和投稿记录', '执行审核、禁用、重置密码等操作', '返回用户列表继续处理其他账号'],
+    steps: ['从用户列表点击“详情”进入', '确认账号信息后执行操作', '完成后返回列表或继续查看'],
+  },
+  follows: {
+    title: '关注关系',
+    what: '展示用户关注了哪些作者，以及作者归属的账号。',
+    abilities: ['查看关注者、作者和归属账号', '按关键词搜索关注关系', '用于排查粉丝统计和作者归属'],
+    steps: ['输入用户或作者关键词', '查看匹配的关注记录'],
+  },
+  pending: {
+    title: '待审核投稿',
+    what: '管理器提交的主题会先进入审核队列，通过后才会写入公开目录。',
+    abilities: ['查看标题、作者、标签和包校验结果', '预览主题包内容', '批准发布或拒绝并说明原因'],
+    steps: ['检查预览图和作者信息', '确认包内容与许可', '点击批准或拒绝'],
+  },
+  comments: {
+    title: '评论管理',
+    what: '管理所有主题下的公开留言和仅作者可见留言。',
+    abilities: ['按用户、主题、可见性和关键词筛选', '删除单条留言或按主题清空', '设置自动清理保留天数'],
+    steps: ['选择筛选条件', '定位留言并删除', '按需调整自动清理天数'],
+  },
+  authors: {
+    title: '作者许可',
+    what: '维护可信作者身份和自动发布许可，决定作者后续投稿能否直接发布。',
+    abilities: ['搜索/按状态筛选作者', '撤销、停用或删除许可', '限制投稿、评论或自动发布', '批量处理多个作者'],
+    steps: ['用筛选栏定位作者', '查看归属账号和限制状态', '执行撤销、限制或批量操作'],
+  },
+  themes: {
+    title: '主题预览',
+    what: '只读浏览当前公开目录中的主题卡片、预览图、下载量和校验信息。',
+    abilities: ['搜索、排序和查看主题详情', '查看预览图、截图、SHA-256 和留言', '确认目录展示效果'],
+    steps: ['搜索或排序主题', '点击卡片查看只读详情', '需要修改时前往上传页的“主题维护”'],
+  },
+  upload: {
+    title: '上传主题',
+    what: '管理员上传会直接发布；管理器投稿会进入待审核。也可更新已有主题或做主题维护。',
+    abilities: ['上传主题包、预览图、头像和截图', '更新已有主题版本和说明', '在“主题维护”中编辑标签或删除主题'],
+    steps: ['选择新建或更新已有主题', '填写元数据并选择文件', '上传后检查进度和发布结果'],
+  },
+  storage: {
+    title: '存储与配额',
+    what: '统一管理存储配额、数据目录、本地/S3 后端，以及 NAS、OpenList/AList 导入来源。',
+    abilities: ['查看已用/剩余空间和配额', '迁移数据目录或切换 S3 后端', '添加只读/可写来源并浏览导入主题'],
+    steps: ['先确认当前状态和配额', '按需调整目录或后端', '在存储位置区块添加来源并导入'],
+  },
+  network: {
+    title: '网络配置',
+    what: '配置管理服务监听地址、端口、公开域名和访问地址。',
+    abilities: ['修改监听 IP 和端口', '维护公开域名和后台/用户中心地址', '测试端口并自动重启回滚'],
+    steps: ['确认 Lucky/反向代理目标端口', '修改监听或域名', '保存并等待服务重启'],
+  },
+  performance: {
+    title: '性能与数据库',
+    what: '查看实时压缩率、连接速度、当前资源、数据库结构和运行时参数。',
+    abilities: ['调整压缩、下载缓冲、上传并发和线程数', '查看 5 个分库的文件、表和行数', '查看实时下载/上传速度和活跃资源'],
+    steps: ['先看实时状态和压缩率', '按需调整参数并保存', '编码/线程/DB 连接池修改后重启'],
+  },
+  auth: {
+    title: '认证与邮件',
+    what: '配置邮箱验证、SMTP 和 GitHub 登录，以及网页会话时长。',
+    abilities: ['配置 SMTP 发件服务并测试', '配置 GitHub OAuth 和回调', '调整网页会话有效期'],
+    steps: ['填写 SMTP 或 GitHub 参数', '保存后检查状态', '用测试按钮验证配置'],
+  },
+  settings: {
+    title: '控制台设置',
+    what: '管理管理员账户、访问令牌、站点信息、存储入口和外观。',
+    abilities: ['修改管理员用户名和密码', '创建/撤销命名访问令牌', '查看站点信息和切换主题'],
+    steps: ['在账户区修改资料', '在令牌区生成并保存令牌', '按需切换外观或进入子页面'],
+  },
+  access: {
+    title: '接入信息与 API',
+    what: '集中展示镜像地址、管理入口、接口列表和调用示例。',
+    abilities: ['复制公开地址、管理地址和请求头', '查看所有客户端/后台端点及认证方式', '复制目录请求示例'],
+    steps: ['把基础地址和请求头填入管理器', '按需复制具体接口', '用示例命令验证目录访问'],
+  },
+};
+
+function renderPageGuide(page) {
+  const host = $('pageGuide');
+  if (!host) return;
+  const guide = PAGE_GUIDES[page] || PAGE_GUIDES.overview;
+  host.innerHTML = `<details class="page-guide" open>
+    <summary><span>功能说明 · ${escapeHtml(guide.title)}</span><span class="pill">这是什么 / 完整能力 / 如何使用</span></summary>
+    <div class="guide-grid">
+      <div><b>这是什么</b><p>${escapeHtml(guide.what)}</p></div>
+      <div><b>完整能力</b><ul>${guide.abilities.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div>
+      <div><b>如何使用</b><ol>${guide.steps.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ol></div>
+    </div>
+  </details>`;
 }
 
 const PAGE_LABELS = {
   overview: 'Overview',
   users: 'Users',
+  'user-detail': 'User detail',
   follows: 'Follows',
   pending: 'Review queue',
   comments: 'Comments',
   authors: 'Author licenses',
   themes: 'Theme preview',
   upload: 'Upload theme',
-  storage: 'Storage',
-  locations: 'Storage locations',
-  api: 'API endpoints',
+  storage: 'Storage & quota',
   network: 'Network',
+  performance: 'Performance',
   auth: 'Auth',
   settings: 'Settings',
-  access: 'Access info',
+  access: 'Access & API',
 };
 
 const PAGE_TITLES = {
   overview: '主题镜像控制台',
   users: '用户与作者',
+  'user-detail': '用户详情',
   follows: '关注关系',
   pending: '待审核投稿',
   comments: '评论管理',
@@ -5350,30 +6167,29 @@ const PAGE_TITLES = {
   themes: '主题预览',
   upload: '上传主题',
   storage: '存储与配额',
-  locations: '存储位置',
-  api: 'API 接口',
   network: '网络配置',
+  performance: '性能与数据库',
   auth: '认证设置',
   settings: '控制台设置',
-  access: '接入信息',
+  access: '接入信息与 API',
 };
 
 const PAGE_LEADS = {
   overview: '管理访问令牌、审核主题投稿，以及查看客户端需要使用的 API 地址。',
   users: '管理用户账号、作者绑定申请、资料和权限。',
+  'user-detail': '查看用户资料、作者身份、投稿记录和账号操作。',
   follows: '查看关注关系、被关注的作者以及作者归属账号。',
   pending: '检查投稿预览、作者信息与包内容，通过后立即写入 catalog。',
   comments: '查看所有主题留言与私密留言，删除单条、按主题清理或设置自动清理天数。',
   authors: '维护可信作者指纹与自动发布许可。',
-  themes: '浏览已发布主题，检查预览图、截图和下载信息。',
+  themes: '浏览已发布主题，检查预览图、截图和下载信息；预览页只读。',
   upload: '从主题包或当前设备预设创建投稿，并在发布前校验内容。',
-  storage: '切换本地磁盘或 S3 兼容存储，查看用量并迁移现有资源。',
-  locations: '管理 NAS、OpenList/AList 只读来源，浏览目录并把主题导入主存储。',
-  api: '查看客户端接入所需的目录、资源和鉴权接口。',
+  storage: '统一管理配额、数据目录、资源后端和 NAS / OpenList 导入来源。',
   network: '配置管理服务监听地址、端口、公开域名和访问地址。',
+  performance: '查看和调整压缩、并发、数据库结构与实时性能指标。',
   auth: '配置邮箱验证、SMTP 和 GitHub OAuth。',
   settings: '管理管理员账户、访问令牌、站点信息、存储与外观。',
-  access: '查看镜像域名、管理后台入口和客户端接入方式。',
+  access: '镜像地址、管理入口、接口列表和调用示例。',
 };
 
 function showPage(id, smooth = false) {
@@ -5394,19 +6210,32 @@ function showPage(id, smooth = false) {
   if (title) title.textContent = PAGE_TITLES[page] || '主题镜像控制台';
   const lead = $('pageLead');
   if (lead && PAGE_LEADS[page]) lead.textContent = PAGE_LEADS[page];
-  if (page === 'storage') loadStorage();
-  if (page === 'locations' || page === 'settings') loadLocations();
-  if (page === 'settings') loadTokens();
+  renderPageGuide(page);
+  if (page === 'storage') { loadStorage(); loadLocations(); }
+  if (page === 'settings') { loadLocations(); loadTokens(); }
+  if (page === 'themes') loadThemes();
+  if (page === 'pending') loadPending();
+  if (page === 'authors') loadAuthors();
+  if (page === 'upload') { loadThemes(); loadAuthors(); populateMaintainThemes(); }
   if (page === 'users') loadUsers();
+  if (page === 'user-detail' && selectedUserId) loadUserDetail(selectedUserId);
   if (page === 'follows') loadFollows();
   if (page === 'comments') loadCommentsAdmin(0);
   if (page === 'network') loadNetwork();
+  if (page === 'performance') loadPerformance();
   if (page === 'auth') loadAuthSettings();
   window.scrollTo({ top: 0, behavior: smooth ? 'smooth' : 'auto' });
 }
 
 function pageFromHash() {
-  showPage((location.hash || '#overview').slice(1), false);
+  const hash = (location.hash || '#overview').slice(1);
+  if (hash.startsWith('user/')) {
+    const id = decodeURIComponent(hash.slice(5));
+    selectedUserId = id;
+    showPage('user-detail', false);
+    return;
+  }
+  showPage(hash, false);
 }
 
 document.querySelectorAll('nav a').forEach(link => {
@@ -5882,8 +6711,8 @@ document.querySelectorAll('[data-tag-target]').forEach(group => {
   if (!(await loadSession())) return;
   applyTheme(document.documentElement.dataset.theme || 'dark');
   pageFromHash();
-  refresh();
-  setInterval(() => refresh(true), 15000);
+  refresh(false, false);
+  restartRefreshTimer();
 })();
 </script>
 </body>

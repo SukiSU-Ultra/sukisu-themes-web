@@ -21,6 +21,8 @@ mod models;
 mod network_api;
 mod oauth;
 mod package;
+mod performance;
+mod performance_api;
 mod resumable;
 mod sources;
 mod sources_api;
@@ -35,8 +37,7 @@ use std::path::PathBuf;
 
 use tracing_subscriber::EnvFilter;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()
@@ -49,6 +50,27 @@ async fn main() -> anyhow::Result<()> {
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("/etc/sukisu-theme-web/storage.env"));
     let settings = config::read_storage_config(&storage_env);
+    let paths = config::load_paths(&settings);
+    if std::env::args().nth(1).as_deref() == Some("migrate-db") {
+        let report = db::migrate_split(&paths)?;
+        println!("数据库已拆分到 {}", report.target);
+        for (table, rows) in report.tables {
+            println!("  {table}: {rows}");
+        }
+        return Ok(());
+    }
+    let performance = config::read_performance_settings(&paths);
+
+    let mut builder = tokio::runtime::Builder::new_multi_thread();
+    builder.enable_all().max_blocking_threads(performance.blocking_threads);
+    if performance.worker_threads > 0 {
+        builder.worker_threads(performance.worker_threads);
+    }
+    let runtime = builder.build()?;
+    runtime.block_on(run(settings))
+}
+
+async fn run(settings: config::StorageSettings) -> anyhow::Result<()> {
     let state = api::AppState::new(settings).await?;
     resumable::cleanup_stale(&state.paths);
 
@@ -64,13 +86,20 @@ async fn main() -> anyhow::Result<()> {
     if let Err(error) = authors::revoke_inactive_authors(&state.db, &state.paths).await {
         tracing::warn!("author auto-revoke warning: {error:#}");
     }
+    if let Err(error) = state.db.repair_orphans().await {
+        tracing::warn!("database orphan repair warning: {error:#}");
+    }
     let flush_state = state.clone();
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut last_flush = std::time::Instant::now();
         loop {
-            interval.tick().await;
-            flush_state.flush_downloads().await;
+            tick.tick().await;
+            if last_flush.elapsed() >= flush_state.flush_interval() {
+                flush_state.flush_downloads().await;
+                last_flush = std::time::Instant::now();
+            }
         }
     });
     let mirror_state = state.clone();
@@ -93,6 +122,12 @@ async fn main() -> anyhow::Result<()> {
             cleanup_state.refresh_withdrawn_assets();
             resumable::cleanup_stale(&cleanup_state.paths);
             cleanup_state.flush_downloads().await;
+            if let Err(error) = cleanup_state.db.optimize().await {
+                tracing::warn!("database optimize warning: {error:#}");
+            }
+            if let Err(error) = cleanup_state.db.repair_orphans().await {
+                tracing::warn!("database orphan repair warning: {error:#}");
+            }
             if let Err(error) = catalog::refresh_catalog_stats(&cleanup_state.paths) {
                 tracing::warn!("catalog stats refresh warning: {error:#}");
             }

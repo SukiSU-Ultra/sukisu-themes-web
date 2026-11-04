@@ -326,6 +326,7 @@ async fn create_token(
     let (id, token) = create_token_row(&state.db, name, &scopes, expiry)
         .await
         .map_err(|error| ApiError::bad(error.to_string()))?;
+    state.invalidate_token_cache();
     let _ = audit(
         &state.db,
         Some(&actor.user_id),
@@ -461,6 +462,7 @@ async fn update_token(
     if !changed {
         return Err(ApiError::bad("没有需要更新的字段"));
     }
+    state.invalidate_token_cache();
     Ok(Json(json!({"ok": true, "message": "令牌已更新"})))
 }
 
@@ -499,6 +501,7 @@ async fn delete_token(
     if !changed {
         return Err(ApiError::not_found("令牌不存在"));
     }
+    state.invalidate_token_cache();
     Ok(Json(json!({"ok": true, "message": "令牌已删除"})))
 }
 

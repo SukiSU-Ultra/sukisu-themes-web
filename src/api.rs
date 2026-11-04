@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, Extension, Multipart, OriginalUri, Query, Request, State};
@@ -44,10 +44,25 @@ const EMBEDDED_LOGO_SVG: &[u8] = include_bytes!("../static/logo.svg");
 const EMBEDDED_I18N_JS: &str = include_str!("../static/i18n.js");
 const EMBEDDED_LOCALE_EN: &str = include_str!("../static/locales/en.json");
 
+tokio::task_local! {
+    static REQUEST_IP: String;
+}
+
+pub(crate) fn current_request_ip() -> Option<String> {
+    REQUEST_IP.try_with(|value| value.clone()).ok()
+}
+
 struct MetaIndexCache {
     revision: u64,
     built_at: Instant,
     index: Option<Arc<catalog::MetaIndex>>,
+}
+
+#[derive(Clone, Default)]
+struct TokenCache {
+    mtime: Option<SystemTime>,
+    read_at: Option<Instant>,
+    token: String,
 }
 
 #[derive(Clone)]
@@ -68,6 +83,13 @@ pub struct AppState {
     pub login_failures: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
     /// Site-wide maintenance switch; mirrored into `catalog.json` on every toggle.
     pub maintenance: Arc<AtomicBool>,
+    /// Compression/performance runtime counters and hot-reloadable settings.
+    pub performance: Arc<crate::performance::PerformanceRuntime>,
+    pub upload_semaphore: Arc<tokio::sync::Semaphore>,
+    token_cache: Arc<RwLock<TokenCache>>,
+    named_token_cache: Arc<Mutex<HashMap<String, (bool, Instant)>>>,
+    download_totals_cache: Arc<Mutex<Option<(Instant, (u64, u64))>>>,
+    usage_cache: Arc<Mutex<Option<(Instant, u64, crate::models::StorageUsage)>>>,
     withdrawn_assets: Arc<RwLock<HashSet<String>>>,
     /// Serializes in-place catalog counter writes during download bursts.
     stats_write_lock: Arc<tokio::sync::Mutex<()>>,
@@ -82,9 +104,44 @@ pub struct AppState {
 impl AppState {
     pub async fn new(settings: StorageSettings) -> anyhow::Result<Self> {
         let paths = Arc::new(config::load_paths(&settings));
+        if paths.db_layout != config::DbLayout::Split {
+            anyhow::bail!(
+                "数据库尚未拆分，请先停止服务并运行: {} migrate-db",
+                std::env::current_exe()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|_| "sukisu-theme-web".to_string())
+            );
+        }
         config::ensure_storage_dirs(&paths, &settings)?;
         let primary = storage::build_store(&settings)?;
-        let db = crate::db::Database::open(&paths.db).await?;
+        for path in [
+            &paths.db,
+            &paths.authors_db,
+            &paths.social_db,
+            &paths.stats_db,
+            &paths.audit_db,
+        ] {
+            if !path.is_file() {
+                anyhow::bail!(
+                    "分库文件缺失: {}，请从备份恢复或运行 migrate-db",
+                    path.display()
+                );
+            }
+        }
+        crate::db::ensure_split_schema(&paths)?;
+        let attachments = [
+            ("authors", paths.authors_db.clone()),
+            ("social", paths.social_db.clone()),
+            ("stats", paths.stats_db.clone()),
+            ("audit", paths.audit_db.clone()),
+        ];
+        let performance_settings = config::read_performance_settings(&paths);
+        let db = crate::db::Database::open_split(
+            &paths.db,
+            &attachments,
+            performance_settings.db_pool_size,
+        )
+        .await?;
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(20))
             .build()?;
@@ -94,8 +151,12 @@ impl AppState {
         let limit_bytes = settings.limit_bytes;
         let sessions = auth::SessionStore::new(db.clone());
         let withdrawn_assets = Arc::new(RwLock::new(catalog::withdrawn_asset_keys(&paths)));
-        let theme_stats = Arc::new(crate::db::load_theme_stats(&paths.db));
+        let theme_stats = Arc::new(crate::db::load_theme_stats(&paths.stats_db));
         let maintenance = config::maintenance_enabled(&paths);
+        let performance = Arc::new(crate::performance::PerformanceRuntime::new(
+            &performance_settings,
+        ));
+        let upload_concurrency = performance_settings.upload_concurrency.max(1);
         Ok(Self {
             paths,
             settings: Arc::new(settings),
@@ -111,6 +172,12 @@ impl AppState {
             mirrors: crate::mirrors::MirrorPool::load().await,
             login_failures: Arc::new(Mutex::new(HashMap::new())),
             maintenance: Arc::new(AtomicBool::new(maintenance)),
+            performance,
+            upload_semaphore: Arc::new(tokio::sync::Semaphore::new(upload_concurrency)),
+            token_cache: Arc::new(RwLock::new(TokenCache::default())),
+            named_token_cache: Arc::new(Mutex::new(HashMap::new())),
+            download_totals_cache: Arc::new(Mutex::new(None)),
+            usage_cache: Arc::new(Mutex::new(None)),
             withdrawn_assets,
             stats_write_lock: Arc::new(tokio::sync::Mutex::new(())),
             download_buffer: Arc::new(Mutex::new(HashMap::new())),
@@ -122,6 +189,93 @@ impl AppState {
             })),
             started: Instant::now(),
         })
+    }
+
+    /// Cached `store.env` master token. The file is re-read when its mtime
+    /// changes or after five seconds, keeping the hot asset path off disk.
+    pub(crate) fn master_token(&self) -> String {
+        let path = &self.paths.token_env;
+        let mtime = std::fs::metadata(path)
+            .and_then(|metadata| metadata.modified())
+            .ok();
+        if let Ok(cache) = self.token_cache.read() {
+            if cache.mtime == mtime
+                && cache
+                    .read_at
+                    .is_some_and(|read_at| read_at.elapsed() < Duration::from_secs(5))
+            {
+                return cache.token.clone();
+            }
+        }
+        let token = read_token(&self.paths);
+        if let Ok(mut cache) = self.token_cache.write() {
+            cache.mtime = mtime;
+            cache.read_at = Some(Instant::now());
+            cache.token = token.clone();
+        }
+        token
+    }
+
+    pub(crate) fn invalidate_token_cache(&self) {
+        if let Ok(mut cache) = self.token_cache.write() {
+            cache.read_at = None;
+        }
+        if let Ok(mut cache) = self.named_token_cache.lock() {
+            cache.clear();
+        }
+    }
+
+    pub fn download_buffer_bytes(&self) -> usize {
+        self.performance
+            .download_buffer_bytes
+            .load(Ordering::Relaxed)
+    }
+
+    pub async fn download_totals_cached(&self) -> (u64, u64) {
+        if let Ok(cache) = self.download_totals_cache.lock() {
+            if let Some((at, value)) = cache.as_ref() {
+                if at.elapsed() < Duration::from_secs(5) {
+                    return *value;
+                }
+            }
+        }
+        let value = crate::db::download_totals(&self.db)
+            .await
+            .unwrap_or((0, 0));
+        if let Ok(mut cache) = self.download_totals_cache.lock() {
+            *cache = Some((Instant::now(), value));
+        }
+        value
+    }
+
+    pub async fn storage_usage_cached(&self) -> crate::models::StorageUsage {
+        let limit = self.limit_bytes.load(Ordering::Relaxed);
+        if let Ok(cache) = self.usage_cache.lock() {
+            if let Some((at, cached_limit, value)) = cache.as_ref() {
+                if *cached_limit == limit && at.elapsed() < Duration::from_secs(30) {
+                    return value.clone();
+                }
+            }
+        }
+        let value = catalog::storage_usage(
+            &self.store,
+            &self.paths,
+            self.settings.backend.as_str(),
+            limit,
+        )
+        .await;
+        if let Ok(mut cache) = self.usage_cache.lock() {
+            *cache = Some((Instant::now(), limit, value.clone()));
+        }
+        value
+    }
+
+    pub fn flush_interval(&self) -> Duration {
+        Duration::from_secs(
+            self.performance
+                .flush_interval_secs
+                .load(Ordering::Relaxed),
+        )
     }
 
     /// Count a package download in memory. The background flusher batches
@@ -145,6 +299,9 @@ impl AppState {
         };
         match crate::db::record_theme_downloads(&self.db, &counts).await {
             Ok(stats) => {
+                if let Ok(mut cache) = self.download_totals_cache.lock() {
+                    *cache = None;
+                }
                 if let Ok(mut guard) = self.theme_stats.write() {
                     let mut updated = (**guard).clone();
                     for (theme_id, value) in &stats {
@@ -178,7 +335,7 @@ impl AppState {
     }
 
     pub fn reload_theme_stats(&self) {
-        let stats = crate::db::load_theme_stats(&self.paths.db);
+        let stats = crate::db::load_theme_stats(&self.paths.stats_db);
         if let Ok(mut guard) = self.theme_stats.write() {
             *guard = Arc::new(stats);
         }
@@ -340,6 +497,7 @@ pub fn router(state: AppState) -> Router {
         .merge(crate::network_api::router())
         .merge(crate::auth_settings_api::router())
         .merge(crate::sources_api::router())
+        .merge(crate::performance_api::router())
         .merge(crate::comments::admin_router())
         .merge(crate::resumable::router())
         .merge(crate::theme_tokens::router())
@@ -347,6 +505,10 @@ pub fn router(state: AppState) -> Router {
         .layer(middleware::from_fn(csrf_guard));
 
     let account_api = crate::account_api::router(state.clone());
+    let compression = crate::performance::compression_layer(
+        state.performance.clone(),
+        &config::read_performance_settings(&state.paths),
+    );
 
     Router::new()
         .nest("/api", api.clone())
@@ -371,7 +533,21 @@ pub fn router(state: AppState) -> Router {
             state.clone(),
             maintenance_guard,
         ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::performance::compression_inner_metrics,
+        ))
+        .layer(compression)
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::performance::compression_outer_metrics,
+        ))
         .layer(middleware::from_fn(public_headers))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::performance::live_request_metrics,
+        ))
+        .layer(middleware::from_fn(request_context))
         .with_state(state)
 }
 
@@ -417,6 +593,11 @@ async fn public_headers(request: Request, next: Next) -> Response {
         HeaderValue::from_static("nosniff"),
     );
     response
+}
+
+async fn request_context(request: Request<Body>, next: Next) -> Response {
+    let ip = request_ip(request.headers());
+    REQUEST_IP.scope(ip, next.run(request)).await
 }
 
 async fn csrf_guard(request: Request, next: Next) -> Response {
@@ -909,11 +1090,26 @@ pub(crate) async fn check_theme_token(state: &AppState, provided: &str, scope: &
     if provided.is_empty() {
         return false;
     }
-    let master = read_token(&state.paths);
+    let master = state.master_token();
     if !master.is_empty() && token_matches(&master, provided) {
         return true;
     }
-    crate::theme_tokens::validate(&state.db, provided, scope).await
+    let cache_key = format!("{scope}:{}", crate::accounts::hash_token(provided));
+    if let Ok(cache) = state.named_token_cache.lock() {
+        if let Some((valid, checked_at)) = cache.get(&cache_key) {
+            if checked_at.elapsed() < Duration::from_secs(5) {
+                return *valid;
+            }
+        }
+    }
+    let valid = crate::theme_tokens::validate(&state.db, provided, scope).await;
+    if let Ok(mut cache) = state.named_token_cache.lock() {
+        if cache.len() > 4096 {
+            cache.clear();
+        }
+        cache.insert(cache_key, (valid, Instant::now()));
+    }
+    valid
 }
 
 pub(crate) fn request_ip(headers: &HeaderMap) -> String {
@@ -952,7 +1148,7 @@ fn service_state_json(unit: &str, state: &AppState) -> Value {
 }
 
 async fn status(State(state): State<AppState>) -> Json<Value> {
-    let token = read_token(&state.paths);
+    let token = state.master_token();
     let config = read_env(&state.paths.admin_config);
     let public = config
         .get("PUBLIC_URL")
@@ -1002,6 +1198,14 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
             ("账号审核", "POST", "/users/{id}/approve"),
             ("作者申请", "GET", "/author-requests"),
             ("操作日志", "GET", "/audit"),
+            ("评论列表", "GET", "/comments"),
+            ("关注列表", "GET", "/follows"),
+            ("访问令牌列表", "GET", "/tokens"),
+            ("网络配置", "GET", "/network"),
+            ("认证配置", "GET", "/auth-settings"),
+            ("性能配置", "GET", "/performance"),
+            ("实时性能", "GET", "/performance/live"),
+            ("压缩统计", "GET", "/performance/stats"),
         ] {
             endpoints.push(json!({
                 "name": name,
@@ -1023,19 +1227,11 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
     let author_requests_pending = crate::authors::count_pending_author_requests(&state.db)
         .await
         .unwrap_or(0);
-    let usage = catalog::storage_usage(
-        &state.store,
-        &state.paths,
-        state.settings.backend.as_str(),
-        state.limit_bytes.load(Ordering::Relaxed),
-    )
-    .await;
+    let usage = state.storage_usage_cached().await;
     let storage_value = serde_json::to_value(&usage).unwrap_or_else(|_| json!({}));
     let sync_timer = system::service_state("sukisu-themes-sync.timer").await;
     let admin_service = system::service_state("sukisu-theme-web.service").await;
-    let (downloads_total, recent_downloads) = crate::db::download_totals(&state.db)
-        .await
-        .unwrap_or((0, 0));
+    let (downloads_total, recent_downloads) = state.download_totals_cached().await;
     let theme_stats = state.theme_stats();
     let mut ranked = catalog::admin_themes(&state.paths, theme_stats.as_ref()).await;
     ranked.sort_by(|left, right| {
@@ -1263,9 +1459,7 @@ async fn stats(State(state): State<AppState>) -> Json<Value> {
             })
         })
         .collect();
-    let (downloads, recent) = crate::db::download_totals(&state.db)
-        .await
-        .unwrap_or((0, 0));
+    let (downloads, recent) = state.download_totals_cached().await;
     let days = crate::db::download_daily(&state.db, 14)
         .await
         .unwrap_or_default()
@@ -1298,7 +1492,16 @@ async fn health(State(state): State<AppState>) -> Response {
     let db_start = Instant::now();
     let db_ok = state
         .db
-        .call(|conn| Ok(conn.query_row("SELECT 1", [], |row| row.get::<_, i64>(0))?))
+        .call(|conn| {
+            for alias in ["main", "authors", "social", "stats", "audit"] {
+                conn.query_row(
+                    &format!("SELECT COUNT(*) FROM {alias}.sqlite_master"),
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )?;
+            }
+            Ok(())
+        })
         .await
         .is_ok();
     let db_latency_ms = db_start.elapsed().as_millis();
@@ -1313,9 +1516,7 @@ async fn health(State(state): State<AppState>) -> Response {
         .unwrap_or(0);
     let catalog_generated_at = catalog.and_then(|catalog| catalog.generated_at.clone());
     let (pending_count, pending_bytes) = catalog::pending_state(&state.paths);
-    let (downloads, recent_downloads) = crate::db::download_totals(&state.db)
-        .await
-        .unwrap_or((0, 0));
+    let (downloads, recent_downloads) = state.download_totals_cached().await;
     let status = if !db_ok || !storage_ok {
         "down"
     } else if catalog_themes == 0 {
@@ -1502,7 +1703,7 @@ async fn preview(
     } else {
         "private, max-age=3600"
     };
-    serve_object_response(object, cache_control)
+    serve_object_response(object, cache_control, state.download_buffer_bytes())
 }
 
 async fn asset(
@@ -1578,13 +1779,14 @@ async fn asset(
     } else {
         "private, max-age=60"
     };
-    serve_object_response(object, cache_control)
+    serve_object_response(object, cache_control, state.download_buffer_bytes())
 }
 
 /// Streams a stored object without buffering the whole file in memory.
 pub(crate) fn serve_object_response(
     object: crate::storage::ServeObject,
     cache_control: &str,
+    buffer_bytes: usize,
 ) -> ApiResult<Response> {
     let crate::storage::ServeObject {
         body,
@@ -1593,14 +1795,16 @@ pub(crate) fn serve_object_response(
         content_range,
         status,
     } = object;
+    let buffer_bytes = buffer_bytes.max(8 * 1024);
     let body = match body {
         ServeBody::Local(file) => {
-            let stream = ReaderStream::new(file.take(content_length));
+            let stream =
+                ReaderStream::with_capacity(file.take(content_length), buffer_bytes);
             Body::from_stream(stream)
         }
         ServeBody::S3(stream) => {
             let reader = stream.into_async_read();
-            Body::from_stream(ReaderStream::new(reader))
+            Body::from_stream(ReaderStream::with_capacity(reader, buffer_bytes))
         }
         ServeBody::Remote(response) => Body::from_stream(response.bytes_stream()),
     };
@@ -1646,7 +1850,7 @@ fn embedded_static(relative: &str) -> Option<(&'static [u8], &'static str)> {
 }
 
 fn content_etag(bytes: &[u8]) -> String {
-    format!("\"{}\"", hex::encode(Sha256::digest(bytes)))
+    format!("W/\"{}\"", hex::encode(Sha256::digest(bytes)))
 }
 
 fn embedded_etags() -> &'static HashMap<&'static str, String> {
@@ -1780,7 +1984,7 @@ async fn static_file(
     {
         let matched = value.split(',').any(|tag| {
             let tag = tag.trim();
-            tag == "*" || tag.trim_start_matches("W/") == etag
+            tag == "*" || tag.trim_start_matches("W/") == etag.trim_start_matches("W/")
         });
         if matched {
             return Response::builder()
@@ -1840,6 +2044,12 @@ async fn submit(
     if state.jobs.is_running() {
         return Err(ApiError::conflict("存储迁移进行中，请稍后再试"));
     }
+    let _upload_permit = state
+        .upload_semaphore
+        .acquire()
+        .await
+        .map_err(|_| ApiError::internal("上传队列不可用"))?;
+    let _live_upload = state.performance.live.upload_guard();
     let remote = request_ip(&headers);
     if !rate_allowed(&state, &remote) {
         return Err(ApiError::too_many("提交过于频繁，请稍后再试"));
@@ -1978,6 +2188,12 @@ async fn upload_theme(
     if state.jobs.is_running() {
         return Err(ApiError::conflict("存储迁移进行中，请稍后再试"));
     }
+    let _upload_permit = state
+        .upload_semaphore
+        .acquire()
+        .await
+        .map_err(|_| ApiError::internal("上传队列不可用"))?;
+    let _live_upload = state.performance.live.upload_guard();
     let mut form = uploads::parse_multipart(multipart)
         .await
         .map_err(ApiError::bad)?;
@@ -2425,7 +2641,7 @@ async fn sync_catalog(State(state): State<AppState>) -> ApiResult<Response> {
 }
 
 async fn test_catalog(State(state): State<AppState>) -> ApiResult<Response> {
-    let token = read_token(&state.paths);
+    let token = state.master_token();
     if token.is_empty() {
         // Issued DB tokens are stored hashed, so the self-request can only
         // authenticate with the plaintext master token.
@@ -2466,6 +2682,7 @@ async fn set_token(State(state): State<AppState>, body: Bytes) -> ApiResult<Resp
         return Err(ApiError::bad("token must be 16-128 safe characters"));
     }
     set_env_key(&state.paths.token_env, "THEME_STORE_TOKEN", token).map_err(ApiError::internal)?;
+    state.invalidate_token_cache();
     Ok(Json(json!({"ok": true, "message": "令牌已保存"})).into_response())
 }
 

@@ -46,13 +46,21 @@
 - Mention syntax supports Unicode usernames (e.g. `樱檩殇雪@coolapk`) across GitHub, Gitee, Bilibili, Coolapk, Telegram, Weibo, Xiaohongshu, XDA, YouTube, Afdian, X, Zhihu, Threads, Douyin.
 - Storage locations: primary local/S3 is the first write target; writable NAS/OpenList/AList sources are overflow targets. Existing themes stay on their original location; `Meta.storageId` and `_loc` key segments resolve them.
 - Multiple theme access tokens: `src/theme_tokens.rs` stores named tokens (SHA-256 hashed) in the `theme_tokens` table with scopes `read` (catalog/assets) and `upload` (`/submit`), expiry, enable/disable and last-used (throttled write). The `store.env` `THEME_STORE_TOKEN` remains the full-access master fallback. Admin UI lives on the settings page (`/admin/api/tokens*`); plaintext is shown once at creation. `status.tokenSet` is true when either master or live tokens exist.
+- Database layout is split: `account.db` (main) + `authors.db` + `social.db` + `stats.db` + `audit.db` under `/var/lib/sukisu-theme-web/db-split/`. Each pooled connection ATTACHes the four side files, so cross-file JOINs still work. SQL must qualify moved tables (`authors.authors`, `social.user_follows`, `stats.theme_stats`, `audit.audit_log`). Runtime refuses to start in single layout; run the binary with `migrate-db` while the service is stopped. Legacy `account.db` is kept untouched for rollback.
+- Cross-file foreign keys/transactions are not available. `authors::delete_authors_for_user` and `accounts::delete_user` perform ordered cleanup; `Database::repair_orphans()` runs at startup and hourly.
+- Backups must include `db-split/*.db*`; `account.db` is only the pre-migration snapshot.
+- Admin UI pages are merged: `#access` contains access info + API endpoints, `#storage` contains quota/back-end + storage locations/import. `#user/<id>` is a standalone user detail page; theme preview (`#themes`) is read-only (tag/delete actions live on #upload).
+- Every page renders a `PAGE_GUIDES` "what/capabilities/how" card. Audit entries are rendered with Chinese action/target labels and support actor/action/IP filters (`audit_log.ip` is filled from the request context task-local).
+- Performance page and top bar poll `/admin/api/performance/live` for download/upload speed, active requests/uploads and active asset paths. Performance settings live in `config.env` as `PERF_*`; compression enabled/min bytes, download buffer, flush interval and poll interval are hot, while codecs/quality, upload concurrency, worker/blocking threads and DB pool need a restart.
+- The app compresses text/JSON/JS/SVG with gzip/zstd; images, `.sukisu` packages, 206 responses and already-encoded bodies are skipped. Static ETags are weak (`W/"..."`).
 
 ## Mirror notes
 
 - `src/mirrors.rs` selects optional HTTP mirrors for fresh package downloads and answers `302 Location: <mirror>/themes/...?sukisu_mirror=1`. Managers stay plain HTTP clients; there is no WebRTC/P2P dependency in the app.
 - Config: `THEME_MIRRORS_FILE` (default `/etc/sukisu-theme-web/mirrors.json`), reloaded every 30 seconds. Entries: `name`, `baseUrl`, `token`, `priority`, `enabled`.
 - Only `themes/*` requests without a `Range` header are redirected. Resumed downloads stay local so a partial file never mixes origins. Mirrors must expose the same paths and byte-identical files.
-- A candidate must pass a `HEAD` probe (falling back to `Range: bytes=0-0`) before it is used; 4-second total budget, then local serving. Success is cached 60s, failure 20s.
+- A candidate must pass a `HEAD` probe (falling back to `Range: bytes=0-0`) before it is used; 4-second total budget, then local serving. Success is cached 60s, failure 20s. Concurrent cold requests for the same path share one probe via an in-flight lock.
+- S3 full downloads issue a single GET (no separate HEAD); Range requests still HEAD for total size. Local asset writes use async file IO; publish uploads run at most four in parallel.
 - The `sukisu_mirror=1` marker prevents a self-misconfigured mirror from redirecting in a loop; self-mirror fallbacks do not double-count downloads.
 - The manager forwards `X-Sukisu-Theme-Token` across the redirect. A mirror must accept the same token or be publicly readable; `token` in `mirrors.json` is only for the server-side probe.
 - Uploads still use up to 4 concurrent resumable chunks (manager streams 128 KB reads, flushes every 256 KB); admin/account progress covers package + preview/avatar/screenshot bytes from per-chunk XHR progress.

@@ -283,7 +283,7 @@ async fn record_mentions(
     let _ = db
         .call(move |conn| {
             let mut statement = conn.prepare(
-                "INSERT OR IGNORE INTO theme_comment_mentions(comment_id, user_id, created_at)
+                "INSERT OR IGNORE INTO social.theme_comment_mentions(comment_id, user_id, created_at)
                  VALUES (?1, ?2, ?3)",
             )?;
             let mut seen = HashSet::new();
@@ -312,15 +312,15 @@ async fn mentioned_comment_rows(
         let (sql, values): (&str, Vec<String>) = match &theme_id {
             Some(theme_id) => (
                 "SELECT m.comment_id, c.theme_id, c.parent_id
-                 FROM theme_comment_mentions m
-                 JOIN theme_comments c ON c.id = m.comment_id
+                 FROM social.theme_comment_mentions m
+                 JOIN social.theme_comments c ON c.id = m.comment_id
                  WHERE m.user_id = ?1 AND c.theme_id = ?2",
                 vec![user_id, theme_id.clone()],
             ),
             None => (
                 "SELECT m.comment_id, c.theme_id, c.parent_id
-                 FROM theme_comment_mentions m
-                 JOIN theme_comments c ON c.id = m.comment_id
+                 FROM social.theme_comment_mentions m
+                 JOIN social.theme_comments c ON c.id = m.comment_id
                  WHERE m.user_id = ?1",
                 vec![user_id],
             ),
@@ -420,7 +420,7 @@ async fn theme_author_user_ids(db: &Database, hash: &str) -> HashSet<String> {
     let hash = hash.to_string();
     db.call(move |conn| {
         let mut statement =
-            conn.prepare("SELECT user_id FROM authors WHERE hash = ?1 AND user_id IS NOT NULL")?;
+            conn.prepare("SELECT user_id FROM authors.authors WHERE hash = ?1 AND user_id IS NOT NULL")?;
         let mut rows = statement.query(params![hash])?;
         let mut ids = HashSet::new();
         while let Some(row) = rows.next()? {
@@ -452,7 +452,7 @@ async fn theme_records(db: &Database, theme_id: &str, limit: i64) -> ApiResult<V
     let theme_id = theme_id.to_string();
     db.call(move |conn| {
         let sql = format!(
-            "SELECT {COMMENT_COLUMNS} FROM theme_comments c
+            "SELECT {COMMENT_COLUMNS} FROM social.theme_comments c
              JOIN users u ON u.id = c.user_id
              WHERE c.theme_id = ?1
              ORDER BY c.created_at ASC, c.id ASC
@@ -473,7 +473,7 @@ async fn theme_records(db: &Database, theme_id: &str, limit: i64) -> ApiResult<V
 async fn recent_records(db: &Database) -> ApiResult<Vec<CommentRecord>> {
     db.call(move |conn| {
         let sql = format!(
-            "SELECT {COMMENT_COLUMNS} FROM theme_comments c
+            "SELECT {COMMENT_COLUMNS} FROM social.theme_comments c
              JOIN users u ON u.id = c.user_id
              ORDER BY c.created_at DESC, c.id DESC
              LIMIT ?1"
@@ -494,7 +494,7 @@ async fn fetch_record(db: &Database, id: &str) -> ApiResult<Option<CommentRecord
     let id = id.to_string();
     db.call(move |conn| {
         let sql = format!(
-            "SELECT {COMMENT_COLUMNS} FROM theme_comments c
+            "SELECT {COMMENT_COLUMNS} FROM social.theme_comments c
              JOIN users u ON u.id = c.user_id
              WHERE c.id = ?1"
         );
@@ -651,7 +651,7 @@ async fn insert_record(
                 let parent_row: Option<(String, Option<String>, String, String)> = conn
                     .query_row(
                         "SELECT theme_id, parent_id, visibility, user_id
-                         FROM theme_comments WHERE id = ?1",
+                         FROM social.theme_comments WHERE id = ?1",
                         params![parent],
                         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
                     )
@@ -669,7 +669,7 @@ async fn insert_record(
                     Some(root) => {
                         let root_user: Option<String> = conn
                             .query_row(
-                                "SELECT user_id FROM theme_comments WHERE id = ?1",
+                                "SELECT user_id FROM social.theme_comments WHERE id = ?1",
                                 params![root],
                                 |row| row.get(0),
                             )
@@ -688,7 +688,7 @@ async fn insert_record(
                 visibility = parent_visibility;
             }
             conn.execute(
-                "INSERT INTO theme_comments
+                "INSERT INTO social.theme_comments
                  (id, theme_id, user_id, parent_id, visibility, content, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
                 params![comment_id, theme_id, user_id, parent_id, visibility, content, now],
@@ -708,7 +708,7 @@ async fn insert_record(
 async fn delete_record(db: &Database, id: &str) -> ApiResult<usize> {
     let id = id.to_string();
     db.call(move |conn| {
-        let deleted = conn.execute("DELETE FROM theme_comments WHERE id = ?1", params![id])?;
+        let deleted = conn.execute("DELETE FROM social.theme_comments WHERE id = ?1", params![id])?;
         Ok(deleted)
     })
     .await
@@ -719,7 +719,7 @@ pub async fn clear_theme(db: &Database, theme_id: &str) -> ApiResult<usize> {
     let theme_id = theme_id.to_string();
     db.call(move |conn| {
         let deleted = conn.execute(
-            "DELETE FROM theme_comments WHERE theme_id = ?1",
+            "DELETE FROM social.theme_comments WHERE theme_id = ?1",
             params![theme_id],
         )?;
         Ok(deleted)
@@ -730,7 +730,7 @@ pub async fn clear_theme(db: &Database, theme_id: &str) -> ApiResult<usize> {
 
 async fn clear_all(db: &Database) -> ApiResult<usize> {
     db.call(|conn| {
-        let deleted = conn.execute("DELETE FROM theme_comments", [])?;
+        let deleted = conn.execute("DELETE FROM social.theme_comments", [])?;
         Ok(deleted)
     })
     .await
@@ -747,7 +747,7 @@ async fn clear_themes(db: &Database, theme_ids: &HashSet<String>) -> ApiResult<u
             .take(ids.len())
             .collect::<Vec<_>>()
             .join(",");
-        let sql = format!("DELETE FROM theme_comments WHERE theme_id IN ({placeholders})");
+        let sql = format!("DELETE FROM social.theme_comments WHERE theme_id IN ({placeholders})");
         let deleted = conn.execute(&sql, params_from_iter(ids.iter()))?;
         Ok(deleted)
     })
@@ -765,18 +765,18 @@ async fn clear_user_messages(
     db.call(move |conn| {
         let deleted = match theme_id {
             Some(theme_id) => conn.execute(
-                "DELETE FROM theme_comments
+                "DELETE FROM social.theme_comments
                  WHERE theme_id = ?1 AND (
                      user_id = ?2 OR parent_id IN (
-                         SELECT id FROM theme_comments WHERE theme_id = ?1 AND user_id = ?2
+                         SELECT id FROM social.theme_comments WHERE theme_id = ?1 AND user_id = ?2
                      )
                  )",
                 params![theme_id, user_id],
             )?,
             None => conn.execute(
-                "DELETE FROM theme_comments
+                "DELETE FROM social.theme_comments
                  WHERE user_id = ?1 OR parent_id IN (
-                     SELECT id FROM theme_comments WHERE user_id = ?1
+                     SELECT id FROM social.theme_comments WHERE user_id = ?1
                  )",
                 params![user_id],
             )?,
@@ -796,7 +796,7 @@ pub async fn purge_expired(db: &Database) -> anyhow::Result<usize> {
         (Utc::now() - ChronoDuration::days(days)).to_rfc3339_opts(SecondsFormat::Secs, true);
     db.call(move |conn| {
         let deleted = conn.execute(
-            "DELETE FROM theme_comments WHERE created_at < ?1",
+            "DELETE FROM social.theme_comments WHERE created_at < ?1",
             params![cutoff],
         )?;
         Ok(deleted)
@@ -1155,6 +1155,7 @@ pub async fn account_messages(
 pub struct AdminListQuery {
     theme: Option<String>,
     q: Option<String>,
+    user: Option<String>,
     visibility: Option<String>,
     offset: Option<usize>,
     limit: Option<usize>,
@@ -1180,6 +1181,12 @@ pub async fn admin_list(
         .as_deref()
         .map(str::trim)
         .filter(|value| matches!(*value, "public" | "author"));
+    let user_needle = query
+        .user
+        .as_deref()
+        .map(str::trim)
+        .map(str::to_lowercase)
+        .filter(|value| !value.is_empty());
     let records = match theme_id {
         Some(theme_id) => theme_records(&state.db, theme_id, 4000).await?,
         None => recent_records(&state.db).await?,
@@ -1204,6 +1211,14 @@ pub async fn admin_list(
         .filter(|record| {
             if let Some(visibility) = visibility {
                 if record.visibility != visibility {
+                    return false;
+                }
+            }
+            if let Some(user) = &user_needle {
+                if !record.username.to_lowercase().contains(user)
+                    && !record.display_name.to_lowercase().contains(user)
+                    && !record.user_id.to_lowercase().contains(user)
+                {
                     return false;
                 }
             }
@@ -1425,7 +1440,11 @@ pub async fn user_avatar(
         .serve(&key, None)
         .await
         .map_err(|_| ApiError::not_found("头像不存在"))?;
-    crate::api::serve_object_response(object, "public, max-age=300")
+    crate::api::serve_object_response(
+        object,
+        "public, max-age=300",
+        state.download_buffer_bytes(),
+    )
 }
 
 #[derive(Deserialize)]
@@ -1466,7 +1485,7 @@ pub async fn account_user_search(
             let mut statement = conn.prepare(
                 "SELECT u.username, u.display_name, u.role,
                         EXISTS(
-                            SELECT 1 FROM authors a
+                            SELECT 1 FROM authors.authors a
                             WHERE a.user_id = u.id AND a.status = 'active'
                         ) AS is_author,
                         u.avatar
@@ -1572,7 +1591,7 @@ mod tests {
     #[tokio::test]
     async fn public_mentions_are_recorded_and_private_mentions_are_not() {
         let directory = tempfile::tempdir().unwrap();
-        let db = Database::open(&directory.path().join("mentions.db"))
+        let db = Database::open_test(directory.path())
             .await
             .unwrap();
         seed_user(&db, "u1", "alice").await;
@@ -1636,7 +1655,7 @@ mod tests {
     #[tokio::test]
     async fn private_threads_are_hidden_from_other_users() {
         let directory = tempfile::tempdir().unwrap();
-        let db = Database::open(&directory.path().join("comments.db"))
+        let db = Database::open_test(directory.path())
             .await
             .unwrap();
         seed_user(&db, "u1", "alice").await;
@@ -1684,7 +1703,7 @@ mod tests {
     #[tokio::test]
     async fn replies_inherit_visibility_and_flatten_to_root() {
         let directory = tempfile::tempdir().unwrap();
-        let db = Database::open(&directory.path().join("replies.db"))
+        let db = Database::open_test(directory.path())
             .await
             .unwrap();
         seed_user(&db, "u1", "alice").await;
@@ -1748,13 +1767,13 @@ mod tests {
     #[tokio::test]
     async fn retention_purges_old_comments() {
         let directory = tempfile::tempdir().unwrap();
-        let db = Database::open(&directory.path().join("purge.db"))
+        let db = Database::open_test(directory.path())
             .await
             .unwrap();
         seed_user(&db, "u1", "alice").await;
         db.call(|conn| {
             conn.execute(
-                "INSERT INTO theme_comments
+                "INSERT INTO social.theme_comments
                  (id, theme_id, user_id, parent_id, visibility, content, created_at, updated_at)
                  VALUES ('old', 't', 'u1', NULL, 'public', 'old', '2000-01-01T00:00:00Z',
                          '2000-01-01T00:00:00Z')",
