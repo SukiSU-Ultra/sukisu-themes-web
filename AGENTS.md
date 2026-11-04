@@ -45,6 +45,7 @@
 - Native file-input labels (`选择文件` / `未选择任何文件`) come from the browser and are intentionally not translated.
 - Mention syntax supports Unicode usernames (e.g. `樱檩殇雪@coolapk`) across GitHub, Gitee, Bilibili, Coolapk, Telegram, Weibo, Xiaohongshu, XDA, YouTube, Afdian, X, Zhihu, Threads, Douyin.
 - Storage locations: primary local/S3 is the first write target; writable NAS/OpenList/AList sources are overflow targets. Existing themes stay on their original location; `Meta.storageId` and `_loc` key segments resolve them.
+- Multiple theme access tokens: `src/theme_tokens.rs` stores named tokens (SHA-256 hashed) in the `theme_tokens` table with scopes `read` (catalog/assets) and `upload` (`/submit`), expiry, enable/disable and last-used (throttled write). The `store.env` `THEME_STORE_TOKEN` remains the full-access master fallback. Admin UI lives on the settings page (`/admin/api/tokens*`); plaintext is shown once at creation. `status.tokenSet` is true when either master or live tokens exist.
 
 ## Mirror notes
 

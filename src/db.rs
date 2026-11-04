@@ -348,6 +348,17 @@ impl Database {
                     consent_version INTEGER NOT NULL DEFAULT 0,
                     consent_at TEXT,
                     updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS theme_tokens (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    token_hash TEXT NOT NULL UNIQUE,
+                    token_prefix TEXT NOT NULL,
+                    scopes TEXT NOT NULL DEFAULT 'read upload',
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    expires_at INTEGER,
+                    last_used_at TEXT
                 );",
             )?;
             // A consent-only sync also creates a preferences row. Keep explicit R18 choices

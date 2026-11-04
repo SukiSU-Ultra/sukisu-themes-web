@@ -342,6 +342,7 @@ pub fn router(state: AppState) -> Router {
         .merge(crate::sources_api::router())
         .merge(crate::comments::admin_router())
         .merge(crate::resumable::router())
+        .merge(crate::theme_tokens::router())
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard))
         .layer(middleware::from_fn(csrf_guard));
 
@@ -394,13 +395,12 @@ async fn store_token_guard(
     next: Next,
 ) -> Response {
     if store_path_is_protected(request.uri().path()) {
-        let expected = read_token(&state.paths);
         let provided = request
             .headers()
             .get(TOKEN_HEADER)
             .and_then(|value| value.to_str().ok())
             .unwrap_or("");
-        if expected.is_empty() || !token_matches(&expected, provided) {
+        if !check_theme_token(&state, provided, crate::theme_tokens::SCOPE_READ).await {
             return ApiError::unauthorized("访问令牌无效").into_response();
         }
     }
@@ -586,12 +586,13 @@ fn maintenance_page_response() -> Response {
 }
 
 async fn public_catalog(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
-    let expected = read_token(&state.paths);
     let provided = headers
         .get(TOKEN_HEADER)
         .and_then(|value| value.to_str().ok())
         .unwrap_or("");
-    if expected.is_empty() || !token_matches(&expected, provided) {
+    // The middleware already checks this; keep an in-handler check so the
+    // route stays safe even if the guard configuration changes.
+    if !check_theme_token(&state, provided, crate::theme_tokens::SCOPE_READ).await {
         return Err(ApiError::unauthorized("访问令牌无效"));
     }
     let data = tokio::fs::read(&state.paths.catalog)
@@ -900,6 +901,21 @@ pub(crate) fn token_matches(expected: &str, provided: &str) -> bool {
     expected.len() == provided.len() && expected.as_bytes().ct_eq(provided.as_bytes()).into()
 }
 
+/// Validates an `X-Sukisu-Theme-Token` value: the `store.env` master token
+/// keeps full access for compatibility, additional named tokens live in the
+/// `theme_tokens` table and are checked against `scope`.
+pub(crate) async fn check_theme_token(state: &AppState, provided: &str, scope: &str) -> bool {
+    let provided = provided.trim();
+    if provided.is_empty() {
+        return false;
+    }
+    let master = read_token(&state.paths);
+    if !master.is_empty() && token_matches(&master, provided) {
+        return true;
+    }
+    crate::theme_tokens::validate(&state.db, provided, scope).await
+}
+
 pub(crate) fn request_ip(headers: &HeaderMap) -> String {
     headers
         .get("x-forwarded-for")
@@ -969,7 +985,7 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
             ("批准主题", "POST", "/approve"),
             ("拒绝主题", "POST", "/reject"),
             ("预览图", "GET", "/preview?path=previews/…"),
-            ("修改令牌", "POST", "/token"),
+            ("修改主令牌", "POST", "/token"),
             ("上传主题", "POST", "/upload-theme"),
             ("删除主题", "POST", "/delete-theme"),
             ("测试目录", "POST", "/test-catalog"),
@@ -1044,9 +1060,14 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
             })
         })
         .collect();
+    let token_count = crate::theme_tokens::enabled_count(&state.db)
+        .await
+        .unwrap_or(0);
     Json(json!({
-        "tokenSet": !token.is_empty(),
+        "tokenSet": !token.is_empty() || token_count > 0,
+        "masterTokenSet": !token.is_empty(),
         "tokenHeader": TOKEN_HEADER,
+        "tokensCount": token_count,
         "formatVersion": CURRENT_FORMAT_VERSION,
         "minFormatVersion": MIN_FORMAT_VERSION,
         "supportedFormats": (MIN_FORMAT_VERSION..=CURRENT_FORMAT_VERSION).collect::<Vec<_>>(),
@@ -1809,12 +1830,11 @@ async fn submit(
     headers: HeaderMap,
     multipart: Multipart,
 ) -> ApiResult<Response> {
-    let expected = read_token(&state.paths);
     let provided = headers
         .get(TOKEN_HEADER)
         .and_then(|value| value.to_str().ok())
         .unwrap_or("");
-    if expected.is_empty() || !token_matches(&expected, provided) {
+    if !check_theme_token(&state, provided, crate::theme_tokens::SCOPE_UPLOAD).await {
         return Err(ApiError::unauthorized("访问令牌无效"));
     }
     if state.jobs.is_running() {
@@ -2406,6 +2426,11 @@ async fn sync_catalog(State(state): State<AppState>) -> ApiResult<Response> {
 
 async fn test_catalog(State(state): State<AppState>) -> ApiResult<Response> {
     let token = read_token(&state.paths);
+    if token.is_empty() {
+        // Issued DB tokens are stored hashed, so the self-request can only
+        // authenticate with the plaintext master token.
+        return Err(ApiError::bad("未设置主令牌，无法通过 HTTP 自测目录接口"));
+    }
     let response = state
         .http
         .get("http://127.0.0.1:8080/catalog.json")

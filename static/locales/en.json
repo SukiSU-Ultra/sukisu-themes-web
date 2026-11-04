@@ -1223,7 +1223,50 @@
     "写下留言或回复…支持 Markdown、@用户 和表情": "Write a comment or reply… Markdown, @mentions and emoji supported",
     "回复留言…支持 Markdown、@用户 和表情": "Reply… Markdown, @mentions and emoji supported",
     "搜索过于频繁，请稍后再试": "Too many searches. Try again shortly.",
-    "留言过于频繁，请稍后再试": "You are commenting too quickly. Try again shortly."
+    "留言过于频繁，请稍后再试": "You are commenting too quickly. Try again shortly.",
+    "主令牌": "Master token",
+    "保存在 store.env 的全兼容令牌，拥有全部权限且不受下方列表影响。当前值不会显示在页面上；输入或生成一个新令牌后保存，立即生效，所有客户端需同步更新。": "The store.env compatibility token has full access and is independent of the list below. Its current value is never shown; enter or generate a new one and save to apply it immediately — all clients must then update it.",
+    "为每台管理器或每个镜像签发独立令牌，可随时修改名称、权限与有效期，泄露时单独停用或删除；令牌值只在创建时完整显示一次。": "Issue a separate token per manager or mirror; name, access and expiry stay editable, and a leaked token can be disabled or deleted on its own. The token value is shown in full only once, at creation.",
+    "新建令牌": "New token",
+    "暂无独立令牌": "No named tokens yet",
+    "令牌": "Token",
+    "权限": "Access",
+    "状态": "Status",
+    "有效期至": "Valid until",
+    "最近使用": "Last used",
+    "操作": "Actions",
+    "新建访问令牌": "New access token",
+    "编辑访问令牌": "Edit access token",
+    "访问权限": "Access rights",
+    "下载（目录、主题包、预览图、头像、截图）": "Download (catalog, packages, previews, avatars, screenshots)",
+    "上传（管理器提交主题）": "Upload (manager submissions)",
+    "有效期（天）": "Validity (days)",
+    "留空为永不过期": "Leave blank for no expiry",
+    "保存时从当天起重新计算天数。": "Days are counted from today when saving.",
+    "例如：客厅电视管理器": "e.g. Living-room TV manager",
+    "令牌已创建": "Token created",
+    "这是唯一一次完整显示，关闭后将无法再次查看。请立即复制并填入 SukiSU 管理器的访问令牌设置。": "This is the only full display; it cannot be shown again once closed. Copy it now and paste it into the SukiSU manager's access token setting.",
+    "我已保存": "I saved it",
+    "永不过期": "Never expires",
+    "从未使用": "Never used",
+    "已过期": "Expired",
+    "停用": "Disable",
+    "上传": "Upload",
+    "请输入令牌名称": "Enter a token name",
+    "至少选择一种访问权限": "Pick at least one access right",
+    "有效期需在 1-3650 天之间": "Validity must be between 1 and 3650 days",
+    "删除该令牌？使用它的客户端会立即失去访问权限。": "Delete this token? Clients using it lose access immediately.",
+    "令牌已停用": "Token disabled",
+    "令牌已启用": "Token enabled",
+    "令牌已删除": "Token deleted",
+    "令牌不存在": "Token not found",
+    "令牌名称需为 1-64 个字符": "Token name must be 1-64 characters",
+    "权限只能是 read、upload 的任意组合": "Access can only be any combination of read and upload",
+    "有效期天数需在 1-3650 之间": "Validity must be between 1 and 3650 days",
+    "没有需要更新的字段": "No fields to update",
+    "令牌已创建，离开弹窗后将无法再次查看": "Token created. It cannot be shown again after this dialog closes.",
+    "未设置主令牌，无法通过 HTTP 自测目录接口": "No master token is set, so the catalog endpoint cannot be self-tested over HTTP",
+    "加载访问令牌失败：": "Failed to load tokens: "
   },
   "patterns": [
     [
@@ -1709,6 +1752,18 @@
     [
       "^剩余 ([0-9]+:[0-9]{2}(?::[0-9]{2})?)$",
       "ETA $1"
+    ],
+    [
+      "^([0-9]+) / ([0-9]+) 个生效$",
+      "$1 / $2 active"
+    ],
+    [
+      "^加载访问令牌失败：(.*)$",
+      "Failed to load tokens: $1"
+    ],
+    [
+      "^令牌参数格式错误：(.*)$",
+      "Invalid token fields: $1"
     ]
   ]
 }

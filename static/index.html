@@ -2020,8 +2020,8 @@ input:-webkit-autofill:focus {
           <p class="field-hint">修改成功后需要重新登录。</p>
         </div>
         <div class="card">
-          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15 7a4 4 0 1 1-3.8 5.2L4 19.4V21h2.6l1.4-1.4V18h1.6l1.2-1.2v-1.4h1.4l.8-.8A4 4 0 0 1 15 7Z"/><circle cx="16.5" cy="7.5" r="1"/></svg>访问令牌</h4>
-          <p class="hint">当前令牌不会显示在页面上。输入或生成一个新令牌后保存；保存后立即生效，所有客户端需要同步更新令牌。</p>
+          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15 7a4 4 0 1 1-3.8 5.2L4 19.4V21h2.6l1.4-1.4V18h1.6l1.2-1.2v-1.4h1.4l.8-.8A4 4 0 0 1 15 7Z"/><circle cx="16.5" cy="7.5" r="1"/></svg>主令牌</h4>
+          <p class="hint">保存在 store.env 的全兼容令牌，拥有全部权限且不受下方列表影响。当前值不会显示在页面上；输入或生成一个新令牌后保存，立即生效，所有客户端需同步更新。</p>
           <label for="tokenInput">新令牌</label>
           <div class="field">
             <input id="tokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="输入或生成新令牌">
@@ -2035,6 +2035,19 @@ input:-webkit-autofill:focus {
             <button id="generateToken"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="m12 3 1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3Z"/><path d="m19 15 .8 1.8 1.7.7-1.7.7L19 20l-.8-1.8-1.7-.7 1.7-.7L19 15Z"/></svg>生成</button>
             <button id="copyToken"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="9" y="9" width="10" height="10" rx="2"/><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg>复制</button>
           </div>
+        </div>
+        <div class="card wide">
+          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15 7a4 4 0 1 1-3.8 5.2L4 19.4V21h2.6l1.4-1.4V18h1.6l1.2-1.2v-1.4h1.4l.8-.8A4 4 0 0 1 15 7Z"/><circle cx="16.5" cy="7.5" r="1"/></svg>访问令牌</h4>
+          <p class="hint">为每台管理器或每个镜像签发独立令牌，可随时修改名称、权限与有效期，泄露时单独停用或删除；令牌值只在创建时完整显示一次。</p>
+          <div class="row" style="margin-bottom:12px">
+            <button class="primary" id="createToken" type="button"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>新建令牌</button>
+            <span class="pill" id="tokensPill">–</span>
+          </div>
+          <table class="table">
+            <thead><tr><th>名称</th><th>令牌</th><th>权限</th><th>状态</th><th>有效期至</th><th>最近使用</th><th style="text-align:right">操作</th></tr></thead>
+            <tbody id="tokenRows"></tbody>
+          </table>
+          <div class="empty hidden" id="tokensEmpty">暂无独立令牌</div>
         </div>
 
         <div class="card">
@@ -2140,6 +2153,38 @@ input:-webkit-autofill:focus {
     <label class="restriction-option"><input type="checkbox" data-author-feature="auto_publish"> 禁止自动发布</label>
     <div class="row" style="margin-top:14px">
       <button class="primary" id="authorRestrictionsSave" type="button">保存限制</button>
+    </div>
+  </div>
+</dialog>
+<dialog class="theme-detail-dialog" id="tokenEditDialog">
+  <div class="theme-detail-head">
+    <h3 id="tokenEditTitle">新建访问令牌</h3>
+    <button class="btn small" id="tokenEditClose" type="button">关闭</button>
+  </div>
+  <div class="theme-detail-body">
+    <div class="field"><label for="tokenNameInput">名称</label><input id="tokenNameInput" maxlength="64" spellcheck="false" placeholder="例如：客厅电视管理器"></div>
+    <div class="field" style="margin-top:12px">
+      <label>访问权限</label>
+      <label class="check"><input id="tokenScopeRead" type="checkbox" checked> 下载（目录、主题包、预览图、头像、截图）</label>
+      <label class="check"><input id="tokenScopeUpload" type="checkbox" checked> 上传（管理器提交主题）</label>
+    </div>
+    <div class="field" style="margin-top:12px"><label for="tokenExpiryInput">有效期（天）</label><input id="tokenExpiryInput" type="number" min="1" max="3650" placeholder="留空为永不过期"><div class="field-hint">保存时从当天起重新计算天数。</div></div>
+    <div class="row" style="margin-top:14px">
+      <button class="primary" id="tokenEditSave" type="button">保存令牌</button>
+    </div>
+  </div>
+</dialog>
+<dialog class="theme-detail-dialog" id="tokenRevealDialog">
+  <div class="theme-detail-head">
+    <h3 id="tokenRevealTitle">令牌已创建</h3>
+    <button class="btn small" id="tokenRevealClose" type="button">关闭</button>
+  </div>
+  <div class="theme-detail-body">
+    <p class="hint">这是唯一一次完整显示，关闭后将无法再次查看。请立即复制并填入 SukiSU 管理器的访问令牌设置。</p>
+    <div class="field"><input id="tokenRevealValue" readonly spellcheck="false"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="primary" id="tokenRevealCopy" type="button">复制</button>
+      <button id="tokenRevealDone" type="button">我已保存</button>
     </div>
   </div>
 </dialog>
@@ -5351,6 +5396,7 @@ function showPage(id, smooth = false) {
   if (lead && PAGE_LEADS[page]) lead.textContent = PAGE_LEADS[page];
   if (page === 'storage') loadStorage();
   if (page === 'locations' || page === 'settings') loadLocations();
+  if (page === 'settings') loadTokens();
   if (page === 'users') loadUsers();
   if (page === 'follows') loadFollows();
   if (page === 'comments') loadCommentsAdmin(0);
@@ -5464,13 +5510,166 @@ $('saveToken').addEventListener('click', async () => {
     toast('令牌格式不正确', 'bad');
     return;
   }
-  if (!confirm('修改令牌后，现有客户端需要更新令牌才能继续访问。确认保存？')) return;
+  if (!confirm('修改主令牌后，现有客户端需要更新令牌才能继续访问。确认保存？')) return;
   try {
     const data = await api('/token', { method: 'POST', body: JSON.stringify({ token }) });
     toast(data.message || '令牌已保存');
     setTimeout(() => refresh(true), 1800);
   } catch (error) {
     toast('保存失败：' + error.message, 'bad');
+  }
+});
+
+// Named access tokens: create once, then edit scopes/expiry, toggle, delete.
+let tokenItems = [];
+let editingTokenId = null;
+
+function translatedConfirm(message) {
+  return window.SukisuI18n ? SukisuI18n.t(message) : message;
+}
+
+async function loadTokens() {
+  try {
+    const data = await api('/tokens');
+    renderTokens(data);
+  } catch (error) {
+    toast('加载访问令牌失败：' + error.message, 'bad');
+  }
+}
+
+function renderTokens(data) {
+  tokenItems = data.tokens || [];
+  $('tokensPill').textContent = (data.enabled ?? 0) + ' / ' + (data.count ?? 0) + ' 个生效';
+  $('tokenRows').innerHTML = tokenItems.map(item => {
+    const scopeLabels = { read: '下载', upload: '上传' };
+    const scopes = (item.scopes || [])
+      .map(scope => '<span class="pill">' + escapeHtml(scopeLabels[scope] || scope) + '</span>')
+      .join(' ');
+    const status = item.expired
+      ? '<span class="pill bad">已过期</span>'
+      : item.enabled
+        ? '<span class="pill ok">启用</span>'
+        : '<span class="pill">已停用</span>';
+    const expiry = item.expiresAt
+      ? escapeHtml(formatTime(new Date(item.expiresAt * 1000).toISOString()))
+      : '永不过期';
+    const lastUsed = item.lastUsedAt ? escapeHtml(formatTime(item.lastUsedAt)) : '从未使用';
+    const toggleLabel = item.enabled ? '停用' : '启用';
+    return '<tr data-token-id="' + escapeHtml(item.id) + '">' +
+      '<td>' + escapeHtml(item.name) + '</td>' +
+      '<td class="sha-box">' + escapeHtml(item.prefix) + '…</td>' +
+      '<td>' + scopes + '</td>' +
+      '<td>' + status + '</td>' +
+      '<td>' + expiry + '</td>' +
+      '<td>' + lastUsed + '</td>' +
+      '<td style="text-align:right;white-space:nowrap">' +
+        '<button data-act="edit" type="button">编辑</button> ' +
+        '<button data-act="toggle" type="button">' + toggleLabel + '</button> ' +
+        '<button class="reject" data-act="delete" type="button">删除</button>' +
+      '</td></tr>';
+  }).join('');
+  $('tokensEmpty').classList.toggle('hidden', tokenItems.length > 0);
+}
+
+function openTokenEditor(item) {
+  editingTokenId = item ? item.id : null;
+  $('tokenEditTitle').textContent = item ? '编辑访问令牌' : '新建访问令牌';
+  $('tokenNameInput').value = item ? item.name : '';
+  $('tokenScopeRead').checked = !item || (item.scopes || []).includes('read');
+  $('tokenScopeUpload').checked = !item || (item.scopes || []).includes('upload');
+  const days = item && item.expiresAt
+    ? Math.ceil((item.expiresAt * 1000 - Date.now()) / 86400000)
+    : null;
+  $('tokenExpiryInput').value = days && days > 0 ? String(days) : '';
+  $('tokenEditDialog').showModal();
+}
+
+$('createToken').addEventListener('click', () => openTokenEditor(null));
+$('tokenEditClose').addEventListener('click', () => $('tokenEditDialog').close());
+$('tokenRevealClose').addEventListener('click', () => $('tokenRevealDialog').close());
+$('tokenRevealDone').addEventListener('click', () => $('tokenRevealDialog').close());
+$('tokenRevealCopy').addEventListener('click', () => copyText($('tokenRevealValue').value, '令牌已复制'));
+['tokenEditDialog', 'tokenRevealDialog'].forEach(id => {
+  const dialog = $(id);
+  dialog.addEventListener('click', event => {
+    if (event.target === dialog) dialog.close();
+  });
+});
+$('tokenEditSave').addEventListener('click', async () => {
+  const name = $('tokenNameInput').value.trim();
+  const scopes = [];
+  if ($('tokenScopeRead').checked) scopes.push('read');
+  if ($('tokenScopeUpload').checked) scopes.push('upload');
+  if (!name) { toast('请输入令牌名称', 'bad'); return; }
+  if (!scopes.length) { toast('至少选择一种访问权限', 'bad'); return; }
+  const expiryRaw = $('tokenExpiryInput').value.trim();
+  let expiresDays = null;
+  if (expiryRaw) {
+    expiresDays = Number(expiryRaw);
+    if (!Number.isInteger(expiresDays) || expiresDays < 1 || expiresDays > 3650) {
+      toast('有效期需在 1-3650 天之间', 'bad');
+      return;
+    }
+  }
+  try {
+    if (editingTokenId) {
+      const data = await api('/tokens/update', {
+        method: 'POST',
+        body: JSON.stringify({ id: editingTokenId, name, scopes, expiresDays }),
+      });
+      toast(data.message || '令牌已更新');
+      $('tokenEditDialog').close();
+    } else {
+      const data = await api('/tokens/create', {
+        method: 'POST',
+        body: JSON.stringify({ name, scopes, expiresDays }),
+      });
+      $('tokenEditDialog').close();
+      $('tokenRevealValue').value = data.token || '';
+      $('tokenRevealDialog').showModal();
+      if (data.message) toast(data.message);
+    }
+    await loadTokens();
+    void refresh(true);
+  } catch (error) {
+    toast('保存失败：' + error.message, 'bad');
+  }
+});
+$('tokenRows').addEventListener('click', async event => {
+  const button = event.target.closest('button[data-act]');
+  if (!button) return;
+  const row = button.closest('tr');
+  const item = tokenItems.find(token => token.id === (row && row.dataset.tokenId));
+  if (!item) return;
+  const act = button.dataset.act;
+  if (act === 'edit') {
+    openTokenEditor(item);
+    return;
+  }
+  if (act === 'toggle') {
+    try {
+      await api('/tokens/update', {
+        method: 'POST',
+        body: JSON.stringify({ id: item.id, enabled: !item.enabled }),
+      });
+      toast(item.enabled ? '令牌已停用' : '令牌已启用');
+      await loadTokens();
+      void refresh(true);
+    } catch (error) {
+      toast('更新失败：' + error.message, 'bad');
+    }
+    return;
+  }
+  if (act === 'delete') {
+    if (!confirm(translatedConfirm('删除该令牌？使用它的客户端会立即失去访问权限。'))) return;
+    try {
+      const data = await api('/tokens/delete', { method: 'POST', body: JSON.stringify({ id: item.id }) });
+      toast(data.message || '令牌已删除');
+      await loadTokens();
+      void refresh(true);
+    } catch (error) {
+      toast('删除失败：' + error.message, 'bad');
+    }
   }
 });
 $('maintenanceToggle').addEventListener('click', async () => {

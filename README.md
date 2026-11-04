@@ -233,7 +233,7 @@ target/aarch64-unknown-linux-musl/release/sukisu-theme-web
 | 文件 | 用途 |
 | --- | --- |
 | `/etc/sukisu-theme-web/storage.env` | 存储目录、后端、S3 参数、配额 |
-| `/etc/sukisu-themes/store.env` | `THEME_STORE_TOKEN`（资源访问令牌） |
+| `/etc/sukisu-themes/store.env` | `THEME_STORE_TOKEN`（资源访问主令牌，兼容保留；多令牌存 SQLite） |
 | `/etc/sukisu-theme-web/admin.env` | 可选的预置管理员（`ADMIN_USERNAME` / `ADMIN_PASSWORD_HASH`） |
 | `/etc/sukisu-theme-web/config.env` | `PUBLIC_URL`、`ADMIN_URL` |
 | `/etc/sukisu-theme-web/network.env` | `ADMIN_BIND`、`ADMIN_PORT`、`PUBLIC_DOMAINS` |
@@ -272,6 +272,8 @@ THEME_STORE_TOKEN=<上面生成的 64 位十六进制>
 ```
 
 管理器配置和应用必须使用同一个令牌。
+
+`THEME_STORE_TOKEN` 是全权限主令牌，用于兼容现有客户端；修改它会要求所有客户端同步更新。管理后台「设置 → 访问令牌」可以为每台管理器或每个镜像签发独立命名令牌：权限分为下载（`/catalog.json` 与资源文件）和上传（`/submit`），支持有效期、启用/停用和单独删除。令牌值只在创建时完整显示一次，数据库里仅存 SHA-256 哈希（随 `account.db` 一起备份）。
 
 ### `network.env` / `config.env`
 
@@ -381,7 +383,7 @@ systemctl enable --now sukisu-theme-web
 
 - Lucky 目标填写 `http://127.0.0.1:8080`；保留原始 Host 和路径，不需要改写 `/admin`。
 - 根路径 `/` 返回 `302` 到 `/account/login`，管理后台在 `/admin/`。
-- `/themes/*`、`/previews/*`、`/screenshots/*`、`/avatars/*`、`/catalog.json` 校验 `X-Sukisu-Theme-Token`；`/i18n.js`、`/locales/*` 公开。
+- `/themes/*`、`/previews/*`、`/screenshots/*`、`/avatars/*`、`/catalog.json` 校验 `X-Sukisu-Theme-Token`（下载权限）；`/submit` 需要上传权限；主令牌两者皆可。`/i18n.js`、`/locales/*` 公开。
 - 如果 Lucky 与服务不在同一台机器，或需要直接对外，可把 `ADMIN_BIND` 改为 `0.0.0.0` 并自行配置防火墙。
 - 修改端口或监听地址后，管理服务会重启；管理后台「网络」页会自动处理并回滚失败配置。
 
