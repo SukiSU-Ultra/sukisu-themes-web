@@ -13,7 +13,9 @@ use crate::util::truthy;
 const MAX_ENTRIES: usize = 64;
 const MAX_UNCOMPRESSED_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_THEME_JSON_BYTES: u64 = 64 * 1024;
+const MAX_APPEARANCE_BYTES: usize = 16 * 1024;
 const ADAPTIVE_FORMAT_VERSION: u32 = 3;
+const APPEARANCE_FORMAT_VERSION: u32 = 4;
 const MAX_STICKERS_PER_VARIANT: usize = 5;
 
 pub fn validate_package(data: &[u8]) -> Result<PackageInfo> {
@@ -80,6 +82,18 @@ pub fn validate_package(data: &[u8]) -> Result<PackageInfo> {
         bail!("不支持的主题包版本");
     }
 
+    // v4 adds the static appearance overlay (text colours, palette tokens, image effects).
+    // Older managers reject it explicitly instead of silently applying the base theme only.
+    if let Some(appearance) = theme.get("appearance").filter(|value| !value.is_null()) {
+        if package_version < APPEARANCE_FORMAT_VERSION {
+            bail!("自定义外观需要格式 v{APPEARANCE_FORMAT_VERSION}");
+        }
+        if !appearance.is_object() {
+            bail!("appearance 必须是对象");
+        }
+        validate_appearance(appearance)?;
+    }
+
     let adaptive = theme.get("adaptive").map(truthy).unwrap_or(false);
     if adaptive {
         if package_version < ADAPTIVE_FORMAT_VERSION {
@@ -134,6 +148,121 @@ pub fn validate_package(data: &[u8]) -> Result<PackageInfo> {
         sticker_count: stickers.len(),
         adaptive: false,
     })
+}
+
+/// Validates the static appearance overlay stored in v4+ packages. The client enforces the same
+/// closed schema; checking here keeps invalid overlays out of the store.
+fn validate_appearance(appearance: &Value) -> Result<()> {
+    if serde_json::to_vec(appearance)
+        .map(|bytes| bytes.len())
+        .unwrap_or(usize::MAX)
+        > MAX_APPEARANCE_BYTES
+    {
+        bail!("appearance 过大");
+    }
+    let object = appearance
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("appearance 必须是对象"))?;
+    for key in object.keys() {
+        if !matches!(key.as_str(), "schema" | "colors" | "image") {
+            bail!("未知的外观字段 {key}");
+        }
+    }
+    if let Some(schema) = object.get("schema").filter(|value| !value.is_null()) {
+        let version = schema
+            .as_u64()
+            .ok_or_else(|| anyhow::anyhow!("appearance.schema 必须是整数"))?;
+        if version != 1 {
+            bail!("不支持的外观配置版本");
+        }
+    }
+    if let Some(colors) = object.get("colors").filter(|value| !value.is_null()) {
+        let colors = colors
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("appearance.colors 必须是对象"))?;
+        for (mode, tokens) in colors {
+            if tokens.is_null() {
+                continue;
+            }
+            if !matches!(mode.as_str(), "shared" | "light" | "dark") {
+                bail!("未知的外观颜色分组 {mode}");
+            }
+            let tokens = tokens
+                .as_object()
+                .ok_or_else(|| anyhow::anyhow!("appearance.colors.{mode} 必须是对象"))?;
+            for (token, value) in tokens {
+                if value.is_null() {
+                    continue;
+                }
+                if !matches!(
+                    token.as_str(),
+                    "accent"
+                        | "onAccent"
+                        | "textPrimary"
+                        | "textSecondary"
+                        | "textDisabled"
+                        | "surface"
+                        | "card"
+                        | "outline"
+                        | "error"
+                ) {
+                    bail!("未知的颜色字段 appearance.colors.{mode}.{token}");
+                }
+                let color = value
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("颜色字段必须是字符串"))?;
+                if !is_hex_color(color) {
+                    bail!("颜色字段必须是 #RRGGBB 或 #AARRGGBB");
+                }
+            }
+        }
+    }
+    if let Some(image) = object.get("image").filter(|value| !value.is_null()) {
+        let image = image
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("appearance.image 必须是对象"))?;
+        for (target, effects) in image {
+            if effects.is_null() {
+                continue;
+            }
+            if target.as_str() != "background" {
+                bail!("未知的图像效果分组 {target}");
+            }
+            validate_image_effects(effects)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_image_effects(effects: &Value) -> Result<()> {
+    let effects = effects
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("图像效果必须是对象"))?;
+    for (key, value) in effects {
+        if value.is_null() {
+            continue;
+        }
+        let (min, max) = match key.as_str() {
+            "sharpen" => (0.0, 100.0),
+            "saturation" | "contrast" => (20.0, 200.0),
+            "brightness" => (-100.0, 100.0),
+            _ => bail!("未知的图像效果字段 {key}"),
+        };
+        let number = value
+            .as_f64()
+            .ok_or_else(|| anyhow::anyhow!("图像效果 {key} 必须是数字"))?;
+        if !number.is_finite() || number < min || number > max {
+            bail!("图像效果 {key} 超出范围");
+        }
+    }
+    Ok(())
+}
+
+fn is_hex_color(value: &str) -> bool {
+    let Some(hex) = value.strip_prefix('#') else {
+        return false;
+    };
+    (hex.len() == 6 || hex.len() == 8) && hex.chars().all(|ch| ch.is_ascii_hexdigit())
 }
 
 struct VariantInfo {
@@ -273,6 +402,66 @@ mod tests {
             "dark": {"hasBackground": true},
         });
         let package = build_package(&theme, &[("background_light", b"light-bg")]);
+        assert!(validate_package(&package).is_err());
+    }
+
+    #[test]
+    fn accepts_appearance_package_v4() {
+        let theme = serde_json::json!({
+            "version": 4,
+            "appearance": {
+                "schema": 1,
+                "colors": { "shared": { "textPrimary": "#FFFFFFFF" } },
+                "image": { "background": { "sharpen": 30 } }
+            }
+        });
+        let package = build_package(&theme, &[]);
+        let info = validate_package(&package).unwrap();
+        assert_eq!(info.package_version, 4);
+        assert!(!info.adaptive);
+    }
+
+    #[test]
+    fn rejects_appearance_on_older_format() {
+        let theme = serde_json::json!({
+            "version": 3,
+            "appearance": { "colors": { "shared": { "textPrimary": "#FFFFFFFF" } } }
+        });
+        let package = build_package(&theme, &[]);
+        assert!(validate_package(&package).is_err());
+    }
+
+    #[test]
+    fn rejects_non_object_appearance() {
+        let theme = serde_json::json!({
+            "version": 4,
+            "appearance": "not-an-object"
+        });
+        let package = build_package(&theme, &[]);
+        assert!(validate_package(&package).is_err());
+    }
+
+    #[test]
+    fn accepts_null_appearance_sections() {
+        let theme = serde_json::json!({
+            "version": 4,
+            "appearance": {
+                "schema": 1,
+                "colors": { "shared": { "textPrimary": "#FFFFFFFF" } },
+                "image": null
+            }
+        });
+        let package = build_package(&theme, &[]);
+        assert!(validate_package(&package).is_ok());
+    }
+
+    #[test]
+    fn rejects_invalid_appearance_color() {
+        let theme = serde_json::json!({
+            "version": 4,
+            "appearance": { "colors": { "shared": { "textPrimary": "white" } } }
+        });
+        let package = build_package(&theme, &[]);
         assert!(validate_package(&package).is_err());
     }
 
