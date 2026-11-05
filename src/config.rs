@@ -28,7 +28,7 @@ pub const MAX_SUBMISSIONS_PER_HOUR: usize = 200;
 pub const MAX_BODY_BYTES: usize = 8 * 1024;
 pub const MAX_UPLOAD_BODY_BYTES: usize = 256 * 1024 * 1024;
 pub const MIN_FORMAT_VERSION: u32 = 1;
-pub const CURRENT_FORMAT_VERSION: u32 = 4;
+pub const CURRENT_FORMAT_VERSION: u32 = 5;
 
 pub const TOKEN_HEADER: &str = "X-Sukisu-Theme-Token";
 pub const CSRF_HEADER: &str = "X-Requested-With";

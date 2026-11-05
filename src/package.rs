@@ -16,6 +16,7 @@ const MAX_THEME_JSON_BYTES: u64 = 64 * 1024;
 const MAX_APPEARANCE_BYTES: usize = 16 * 1024;
 const ADAPTIVE_FORMAT_VERSION: u32 = 3;
 const APPEARANCE_FORMAT_VERSION: u32 = 4;
+const HOME_STATUS_FORMAT_VERSION: u32 = 5;
 const MAX_STICKERS_PER_VARIANT: usize = 5;
 
 pub fn validate_package(data: &[u8]) -> Result<PackageInfo> {
@@ -95,6 +96,12 @@ pub fn validate_package(data: &[u8]) -> Result<PackageInfo> {
     }
 
     let adaptive = theme.get("adaptive").map(truthy).unwrap_or(false);
+    if package_version < HOME_STATUS_FORMAT_VERSION && uses_immersive_home(theme) {
+        bail!("沉浸式首页需要格式 v{HOME_STATUS_FORMAT_VERSION}");
+    }
+    if package_version >= HOME_STATUS_FORMAT_VERSION {
+        validate_home_status(theme)?;
+    }
     if adaptive {
         if package_version < ADAPTIVE_FORMAT_VERSION {
             bail!("自适应主题包需要格式 v{ADAPTIVE_FORMAT_VERSION}");
@@ -107,8 +114,8 @@ pub fn validate_package(data: &[u8]) -> Result<PackageInfo> {
             .get("dark")
             .and_then(Value::as_object)
             .ok_or_else(|| anyhow::anyhow!("自适应主题包缺少暗色变体"))?;
-        let light_info = validate_variant("亮色", light, &names, "light")?;
-        let dark_info = validate_variant("暗色", dark, &names, "dark")?;
+        let light_info = validate_variant("亮色", light, &names, "light", package_version)?;
+        let dark_info = validate_variant("暗色", dark, &names, "dark", package_version)?;
         return Ok(PackageInfo {
             deep: true,
             package_version,
@@ -148,6 +155,92 @@ pub fn validate_package(data: &[u8]) -> Result<PackageInfo> {
         sticker_count: stickers.len(),
         adaptive: false,
     })
+}
+
+/// v5 adds the immersive home layout and its independent pill/banner sizing. Keep the fields
+/// closed and range-checked so the store never serves values the manager would clamp differently.
+fn uses_immersive_home(theme: &serde_json::Map<String, Value>) -> bool {
+    fn variant_immersive(variant: &serde_json::Map<String, Value>) -> bool {
+        variant.get("homeLayout").and_then(Value::as_str) == Some("immersive")
+    }
+
+    variant_immersive(theme)
+        || theme
+            .get("light")
+            .and_then(Value::as_object)
+            .map(variant_immersive)
+            .unwrap_or(false)
+        || theme
+            .get("dark")
+            .and_then(Value::as_object)
+            .map(variant_immersive)
+            .unwrap_or(false)
+}
+
+fn validate_home_status(theme: &serde_json::Map<String, Value>) -> Result<()> {
+    if let Some(value) = theme.get("homeLayout").filter(|value| !value.is_null()) {
+        let layout = value
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("homeLayout 必须是字符串"))?;
+        if !matches!(layout, "classic" | "immersive") {
+            bail!("未知的首页布局");
+        }
+    }
+    if let Some(value) = theme
+        .get("homeStatusAlignment")
+        .filter(|value| !value.is_null())
+    {
+        let alignment = value
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("homeStatusAlignment 必须是字符串"))?;
+        if !matches!(alignment, "start" | "end") {
+            bail!("未知的状态区对齐");
+        }
+    }
+    if let Some(value) = theme.get("homeStatusScale").filter(|value| !value.is_null()) {
+        let number = value
+            .as_f64()
+            .ok_or_else(|| anyhow::anyhow!("homeStatusScale 必须是数字"))?;
+        if !(0.5..=3.0).contains(&number) {
+            bail!("状态区高度超出范围");
+        }
+    }
+    if let Some(value) = theme.get("homePillScale").filter(|value| !value.is_null()) {
+        let number = value
+            .as_f64()
+            .ok_or_else(|| anyhow::anyhow!("homePillScale 必须是数字"))?;
+        if !(0.5..=1.5).contains(&number) {
+            bail!("胶囊缩放超出范围");
+        }
+    }
+    if let Some(value) = theme
+        .get("homeStatusWidthFraction")
+        .filter(|value| !value.is_null())
+    {
+        let number = value
+            .as_f64()
+            .ok_or_else(|| anyhow::anyhow!("homeStatusWidthFraction 必须是数字"))?;
+        if !(0.45..=1.0).contains(&number) {
+            bail!("状态区宽度超出范围");
+        }
+    }
+    if let Some(value) = theme.get("homeCardImageStyle").filter(|value| !value.is_null()) {
+        let style = value
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("homeCardImageStyle 必须是字符串"))?;
+        if !matches!(style, "banner" | "off") {
+            bail!("未知的图片位置");
+        }
+    }
+    if let Some(value) = theme
+        .get("showHomeCardImageWithoutBackground")
+        .filter(|value| !value.is_null())
+    {
+        if !value.is_boolean() {
+            bail!("showHomeCardImageWithoutBackground 必须是布尔值");
+        }
+    }
+    Ok(())
 }
 
 /// Validates the static appearance overlay stored in v4+ packages. The client enforces the same
@@ -278,7 +371,11 @@ fn validate_variant(
     variant: &serde_json::Map<String, Value>,
     names: &HashSet<String>,
     suffix: &str,
+    package_version: u32,
 ) -> Result<VariantInfo> {
+    if package_version >= HOME_STATUS_FORMAT_VERSION {
+        validate_home_status(variant)?;
+    }
     let has_background = variant.get("hasBackground").map(truthy).unwrap_or(false);
     let has_card_background = variant
         .get("hasCardBackground")
@@ -463,6 +560,82 @@ mod tests {
         });
         let package = build_package(&theme, &[]);
         assert!(validate_package(&package).is_err());
+    }
+
+    #[test]
+    fn accepts_home_status_package_v5() {
+        let theme = serde_json::json!({
+            "version": 5,
+            "homeLayout": "immersive",
+            "homeStatusAlignment": "end",
+            "homeStatusScale": 2.5,
+            "homePillScale": 1.2,
+            "homeStatusWidthFraction": 0.8,
+            "homeCardImageStyle": "banner",
+            "showHomeCardImageWithoutBackground": true,
+        });
+        let package = build_package(&theme, &[]);
+        let info = validate_package(&package).unwrap();
+        assert_eq!(info.package_version, 5);
+    }
+
+    #[test]
+    fn rejects_home_status_scale_above_300() {
+        let theme = serde_json::json!({
+            "version": 5,
+            "homeLayout": "immersive",
+            "homeStatusScale": 3.1,
+        });
+        let package = build_package(&theme, &[]);
+        assert!(validate_package(&package).is_err());
+    }
+
+    #[test]
+    fn rejects_unknown_home_alignment() {
+        let theme = serde_json::json!({
+            "version": 5,
+            "homeLayout": "immersive",
+            "homeStatusAlignment": "center",
+        });
+        let package = build_package(&theme, &[]);
+        assert!(validate_package(&package).is_err());
+    }
+
+    #[test]
+    fn rejects_immersive_home_on_v4() {
+        let theme = serde_json::json!({
+            "version": 4,
+            "homeLayout": "immersive",
+        });
+        let package = build_package(&theme, &[]);
+        assert!(validate_package(&package).is_err());
+    }
+
+    #[test]
+    fn validates_adaptive_home_status_v5() {
+        let theme = serde_json::json!({
+            "version": 5,
+            "adaptive": true,
+            "light": {
+                "homeLayout": "immersive",
+                "homeStatusAlignment": "start",
+                "homeStatusScale": 1.5,
+                "homePillScale": 1.2,
+                "homeStatusWidthFraction": 0.8,
+                "homeCardImageStyle": "banner",
+            },
+            "dark": {
+                "homeLayout": "immersive",
+                "homeStatusScale": 2.0,
+                "homePillScale": 1.0,
+                "homeStatusWidthFraction": 1.0,
+                "homeCardImageStyle": "off",
+            },
+        });
+        let package = build_package(&theme, &[]);
+        let info = validate_package(&package).unwrap();
+        assert!(info.adaptive);
+        assert_eq!(info.package_version, 5);
     }
 
     #[test]
