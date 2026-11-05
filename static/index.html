@@ -16,6 +16,7 @@
 })();
 </script>
 <script src="/i18n.js"></script>
+<script src="/distributed-upload.js"></script>
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
@@ -45,7 +46,7 @@
       <div class="nav-label">系统</div>
       <a href="#storage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/><path d="M4.5 11.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg>存储与配额</a>
       <a href="#network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.4 3.6 5.3 3.6 8.5s-1.2 6.1-3.6 8.5c-2.4-2.4-3.6-5.3-3.6-8.5S9.6 5.9 12 3.5Z"/></svg>网络</a>
-      <a href="#mirrors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4a13 13 0 0 1 0 16M12 4a13 13 0 0 0 0 16"/></svg>镜像健康</a>
+      <a href="#mirrors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4a13 13 0 0 1 0 16M12 4a13 13 0 0 0 0 16"/></svg>分布式分发</a>
       <a href="#performance"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 18a8 8 0 1 1 16 0"/><path d="m12 14 4-5"/><circle cx="12" cy="18" r="1.6"/></svg>性能</a>
       <a href="#monitor"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 12h3l2.2-5.5L12 18l2.4-7 1.8 3H21"/></svg>接口监控</a>
       <a href="#auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="m4 7 8 6 8-6"/></svg>认证</a>
@@ -118,7 +119,7 @@
         <div class="stat"><div class="label">主题数量</div><div class="value" id="themeCount">–</div><div class="sub">当前 catalog.json</div></div>
         <div class="stat"><div class="label">总下载量</div><div class="value" id="downloadsStat">–</div><div class="sub" id="downloadsSub">近 7 天下载 –</div></div>
         <div class="stat"><div class="label">访问令牌</div><div class="value" id="tokenState">–</div><div class="sub" id="tokenSub">未设置</div></div>
-        <div class="stat"><div class="label">服务状态</div><div class="value" id="serviceState">–</div><div class="sub">sukisu-theme-web.service</div></div>
+        <div class="stat"><div class="label">服务状态</div><div class="value" id="serviceState">–</div><div class="sub" id="serviceStateUnit">sukisu-theme-web.service</div></div>
         <div class="stat"><div class="label">存储模式</div><div class="value" id="storageMode">本地</div><div class="sub" id="storageSub">正在读取配额</div></div>
       </div>
 
@@ -642,7 +643,7 @@
     <section id="network" class="page">
       <div class="section-head"><div><h3>网络</h3><p>配置管理服务监听地址、端口、公开域名和访问地址。</p></div><span class="pill" id="networkPill">–</span></div>
       <div class="stats">
-        <div class="stat"><div class="label">管理服务</div><div class="value" id="networkService">–</div><div class="sub">sukisu-theme-web.service</div></div>
+        <div class="stat"><div class="label">管理服务</div><div class="value" id="networkService">–</div><div class="sub" id="networkServiceUnit">sukisu-theme-web.service</div></div>
         <div class="stat"><div class="label">监听</div><div class="value" id="networkListen">–</div><div class="sub">直接对外提供服务</div></div>
         <div class="stat"><div class="label">反代目标</div><div class="value" id="networkUpstream">–</div><div class="sub">Lucky 等反向代理指向此地址</div></div>
       </div>
@@ -886,26 +887,13 @@
           </div>
           <p class="field-hint">修改成功后需要重新登录。</p>
         </div>
-        <div class="card">
-          <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15 7a4 4 0 1 1-3.8 5.2L4 19.4V21h2.6l1.4-1.4V18h1.6l1.2-1.2v-1.4h1.4l.8-.8A4 4 0 0 1 15 7Z"/><circle cx="16.5" cy="7.5" r="1"/></svg>主令牌</h4>
-          <p class="hint">保存在 store.env 的全兼容令牌，拥有全部权限且不受下方列表影响。当前值不会显示在页面上；输入或生成一个新令牌后保存，立即生效，所有客户端需同步更新。</p>
-          <label for="tokenInput">新令牌</label>
-          <div class="field">
-            <input id="tokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="输入或生成新令牌">
-            <button class="mini" id="toggleToken" title="显示/隐藏">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.7"/></svg>
-            </button>
-          </div>
-          <div class="strength"><span>令牌强度</span><span class="bar"><i id="strengthBar"></i></span><span id="strengthLabel">–</span></div>
-          <div class="row">
-            <button class="primary" id="saveToken"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12.5 9.5 17 19 7.5"/></svg>保存令牌</button>
-            <button id="generateToken"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="m12 3 1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3Z"/><path d="m19 15 .8 1.8 1.7.7-1.7.7L19 20l-.8-1.8-1.7-.7 1.7-.7L19 15Z"/></svg>生成</button>
-            <button id="copyToken"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="9" y="9" width="10" height="10" rx="2"/><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/></svg>复制</button>
-          </div>
+        <div class="card wide">
+          <h4>设备访问凭证</h4><p class="hint">每台管理器使用独立凭证，访问凭证 15 分钟到期并定期刷新。可单独撤销；没有共享主令牌。投稿仍需账号授权。</p>
+          <button id="reloadCredentials" type="button">刷新设备列表</button><div id="credentialRows" aria-live="polite"></div>
         </div>
         <div class="card wide">
           <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15 7a4 4 0 1 1-3.8 5.2L4 19.4V21h2.6l1.4-1.4V18h1.6l1.2-1.2v-1.4h1.4l.8-.8A4 4 0 0 1 15 7Z"/><circle cx="16.5" cy="7.5" r="1"/></svg>访问令牌</h4>
-          <p class="hint">为每台管理器或每个镜像签发独立令牌，可随时修改名称、权限与有效期，泄露时单独停用或删除；令牌值只在创建时完整显示一次。</p>
+          <p class="hint">为脚本或镜像签发有明确权限的独立令牌，可随时修改名称、权限与有效期，泄露时单独停用或删除；令牌值只在创建时完整显示一次。</p>
           <div class="row" style="margin-bottom:12px">
             <button class="primary" id="createToken" type="button"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>新建令牌</button>
             <span class="pill" id="tokensPill">–</span>
@@ -975,15 +963,64 @@
     </section>
 
     <section id="mirrors" class="page">
-      <div class="section-head"><div><h3>镜像健康</h3><p>使用一份已发布主题包检测各镜像可达性与响应延迟。</p></div><button class="btn" id="mirrorsRefresh" type="button">重新检测</button></div>
-      <div class="card"><p class="hint" id="mirrorSample">正在读取检测样本…</p><div id="mirrorHealthList"></div><div class="empty hidden" id="mirrorHealthEmpty">没有配置镜像</div></div>
+      <div class="section-head"><div><h3>分布式分发</h3><p>两台家宽服务器组成自建 CDN：主站统一写入，边缘节点同步主题并从本地磁盘分发。</p></div><button class="btn" id="mirrorsRefresh" type="button">重新检测</button></div>
+      <div class="card"><h4>完整站点与写入切换</h4>
+        <p class="hint">两边都能访问网站和管理业务，单个写入节点可切换。其他站点保存私有数据库副本并转交业务请求。交接时先暂停业务、同步最终副本，再开放新节点。</p>
+        <div class="row"><button id="sitesRefresh" type="button">刷新站点状态</button><button id="sitesSync" type="button">同步本机副本</button></div>
+        <p class="hint" id="sitesState" role="status">读取中…</p><div id="sitesNodes"></div>
+        <div class="form-grid"><div><label for="siteInterval">本机副本同步间隔（秒）</label><input id="siteInterval" type="number" min="10" max="3600" value="60"></div><div><label for="siteQuota">本机单份副本上限（GiB）</label><input id="siteQuota" type="number" min="0.25" step="0.25" value="20"></div></div>
+        <button id="saveSiteSettings" type="button">保存本机设置</button><p class="hint">同步间隔立即生效；新的业务/缓存容量上限在本机进程下次启动时应用。</p>
+        <form id="sitesBootstrap"><h4>生成初始站点配置</h4><p class="hint">每行填写：名称 | HTTPS 根地址 | 本机私有数据目录。第一行是当前主站。生成后分别保存到各服务器，以 site 模式启动；不会自动部署。</p>
+          <label for="sitesInput">站点列表</label><textarea id="sitesInput" rows="3" placeholder="主站 A | https://a.example.com | /data/sukisu-site-a&#10;家宽 B | https://b.example.com | /data/sukisu-site-b" required></textarea>
+          <button type="submit">生成配置（仅显示一次）</button>
+        </form>
+      </div>
+      <div class="card">
+        <h4>分发策略与缓存</h4>
+        <p class="hint">自动选路比较主站到各节点的资源响应时间，主站作为回退；并不代表每位访客的最优线路。新资源校验完成后才会分发，断点续传留在主站。</p>
+        <form id="distributionSettings">
+          <div class="form-grid">
+            <div class="full"><label for="distributionOrigin">主站 HTTPS 地址</label><input id="distributionOrigin" type="url" placeholder="https://themes.example.com:8443" required autocomplete="off"></div>
+            <div><label for="distributionStrategy">默认选路</label><select id="distributionStrategy"><option value="latency">自动：响应更快的可用节点</option><option value="priority">按节点优先级</option></select></div>
+            <div><label for="distributionInterval">同步检查间隔（秒）</label><input id="distributionInterval" type="number" min="2" max="60" value="5" required></div>
+            <div><label for="distributionTtl">浏览器缓存上限（秒）</label><input id="distributionTtl" type="number" min="0" max="300" value="60" required></div>
+            <div><label class="check"><input id="distributionEnabled" type="checkbox">启用自建 CDN</label></div>
+            <div><label class="check"><input id="distributionUploads" type="checkbox" checked>分片上传同时使用主站与边缘</label></div>
+          </div>
+          <p class="hint">磁盘缓存按资源摘要保存，更新和撤回随清单同步。浏览器缓存还受短期凭证和同步租约限制，不开启公开共享缓存。</p>
+          <p class="hint">上传默认 4 路并发，较快入口会领取更多分片；超时或失败会换路。主题包、预览图、头像和截图均可分流，主站校验合并后统一审核与发布，再同步已发布文件。客户端上行和两机回传链路仍可能限制总速度。</p>
+          <div class="row"><button class="primary" type="submit">保存分发设置</button><span class="hint" id="distributionHint" role="status"></span></div>
+        </form>
+      </div>
+      <div class="card">
+        <h4>边缘节点</h4><p class="hint">每台边缘服务器运行同一程序的 edge 模式，无需复制账号数据库。地址需通过 Lucky 等 TLS 入口转发到节点监听端口。</p>
+        <div id="distributionNodes" aria-live="polite"></div>
+        <div class="empty" id="distributionEmpty">还没有边缘节点，请先保存主站地址，再添加第二台服务器。</div>
+        <form id="distributionNodeForm">
+          <input id="distributionNodeId" type="hidden">
+          <div class="form-grid">
+            <div><label for="distributionNodeName">节点名称</label><input id="distributionNodeName" maxlength="48" required placeholder="家宽节点 B" autocomplete="off"></div>
+            <div><label for="distributionNodeUrl">节点 HTTPS 地址</label><input id="distributionNodeUrl" type="url" required placeholder="https://edge.example.com:8443" autocomplete="off"></div>
+            <div><label for="distributionNodePriority">节点优先级（数字越小越优先）</label><input id="distributionNodePriority" type="number" min="-2147483648" max="2147483647" value="100" required></div>
+            <div><label class="check"><input id="distributionNodeEnabled" type="checkbox" checked>启用节点</label></div>
+            <div><label class="check"><input id="distributionNodeUploads" type="checkbox" checked>允许此节点接收上传分片</label></div>
+          </div>
+          <div class="row"><button class="primary" id="distributionNodeSubmit" type="submit">添加节点</button><button id="distributionNodeCancel" type="button">取消编辑</button></div>
+        </form>
+      </div>
+      <div class="card"><h4>数据库与一致性</h4>
+        <p class="hint">完整站点同步五个数据库和本地主题存储，只有当前写入节点处理业务写入。资源 edge 模式保持原有分发职责。</p>
+        <p class="hint">主题资源默认每 5 秒检查；完整数据库副本默认每 60 秒预热，加上传输时间。只有停止旧写入节点后取得的最终副本可用于交接，预热副本不能直接晋升。</p>
+        <p class="hint" id="distributionDatabase"></p>
+      </div>
+      <details class="card"><summary>传统镜像健康</summary><p class="hint" id="mirrorSample">正在读取检测样本…</p><div id="mirrorHealthList"></div><div class="empty hidden" id="mirrorHealthEmpty">没有配置传统镜像</div></details>
     </section>
 
     <section id="access" class="page">
       <div class="section-head"><div><h3>接入信息与 API</h3><p>镜像地址、管理入口、接口列表和调用示例集中在这里。</p></div></div>
       <div class="card">
         <h4>接入方式</h4>
-        <p class="hint">把下面的地址和请求头填进 SukiSU 管理器；接口列表中的受保护端点都需要同一个令牌。</p>
+        <p class="hint">把下面的地址和请求头填进 SukiSU 管理器；受保护端点使用各自的设备凭证，可在用户中心申请。</p>
         <div class="meta">
           <div class="kv"><span>镜像基础地址</span><b class="url" id="publicUrl">–</b></div>
           <div class="kv"><span>目录 API</span><b class="url" id="catalogUrl">–</b></div>
@@ -1077,7 +1114,7 @@
     <button class="btn small" id="tokenRevealClose" type="button">关闭</button>
   </div>
   <div class="theme-detail-body">
-    <p class="hint">这是唯一一次完整显示，关闭后将无法再次查看。请立即复制并填入 SukiSU 管理器的访问令牌设置。</p>
+    <p class="hint">这是唯一一次完整显示，关闭后将无法再次查看。请保存到受信脚本的配置中；管理器默认使用独立轮换的设备凭证。</p>
     <div class="field"><input id="tokenRevealValue" readonly spellcheck="false"></div>
     <div class="row" style="margin-top:14px">
       <button class="primary" id="tokenRevealCopy" type="button">复制</button>
@@ -1093,13 +1130,21 @@
   <div class="theme-detail-body" id="apiLogBody"></div>
 </dialog>
 
+<dialog class="theme-detail-dialog" id="distributionConfigDialog">
+  <div class="theme-detail-head"><h3>节点配置（仅显示一次）</h3><button type="button" id="distributionConfigClose">关闭</button></div>
+  <div class="theme-detail-body"><p class="hint">配置包含该节点的私密密钥。请保存到第二台服务器的独立配置文件，权限设为 0600；不要提交到仓库或放在公开网站目录。</p>
+    <label for="distributionConfigValue">节点配置 JSON</label><textarea id="distributionConfigValue" readonly rows="14" spellcheck="false" autocomplete="off"></textarea>
+    <p class="hint">资源节点使用 edge 模式；完整站点使用 site 模式。分别保存对应配置文件，由 TLS 入口反向代理。</p>
+    <div class="row"><button type="button" id="distributionConfigCopy">复制配置</button></div>
+  </div>
+</dialog>
 <script>
 const BASE_PATH = location.pathname.startsWith('/admin') ? '/admin/' : '/';
 const API = BASE_PATH + 'api';
 const LOGIN_URL = '/account/login';
 const SETUP_URL = '/admin/setup';
 const $ = id => document.getElementById(id);
-let tokenVisible = false;
+
 let statusData = null;
 
 function toast(message, kind = 'ok') {
@@ -1220,124 +1265,8 @@ function paintTransfer(ui, reading, text, force) {
   if (ui.eta) ui.eta.textContent = reading.eta != null ? '剩余 ' + formatTransferEta(reading.eta) : '';
 }
 
-function uploadChunkWithProgress(uploadId, index, chunk, onBytes) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', API + '/uploads/' + encodeURIComponent(uploadId) + '/' + index);
-    xhr.withCredentials = true;
-    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-    xhr.setRequestHeader('X-Requested-With', 'SukiSUThemeAdmin');
-    xhr.upload.addEventListener('progress', event => {
-      if (event.lengthComputable && event.total > 0) onBytes(event.loaded);
-    });
-    xhr.addEventListener('load', () => {
-      let data = {};
-      try { data = JSON.parse(xhr.responseText || '{}'); } catch (_) {}
-      if (xhr.status === 401) {
-        redirectToLogin();
-        const error = new Error('登录已过期，请重新登录');
-        error.unauthorized = true;
-        reject(error);
-        return;
-      }
-      if (xhr.status < 200 || xhr.status >= 300 || data.ok === false) {
-        reject(new Error(data.error || ('分片上传失败 HTTP ' + xhr.status)));
-        return;
-      }
-      resolve(data);
-    });
-    xhr.addEventListener('error', () => reject(new Error('网络错误')));
-    xhr.addEventListener('abort', () => reject(new Error('上传已取消')));
-    xhr.send(chunk);
-  });
-}
-
 async function uploadResumablePackage(file, onProgress) {
-  const fingerprint = file.name + ':' + file.size + ':' + (file.lastModified || 0);
-  const initResponse = await fetch(API + '/uploads/init', {
-    method: 'POST',
-    cache: 'no-store',
-    credentials: 'same-origin',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Requested-With': 'SukiSUThemeAdmin',
-    },
-    body: JSON.stringify({ filename: file.name, size: file.size, fingerprint }),
-  });
-  const session = await initResponse.json().catch(() => ({}));
-  if (initResponse.status === 401) {
-    redirectToLogin();
-    throw new Error('登录已过期，请重新登录');
-  }
-  if (!initResponse.ok || session.ok === false) {
-    throw new Error(session.error || ('初始化上传失败 HTTP ' + initResponse.status));
-  }
-  const uploadId = session.uploadId;
-  const chunkSize = Number(session.chunkSize) || 4 * 1024 * 1024;
-  const totalChunks = Number(session.totalChunks) || Math.ceil(file.size / chunkSize);
-  const received = new Set((session.received || []).map(Number));
-  let uploadedBytes = Number(session.receivedBytes) || 0;
-  try { localStorage.setItem(resumableKey(file), uploadId); } catch (_) {}
-  onProgress(file.size ? uploadedBytes / file.size : 0, uploadedBytes, file.size);
-
-  const queue = [];
-  for (let index = 0; index < totalChunks; index++) {
-    if (!received.has(index)) queue.push(index);
-  }
-  const inFlight = new Map();
-  let cursor = 0;
-  let failure = null;
-  const report = () => {
-    if (failure) return;
-    let partial = 0;
-    for (const loaded of inFlight.values()) partial += loaded;
-    const transferred = Math.min(file.size, uploadedBytes + partial);
-    onProgress(file.size ? transferred / file.size : 0, transferred, file.size);
-  };
-  const worker = async () => {
-    while (!failure) {
-      const position = cursor++;
-      if (position >= queue.length) return;
-      const index = queue[position];
-      const start = index * chunkSize;
-      const end = Math.min(file.size, start + chunkSize);
-      const chunk = file.slice(start, end);
-      let attempt = 0;
-      while (!failure) {
-        try {
-          await uploadChunkWithProgress(uploadId, index, chunk, loaded => {
-            inFlight.set(index, Math.min(loaded, chunk.size));
-            report();
-          });
-          inFlight.delete(index);
-          uploadedBytes += chunk.size;
-          report();
-          break;
-        } catch (error) {
-          inFlight.delete(index);
-          report();
-          if (error.unauthorized) {
-            failure = error;
-            throw error;
-          }
-          attempt++;
-          if (attempt >= 3) {
-            failure = error;
-            throw error;
-          }
-        }
-      }
-    }
-  };
-  const workers = Math.min(4, queue.length);
-  if (workers > 0) {
-    try {
-      await Promise.all(Array.from({ length: workers }, () => worker()));
-    } catch (error) {
-      throw failure || error;
-    }
-  }
-  return uploadId;
+  return window.SukisuDistributedUpload.upload(file, { api: API, onProgress, onUnauthorized: redirectToLogin });
 }
 
 function uploadWithProgress(url, form, onProgress) {
@@ -1401,23 +1330,6 @@ function formatGenerated(value) {
   if (!value) return '–';
   const date = new Date(value);
   return isNaN(date.getTime()) ? value : date.toLocaleString(window.SukisuI18n ? SukisuI18n.locale : 'zh-CN', { hour12: false });
-}
-
-function tokenStrength(value) {
-  let score = 0;
-  if (value.length >= 16) score++;
-  if (value.length >= 32) score++;
-  if (/[a-z]/.test(value) && /[A-Z]/.test(value)) score++;
-  if (/[0-9]/.test(value)) score++;
-  if (/[._~-]/.test(value)) score++;
-  const pct = Math.min(100, score * 20);
-  return { pct, label: pct >= 80 ? '强' : pct >= 40 ? '中' : '弱' };
-}
-
-function updateStrength() {
-  const { pct, label } = tokenStrength($('tokenInput').value.trim());
-  $('strengthBar').style.width = pct + '%';
-  $('strengthLabel').textContent = label;
 }
 
 function passwordStrength(value) {
@@ -1557,9 +1469,10 @@ function render(status) {
   $('sideThemes').textContent = (catalog.themes ?? 0) + ' 主题';
   $('tokenState').textContent = status.tokenSet ? '已设置' : '未设置';
   $('tokenState').style.color = status.tokenSet ? 'var(--ok)' : 'var(--bad)';
-  $('tokenSub').textContent = status.tokenSet ? '通过请求头校验' : '镜像当前无保护';
+  $('tokenSub').textContent = '独立设备凭证 · 定期刷新';
   setState('serviceState', status.adminService);
   setState('adminState', status.adminService);
+  $('serviceStateUnit').textContent = status.serviceUnit || 'sukisu-theme-web.service';
   $('sideAdmin').textContent = stateText(status.adminService);
   const storage = status.storage || {};
   const used = Number(storage.used || 0);
@@ -3599,6 +3512,7 @@ async function loadNetwork() {
     $('networkAccountUrl').value = settings.accountUrl || '';
     $('networkGithubCallback').value = settings.githubCallback || '';
     $('networkService').textContent = stateText(data.adminService);
+    $('networkServiceUnit').textContent = data.serviceUnit || 'sukisu-theme-web.service';
     $('networkListen').textContent = `${settings.bind || '–'}:${settings.port || '–'}`;
     $('networkUpstream').textContent = data.upstream || '–';
     $('networkPill').textContent = data.systemctlDisabled ? '本地模式' : '已连接';
@@ -4774,6 +4688,8 @@ async function loadMirrorHealth() {
   button.disabled = true;
   $('mirrorSample').textContent = '正在检测镜像…';
   try {
+    await api('/distribution/probe', { method: 'POST', body: '{}' });
+    await loadDistribution(true);
     const data = await api('/mirrors/health');
     $('mirrorSample').textContent = data.samplePath ? '检测资源：' + data.samplePath : '没有已发布的本地主题包，暂时无法检测镜像可达性。';
     const mirrors = data.mirrors || [];
@@ -4789,6 +4705,164 @@ async function loadMirrorHealth() {
   finally { button.disabled = false; }
 }
 $('mirrorsRefresh').addEventListener('click', loadMirrorHealth);
+
+let distributionData = null;
+let distributionLoaded = false;
+let distributionLoading = false;
+
+async function loadDistribution(fillForm = false) {
+  if (distributionLoading) return;
+  distributionLoading = true;
+  try {
+    await loadSites();
+    const data = await api('/distribution');
+    distributionData = data;
+    if (fillForm && !distributionLoaded) {
+      $('distributionOrigin').value = data.originUrl || location.origin;
+      $('distributionStrategy').value = data.strategy;
+      $('distributionInterval').value = data.syncIntervalSecs;
+      $('distributionTtl').value = data.cacheTtlSecs;
+      $('distributionEnabled').checked = data.enabled;
+      $('distributionUploads').checked = data.uploadsEnabled;
+      distributionLoaded = true;
+    }
+    $('distributionHint').textContent = data.enabled ? '已启用；不可用资源自动回退主站' : '未启用；所有下载保持现有路径';
+    $('distributionDatabase').textContent = 'SQLite · ' + data.database.layout + ' · 单写入节点；数据库副本状态见完整站点面板';
+    $('distributionEmpty').classList.toggle('hidden', data.nodes.length > 0);
+    $('distributionNodes').innerHTML = data.nodes.map(node => {
+      const status = node.status || {};
+      const label = !node.enabled ? '已禁用' : status.ready ? '同步完成' : status.syncing ? '同步中' : status.state === 'unreachable' ? '不可达' : '等待同步';
+      const latency = node.latencyMs == null ? '—' : node.latencyMs + ' ms';
+      const details = [node.baseUrl, '主站探测 ' + latency, '文件 ' + (status.filesReady || 0) + ' / ' + (status.filesTotal || 0),
+        '缓存 ' + formatTransferBytes(status.cacheBytes || 0) + ' / ' + formatTransferBytes(status.quotaBytes || 0),
+        node.uploadEnabled ? (status.uploadReady ? '上传入口可用' : '上传入口等待连接') : '上传已关闭',
+        '上传暂存 ' + formatTransferBytes(status.uploadBytes || 0) + ' / ' + formatTransferBytes(status.uploadQuotaBytes || 0)];
+      return '<article class="card"><div class="row"><b>' + escapeHtml(node.name) + '</b><span class="pill ' + (status.ready ? 'ok' : 'warn') + '">' + escapeHtml(label) + '</span></div>' +
+        '<p class="hint">' + details.map(escapeHtml).join(' · ') + '</p>' +
+        (status.lastSyncAt ? '<p class="hint">最近完整同步：' + escapeHtml(status.lastSyncAt) + '</p>' : '') +
+        (status.error ? '<p class="hint">' + escapeHtml(status.error) + '</p>' : '') +
+        '<div class="row">' + [['edit', '编辑节点'], ['sync', '立即同步'], ['toggle', node.enabled ? '禁用节点' : '启用节点'], ['rotate', '重置节点密钥'], ['delete', '移除节点']].map(([action, text]) =>
+          '<button type="button" data-node="' + escapeHtml(node.id) + '" data-distribution-action="' + action + '">' + escapeHtml(text) + '</button>').join('') + '</div></article>';
+    }).join('');
+  } finally { distributionLoading = false; }
+}
+
+function resetDistributionNodeForm() {
+  $('distributionNodeForm').reset();
+  $('distributionNodeId').value = '';
+  $('distributionNodeSubmit').textContent = '添加节点';
+}
+function revealDistributionConfig(config) {
+  if (!config) return;
+  $('distributionConfigValue').value = JSON.stringify(config, null, 2);
+  $('distributionConfigDialog').showModal();
+}
+$('distributionConfigClose').addEventListener('click', () => $('distributionConfigDialog').close());
+$('distributionConfigDialog').addEventListener('close', () => { $('distributionConfigValue').value = ''; });
+$('distributionConfigCopy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('distributionConfigValue').value); toast('节点配置已复制'); }
+  catch (_) { $('distributionConfigValue').focus(); $('distributionConfigValue').select(); toast('请手动复制配置', 'warn'); }
+});
+$('distributionSettings').addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = event.submitter;
+  if (button) button.disabled = true;
+  try {
+    await api('/distribution', { method: 'POST', body: JSON.stringify({ enabled: $('distributionEnabled').checked,
+      uploadsEnabled: $('distributionUploads').checked,
+      originUrl: $('distributionOrigin').value.trim(), strategy: $('distributionStrategy').value,
+      syncIntervalSecs: Number($('distributionInterval').value), cacheTtlSecs: Number($('distributionTtl').value) }) });
+    await loadDistribution(); toast('分发设置已保存');
+  } catch (error) { toast(error.message, 'bad'); }
+  finally { if (button) button.disabled = false; }
+});
+$('distributionNodeCancel').addEventListener('click', resetDistributionNodeForm);
+$('distributionNodeForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = $('distributionNodeSubmit'); button.disabled = true;
+  try {
+    const data = await api('/distribution/nodes', { method: 'POST', body: JSON.stringify({ id: $('distributionNodeId').value,
+      name: $('distributionNodeName').value.trim(), baseUrl: $('distributionNodeUrl').value.trim(),
+      priority: Number($('distributionNodePriority').value), enabled: $('distributionNodeEnabled').checked,
+      uploadEnabled: $('distributionNodeUploads').checked }) });
+    resetDistributionNodeForm(); await loadDistribution(); revealDistributionConfig(data.edgeConfig); toast('节点已保存');
+  } catch (error) { toast(error.message, 'bad'); }
+  finally { button.disabled = false; }
+});
+$('distributionNodes').addEventListener('click', async event => {
+  const button = event.target.closest('button[data-distribution-action]');
+  if (!button || !distributionData) return;
+  const node = distributionData.nodes.find(item => item.id === button.dataset.node);
+  if (!node) return;
+  const action = button.dataset.distributionAction;
+  if (action === 'edit') {
+    $('distributionNodeId').value = node.id; $('distributionNodeName').value = node.name;
+    $('distributionNodeUrl').value = node.baseUrl; $('distributionNodePriority').value = node.priority;
+    $('distributionNodeEnabled').checked = node.enabled; $('distributionNodeSubmit').textContent = '保存节点';
+    $('distributionNodeUploads').checked = node.uploadEnabled;
+    $('distributionNodeName').focus(); return;
+  }
+  if (action === 'delete' && !confirm('移除节点后将停止为其签发下载凭证，是否继续？')) return;
+  if (action === 'rotate' && !confirm('重置后需要更新第二台服务器的配置并重启边缘进程，是否继续？')) return;
+  button.disabled = true;
+  try {
+    let data;
+    if (action === 'toggle') {
+      data = await api('/distribution/nodes', { method: 'POST', body: JSON.stringify({ id: node.id, name: node.name,
+        baseUrl: node.baseUrl, enabled: !node.enabled, uploadEnabled: node.uploadEnabled, priority: node.priority }) });
+    } else {
+      const path = '/distribution/nodes/' + encodeURIComponent(node.id) + (action === 'delete' ? '' : '/' + action);
+      data = await api(path, { method: action === 'delete' ? 'DELETE' : 'POST', ...(action === 'delete' ? {} : { body: '{}' }) });
+    }
+    revealDistributionConfig(data.edgeConfig); await loadDistribution();
+    toast(action === 'sync' ? '已请求节点同步，请刷新查看实际进度' : '节点配置已更新');
+  } catch (error) { toast(error.message, 'bad'); }
+  finally { button.disabled = false; }
+});
+setInterval(() => {
+  if (currentPage === 'mirrors' && !document.hidden) loadDistribution().catch(error => { $('distributionHint').textContent = error.message; });
+}, 10000);
+
+
+async function loadCredentials() {
+  const data = await api('/client-credentials');
+  $('credentialRows').innerHTML = (data.credentials || []).map(c => '<article class="card"><b>' + escapeHtml(c.name) + '</b><p class="hint">' + escapeHtml(c.username || '匿名设备') + ' · ' + escapeHtml(c.prefix) + '… · ' + (c.revoked ? '已撤销' : '有效期至 ' + new Date(c.expiresAt * 1000).toLocaleString()) + '</p><button type="button" data-credential="' + escapeHtml(c.id) + '"' + (c.revoked ? ' disabled' : '') + '>撤销设备凭证</button></article>').join('') || '<p class="hint">暂无设备凭证</p>';
+}
+$('reloadCredentials').addEventListener('click', () => loadCredentials().catch(e => toast(e.message, 'bad')));
+$('credentialRows').addEventListener('click', async event => {
+  const button = event.target.closest('[data-credential]'); if (!button) return;
+  if (!confirm('撤销后此设备需要重新授权，是否继续？')) return;
+  button.disabled = true;
+  try { await api('/client-credentials/revoke', { method: 'POST', body: JSON.stringify({ id: button.dataset.credential }) }); await loadCredentials(); } catch(e) { toast(e.message, 'bad'); button.disabled = false; }
+});
+let sitesData;
+async function loadSites() {
+  const data = await api('/sites'); sitesData = data;
+  $('sitesBootstrap').classList.toggle('hidden', !!data.managed);
+  $('sitesSync').disabled = !data.managed || data.mode === 'fenced'; $('saveSiteSettings').disabled = !data.managed;
+  $('siteInterval').disabled = !data.managed; $('siteQuota').disabled = !data.managed;
+  if (document.activeElement !== $('siteInterval')) $('siteInterval').value = data.syncIntervalSecs || 60;
+  if (document.activeElement !== $('siteQuota')) $('siteQuota').value = (data.quotaBytes || 20*1024**3)/1024**3;
+  $('sitesState').textContent = data.managed ? '本机：' + data.nodeId + ' · 写入节点：' + data.writerId + ' · 代次 ' + data.epoch + ' · ' + ({writer:'写入中', follower:'跟随中', fenced:'交接恢复中'}[data.mode] || data.mode) + (data.replica ? ' · 最近副本 ' + new Date(data.replica.createdAt * 1000).toLocaleString() : '') + (data.error ? ' · ' + data.error : '') : '尚未启用完整站点。现有 edge 仅同步资源，可在下方生成完整站点配置。';
+  $('sitesNodes').innerHTML = (data.nodes || []).map(n => '<article class="card"><b>' + escapeHtml(n.name) + '</b><p class="hint">' + escapeHtml(n.baseUrl) + ' · ' + (n.reachable ? (n.state.mode === 'writer' ? '当前写入节点' : '可达') : '不可达') + '</p><button type="button" data-site-target="' + escapeHtml(n.id) + '"' + ((data.mode !== 'writer' && data.mode !== 'fenced') || n.id === data.nodeId || !n.reachable ? ' disabled' : '') + '>' + (data.mode === 'fenced' ? '重试当前交接' : '切换写入到此节点') + '</button></article>').join('');
+}
+$('saveSiteSettings').addEventListener('click', async event => {const button=event.currentTarget;button.disabled=true;try{await api('/sites/settings',{method:'POST',body:JSON.stringify({syncIntervalSecs:Number($('siteInterval').value),quotaBytes:Math.round(Number($('siteQuota').value)*1024**3)})});await loadSites();toast('本机设置已保存');}catch(e){toast(e.message,'bad');}finally{button.disabled=!sitesData?.managed;}});
+$('sitesRefresh').addEventListener('click', () => loadSites().catch(e => toast(e.message, 'bad')));
+$('sitesSync').addEventListener('click', async event => { event.target.disabled = true; try { await api('/sites/sync', { method:'POST', body:'{}' }); await loadSites(); toast('副本同步完成'); } catch(e) { toast(e.message,'bad'); } finally { event.target.disabled = !sitesData?.managed || sitesData.mode === 'fenced'; } });
+$('sitesNodes').addEventListener('click', async event => {
+  const button = event.target.closest('[data-site-target]'); if (!button) return;
+  if (!confirm('交接期间暂停业务；旧节点停止写入，最终副本校验后新节点接管。确认切换？')) return;
+  button.disabled = true; $('sitesState').textContent = '正在排空请求并同步最终副本，请勿重复操作…';
+  try { await api('/sites/transfer', {method:'POST',body:JSON.stringify({targetId:button.dataset.siteTarget})}); toast('写入节点已切换'); } catch(e) { toast(e.message, 'bad'); } finally { await loadSites().catch(e => { $('sitesState').textContent = e.message; }); }
+});
+$('sitesBootstrap').addEventListener('submit', async event => {
+  event.preventDefault(); const button=event.submitter; button.disabled=true;
+  try {
+    const nodes=$('sitesInput').value.trim().split(/\r?\n/).filter(Boolean).map(line => { const [name,baseUrl,dataDir,...rest]=line.split('|').map(v=>v.trim()); if (!name || !baseUrl || !dataDir || rest.length) throw Error('每行需要名称、地址和数据目录'); return {name,baseUrl,dataDir}; });
+    const data=await api('/sites/bootstrap', {method:'POST',body:JSON.stringify({nodes})});
+    revealDistributionConfig(data.configs); $('distributionConfigDialog').querySelector('h3').textContent='完整站点配置（仅显示一次）';
+  } catch(e) {toast(e.message,'bad');} finally {button.disabled=false;}
+});
 
 const PAGE_GUIDES = {
   overview: {
@@ -4834,10 +4908,10 @@ const PAGE_GUIDES = {
     steps: ['核对主题与说明', '填写处理理由并保存结果', '必要时到主题维护处理内容'],
   },
   mirrors: {
-    title: '镜像健康',
-    what: '用已发布的主题包对各个镜像进行可达性检测。',
-    abilities: ['查看健康状态、响应延迟与优先级', '按需重新检测'],
-    steps: ['确认存在检测样本', '点击重新检测', '异常时检查镜像服务器和配置'],
+    title: '分布式分发',
+    what: '管理家宽边缘节点、自动选路与主题文件同步，数据库由主站统一读写。',
+    abilities: ['添加节点并生成独立部署配置', '自动响应选路或按优先级分发', '检查缓存、同步进度与节点健康'],
+    steps: ['保存主站 HTTPS 地址', '添加节点并在第二台服务器启动 edge 模式', '启用分发，检查同步和实际下载'],
   },
   authors: {
     title: '作者许可',
@@ -4923,7 +4997,7 @@ const PAGE_LABELS = {
   pending: 'Review queue',
   comments: 'Comments',
   community: 'Reports & appeals',
-  mirrors: 'Mirror health',
+  mirrors: 'Distributed delivery',
   authors: 'Author licenses',
   themes: 'Theme preview',
   upload: 'Upload theme',
@@ -4944,7 +5018,7 @@ const PAGE_TITLES = {
   pending: '待审核投稿',
   comments: '评论管理',
   community: '举报与申诉',
-  mirrors: '镜像健康',
+  mirrors: '分布式分发',
   authors: '作者许可',
   themes: '主题预览',
   upload: '上传主题',
@@ -4965,7 +5039,7 @@ const PAGE_LEADS = {
   pending: '检查投稿预览、作者信息与包内容，通过后立即写入 catalog。',
   comments: '查看所有主题留言与私密留言，删除单条、按主题清理或设置自动清理天数。',
   community: '审核主题举报与作者申诉，保存处理理由。',
-  mirrors: '检测镜像可达性与响应延迟。',
+  mirrors: '自建 CDN、主题同步与节点管理。',
   authors: '维护可信作者指纹与自动发布许可。',
   themes: '浏览已发布主题，检查预览图、截图和下载信息；预览页只读。',
   upload: '从主题包或当前设备预设创建投稿，并在发布前校验内容。',
@@ -5120,7 +5194,6 @@ $('pendingSearch').addEventListener('input', event => {
   pendingQuery = event.target.value;
   renderPendingList();
 });
-$('tokenInput').addEventListener('input', updateStrength);
 $('newPassword').addEventListener('input', updatePasswordStrength);
 document.querySelectorAll('[data-toggle-password]').forEach(button => {
   const input = $(button.dataset.togglePassword);
@@ -5133,37 +5206,6 @@ document.querySelectorAll('[data-toggle-password]').forEach(button => {
   const el = $(id);
   if (el) el.addEventListener('click', logout);
 });
-$('toggleToken').addEventListener('click', () => {
-  tokenVisible = !tokenVisible;
-  $('tokenInput').type = tokenVisible ? 'text' : 'password';
-});
-$('copyToken').addEventListener('click', () => copyText($('tokenInput').value, '令牌已复制'));
-$('generateToken').addEventListener('click', async () => {
-  try {
-    const data = await api('/token/generate', { method: 'POST', body: '{}' });
-    $('tokenInput').value = data.token;
-    updateStrength();
-    toast('已生成新令牌，点击保存使其生效');
-  } catch (error) {
-    toast('生成失败：' + error.message, 'bad');
-  }
-});
-$('saveToken').addEventListener('click', async () => {
-  const token = $('tokenInput').value.trim();
-  if (!/^[A-Za-z0-9._~-]{16,128}$/.test(token)) {
-    toast('令牌格式不正确', 'bad');
-    return;
-  }
-  if (!confirm('修改主令牌后，现有客户端需要更新令牌才能继续访问。确认保存？')) return;
-  try {
-    const data = await api('/token', { method: 'POST', body: JSON.stringify({ token }) });
-    toast(data.message || '令牌已保存');
-    setTimeout(() => refresh(true), 1800);
-  } catch (error) {
-    toast('保存失败：' + error.message, 'bad');
-  }
-});
-
 // Named access tokens: create once, then edit scopes/expiry, toggle, delete.
 let tokenItems = [];
 let editingTokenId = null;
@@ -5174,6 +5216,7 @@ function translatedConfirm(message) {
 
 async function loadTokens() {
   try {
+    await loadCredentials();
     const data = await api('/tokens');
     renderTokens(data);
   } catch (error) {
@@ -5437,7 +5480,7 @@ $('uploadForm').addEventListener('submit', async event => {
       paintTransfer(
         transferUi,
         updateTransferMeter(meter, transferred, overallTotal),
-        ratio >= 1 ? '正在上传预览图…' : '正在上传主题包…',
+        ratio >= 1 ? '正在校验并合并上传分片…' : '正在上传主题包…',
       );
     });
     paintTransfer(
@@ -5455,6 +5498,8 @@ $('uploadForm').addEventListener('submit', async event => {
     const formData = new FormData($('uploadForm'));
     formData.delete('package');
     formData.append('uploadId', uploadId);
+    await window.SukisuDistributedUpload.attachments(formData, { api: API, onUnauthorized: redirectToLogin,
+      onProgress: bytes => paintTransfer(transferUi, updateTransferMeter(meter, packageFile.size + bytes, overallTotal), '正在分流上传图片并校验合并…') });
     const data = await uploadWithProgress(
       API + '/upload-theme',
       formData,
@@ -5462,7 +5507,7 @@ $('uploadForm').addEventListener('submit', async event => {
         const attachmentRatio = total > 0
           ? Math.max(0, Math.min(1, loaded / total))
           : Math.max(0, Math.min(1, ratio));
-        const transferred = packageFile.size + Math.round(attachmentBytes * attachmentRatio);
+        const transferred = overallTotal;
         paintTransfer(
           transferUi,
           updateTransferMeter(meter, transferred, overallTotal),

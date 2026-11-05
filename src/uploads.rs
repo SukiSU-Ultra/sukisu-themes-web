@@ -140,6 +140,9 @@ pub async fn parse_multipart(mut multipart: Multipart) -> Result<UploadForm, Str
     let mut min_manager_version = String::new();
     let mut changelog = String::new();
     let mut upload_id: Option<String> = None;
+    let mut preview_upload_id: Option<String> = None;
+    let mut avatar_upload_id: Option<String> = None;
+    let mut screenshot_upload_ids = Vec::new();
     let mut package: Option<FilePart> = None;
     let mut preview: Option<FilePart> = None;
     let mut avatar: Option<FilePart> = None;
@@ -225,6 +228,14 @@ pub async fn parse_multipart(mut multipart: Multipart) -> Result<UploadForm, Str
                     "minManagerVersion" => min_manager_version = value,
                     "changelog" => changelog = value,
                     "uploadId" => upload_id = Some(value.trim().to_string()),
+                    "previewUploadId" => preview_upload_id = Some(value.trim().to_string()),
+                    "avatarUploadId" => avatar_upload_id = Some(value.trim().to_string()),
+                    "screenshotUploadId" => {
+                        if screenshot_upload_ids.len() >= MAX_SCREENSHOTS {
+                            return Err("最多上传 6 张截图".into());
+                        }
+                        screenshot_upload_ids.push(value.trim().to_string());
+                    }
                     _ => {}
                 }
             }
@@ -241,7 +252,15 @@ pub async fn parse_multipart(mut multipart: Multipart) -> Result<UploadForm, Str
         },
         None => return Err("package 文件不能为空".to_string()),
     };
-    let preview = preview.ok_or_else(|| "preview 文件不能为空".to_string())?;
+    let preview = match preview {
+        Some(file) => file,
+        None if preview_upload_id.is_some() => FilePart {
+            filename: "preview.png".into(),
+            ext: ".png".into(),
+            data: Vec::new(),
+        },
+        None => return Err("preview 文件不能为空".into()),
+    };
     Ok(UploadForm {
         id,
         version,
@@ -256,6 +275,9 @@ pub async fn parse_multipart(mut multipart: Multipart) -> Result<UploadForm, Str
         min_manager_version,
         changelog,
         upload_id,
+        preview_upload_id,
+        avatar_upload_id,
+        screenshot_upload_ids,
         package,
         preview,
         avatar,

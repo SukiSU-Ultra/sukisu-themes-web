@@ -185,11 +185,10 @@ impl MonitorRuntime {
         let (tx, rx) = mpsc::channel(512);
         let total = db
             .call(|conn| {
-                let count: i64 = conn.query_row(
-                    "SELECT COUNT(*) FROM audit.api_request_logs",
-                    [],
-                    |row| row.get(0),
-                )?;
+                let count: i64 =
+                    conn.query_row("SELECT COUNT(*) FROM audit.api_request_logs", [], |row| {
+                        row.get(0)
+                    })?;
                 Ok(count)
             })
             .await
@@ -368,11 +367,10 @@ impl MonitorRuntime {
         let db = self.db.clone();
         if let Ok(count) = db
             .call(|conn| {
-                let count: i64 = conn.query_row(
-                    "SELECT COUNT(*) FROM audit.api_request_logs",
-                    [],
-                    |row| row.get(0),
-                )?;
+                let count: i64 =
+                    conn.query_row("SELECT COUNT(*) FROM audit.api_request_logs", [], |row| {
+                        row.get(0)
+                    })?;
                 Ok(count)
             })
             .await
@@ -498,11 +496,10 @@ impl MonitorRuntime {
         let retention = self.retention;
         self.db
             .call(move |conn| {
-                let count: i64 = conn.query_row(
-                    "SELECT COUNT(*) FROM audit.api_request_logs",
-                    [],
-                    |row| row.get(0),
-                )?;
+                let count: i64 =
+                    conn.query_row("SELECT COUNT(*) FROM audit.api_request_logs", [], |row| {
+                        row.get(0)
+                    })?;
                 if count <= retention {
                     return Ok(None);
                 }
@@ -637,7 +634,10 @@ impl Connection {
                         .ok(),
                 ),
             );
-            map.insert("requestContentType".into(), json!(self.request_content_type));
+            map.insert(
+                "requestContentType".into(),
+                json!(self.request_content_type),
+            );
             map.insert("requestBody".into(), request_body);
             map.insert("responseBody".into(), response_body);
             map.insert("sessions".into(), json!(self.tokens.len()));
@@ -928,11 +928,7 @@ impl Drop for MonitoredBody {
 
 /// Wraps a response body so an abort signal interrupts it even while the
 /// underlying stream is blocked on a slow client (large theme downloads).
-fn monitored_body(
-    body: Body,
-    connection: Arc<Connection>,
-    monitor: Arc<MonitorRuntime>,
-) -> Body {
+fn monitored_body(body: Body, connection: Arc<Connection>, monitor: Arc<MonitorRuntime>) -> Body {
     let stream_connection = Arc::clone(&connection);
     let stream_monitor = Arc::clone(&monitor);
     let inner = futures::stream::unfold(body.into_data_stream(), move |mut inner| {
@@ -941,12 +937,7 @@ fn monitored_body(
         async move {
             let mut abort_rx = connection.abort_tx.subscribe();
             if connection.is_aborted() {
-                connection.complete(
-                    &monitor,
-                    None,
-                    true,
-                    Some("管理员强制断开连接".to_string()),
-                );
+                connection.complete(&monitor, None, true, Some("管理员强制断开连接".to_string()));
                 return None;
             }
             tokio::select! {
@@ -1016,6 +1007,25 @@ impl Identity {
 }
 
 fn is_monitored_path(path: &str) -> bool {
+    if path.starts_with("/client/")
+        || path.starts_with("/_site/")
+        || path.starts_with("/account/api/access")
+        || path.starts_with("/api/client-credentials")
+        || path.starts_with("/admin/api/client-credentials")
+        || path.starts_with("/api/sites")
+        || path.starts_with("/admin/api/sites")
+    {
+        return false;
+    }
+    // Upload status responses contain short-lived edge capabilities.
+    if path.starts_with("/distribution/") || path.starts_with("/api/uploads/")
+        || path.starts_with("/admin/api/uploads/") || path.starts_with("/account/api/uploads/") {
+        return false;
+    }
+    // One-time node credentials must not be persisted in request/response captures.
+    if path.starts_with("/admin/api/distribution") || path.starts_with("/api/distribution") {
+        return false;
+    }
     if path.starts_with("/admin/api/monitor") || path.starts_with("/api/monitor") {
         return false;
     }
@@ -1055,6 +1065,14 @@ fn headers_to_json(headers: &HeaderMap) -> String {
     let mut map = Map::new();
     for (name, value) in headers.iter() {
         let key = name.as_str().to_string();
+        if value
+            .to_str()
+            .is_ok_and(|s| s.starts_with("sa_") || s.starts_with("sr_"))
+            || matches!(key.as_str(), "x-sukisu-site-key" | "x-sukisu-site-internal")
+        {
+            map.insert(key, Value::String("[redacted]".into()));
+            continue;
+        }
         let text = value
             .to_str()
             .map(str::to_string)
@@ -1171,9 +1189,8 @@ async fn identify(state: &AppState, headers: &HeaderMap) -> Identity {
     }
     let provided = header_text(headers, crate::config::TOKEN_HEADER);
     if !provided.is_empty() {
-        let master = state.master_token();
-        let display_name = if constant_time_eq(&master, &provided) {
-            Some("主令牌".to_string())
+        let display_name = if provided.starts_with("sa_") {
+            Some("设备只读凭证".to_string())
         } else {
             state.monitor.theme_token_name(&provided).await
         };
@@ -1264,11 +1281,7 @@ pub async fn monitor(
             request_content_type,
             Arc::clone(&capture_budget),
         )),
-        response_capture: Mutex::new(BodyCapture::new(
-            body_limit,
-            String::new(),
-            capture_budget,
-        )),
+        response_capture: Mutex::new(BodyCapture::new(body_limit, String::new(), capture_budget)),
         response_status: AtomicU16::new(0),
         response_headers: Mutex::new("{}".to_string()),
         started_at: crate::util::now_iso(),
@@ -1362,8 +1375,6 @@ fn admin_function<'a>(method: &str, path: &str) -> Option<&'a str> {
         ("GET", "/storage") => "读取存储信息",
         ("GET", "/storage/job") => "读取存储任务",
         ("POST", "/upload-theme") => "上传主题",
-        ("POST", "/token") => "保存主令牌",
-        ("POST", "/token/generate") => "生成访问令牌",
         ("POST", "/password") => "修改管理员密码",
         ("POST", "/delete-theme") => "删除主题",
         ("POST", "/approve") => "批准主题投稿",
@@ -1419,9 +1430,7 @@ fn admin_function<'a>(method: &str, path: &str) -> Option<&'a str> {
         ("POST", "/author-requests/{id}/approve") => "批准作者申请",
         ("POST", "/author-requests/{id}/reject") => "拒绝作者申请",
         _ if path.starts_with("/users/") => user_function(method, path)?,
-        _ if path.starts_with("/author-requests/") && path.ends_with("/approve") => {
-            "批准作者申请"
-        }
+        _ if path.starts_with("/author-requests/") && path.ends_with("/approve") => "批准作者申请",
         _ if path.starts_with("/author-requests/") && path.ends_with("/reject") => "拒绝作者申请",
         _ if path.starts_with("/uploads/") && method == "GET" => "读取上传任务",
         _ if path.starts_with("/uploads/") && method == "DELETE" => "取消上传任务",
@@ -1888,7 +1897,10 @@ pub fn router() -> Router<AppState> {
         .route("/monitor/logs/export", get(export_logs))
         .route("/monitor/logs/batch-delete", post(delete_logs_handler))
         .route("/monitor/logs/clear", post(clear_logs_handler))
-        .route("/monitor/logs/connection/{id}", get(log_detail_by_connection))
+        .route(
+            "/monitor/logs/connection/{id}",
+            get(log_detail_by_connection),
+        )
         .route("/monitor/logs/{id}", get(log_detail))
 }
 
@@ -1981,7 +1993,10 @@ async fn list_logs(
     })))
 }
 
-async fn log_detail(State(state): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
+async fn log_detail(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
     let id = id
         .parse::<i64>()
         .map_err(|_| ApiError::bad("无效的日志 ID"))?;
@@ -2175,6 +2190,20 @@ mod tests {
             "/logo.svg",
             "/admin/api/monitor/live",
             "/api/monitor/logs",
+            "/admin/api/distribution/nodes",
+            "/api/distribution/nodes/edge/rotate",
+            "/distribution/manifest",
+            "/api/uploads/init",
+            "/account/api/uploads/abc/complete",
+            "/admin/api/uploads/abc",
+            "/client/access",
+            "/client/refresh",
+            "/account/api/access",
+            "/account/api/access/revoke",
+            "/admin/api/client-credentials/revoke",
+            "/api/sites/bootstrap",
+            "/admin/api/sites/transfer",
+            "/_site/activate",
         ] {
             assert!(!is_monitored_path(path), "{path}");
         }
@@ -2191,13 +2220,13 @@ mod tests {
             function_name("GET", "/account/api/themes/abc/download"),
             "下载主题"
         );
-        assert_eq!(function_name("POST", "/admin/api/users/u1/disable"), "禁用账号");
+        assert_eq!(
+            function_name("POST", "/admin/api/users/u1/disable"),
+            "禁用账号"
+        );
         assert_eq!(function_name("POST", "/submit"), "提交主题投稿");
         assert_eq!(function_name("GET", "/catalog.json"), "获取主题目录");
-        assert_eq!(
-            function_name("GET", "/themes/abc-v1.sukisu"),
-            "下载主题包"
-        );
+        assert_eq!(function_name("GET", "/themes/abc-v1.sukisu"), "下载主题包");
         assert_eq!(function_name("GET", "/previews/abc.webp"), "获取预览图");
         assert_eq!(function_name("GET", "/screenshots/abc.webp"), "获取截图");
         assert_eq!(function_name("GET", "/avatars/abc.webp"), "获取头像");
@@ -2206,7 +2235,7 @@ mod tests {
     }
 
     #[test]
-    fn master_token_comparison_is_exact() {
+    fn secret_comparison_is_exact() {
         assert!(constant_time_eq("secret", "secret"));
         assert!(!constant_time_eq("secret", "secreT"));
         assert!(!constant_time_eq("secret", "secret2"));
@@ -2250,27 +2279,15 @@ mod tests {
     fn capture_budget_bounds_memory_and_is_released_on_drop() {
         let budget = Arc::new(CaptureBudget::new(8));
         {
-            let mut first = BodyCapture::new(
-                64,
-                "text/plain".to_string(),
-                Arc::clone(&budget),
-            );
+            let mut first = BodyCapture::new(64, "text/plain".to_string(), Arc::clone(&budget));
             first.push(b"123456");
             assert_eq!(budget.used(), 6);
-            let mut second = BodyCapture::new(
-                64,
-                "text/plain".to_string(),
-                Arc::clone(&budget),
-            );
+            let mut second = BodyCapture::new(64, "text/plain".to_string(), Arc::clone(&budget));
             second.push(b"abcdef");
             assert_eq!(second.bytes, b"ab");
             assert!(second.truncated);
             assert_eq!(budget.used(), 8);
-            let mut third = BodyCapture::new(
-                64,
-                "text/plain".to_string(),
-                Arc::clone(&budget),
-            );
+            let mut third = BodyCapture::new(64, "text/plain".to_string(), Arc::clone(&budget));
             third.push(b"z");
             assert!(third.bytes.is_empty());
             assert!(third.truncated);

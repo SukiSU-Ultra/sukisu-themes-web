@@ -5,6 +5,9 @@ Rust 编写的主题镜像、投稿审核和账号系统，提供 Android 管理
 ## 功能
 
 - 主题目录 `catalog.json`；上传前本地校验、服务端校验、图片压缩、SHA-256。
+- 自建 CDN：后台管理家宽节点、响应选路、并发分片上传和磁盘缓存；`site` 模式两边均可访问网站与管理，定期同步私有数据库/主题副本，支持单个写入节点安全交接。配置和边界见 [双机分发文档](docs/DISTRIBUTION.md)。
+- 分布式上传：网页及配套新版管理器将主题包和图片分片并发发送到写入端与边缘，校验合并后统一审核与发布；支持失败换路和缺片补传。带宽取决于客户端上行和节点回传链路。
+- 设备凭证：管理器不再内置共享令牌，每安装独立申请、定期轮换；用户中心可生成和撤销个人凭证，并查看各站点 API。
 - 每个主题记录累计下载量与热度；目录、管理后台和管理器均可按热度/下载量排序。
 - 用户中心「发现主题」随机预览其他作者的主题（每次 5 个），支持「随便看看」换一批和按作者筛选。
 - 自适应主题（格式 v3）：识别亮/暗两套外观，自动添加 `adaptive` 标签，目录、管理后台和用户中心预览同步显示对应标签。
@@ -114,7 +117,7 @@ Rust 编写的主题镜像、投稿审核和账号系统，提供 Android 管理
 管理后台「性能 → 接口监控」（`#monitor`）实时展示正在处理的 API 请求，并自动保存完整连接日志。
 
 - 监控范围：`/api`、`/admin/api`、`/account/api`、`/submit`、`/catalog.json`、`/health`，以及 `/themes/*`、`/previews/*`、`/screenshots/*`、`/avatars/*` 主题资源下载；后台/用户中心 HTML、JS、语言包等静态页面不在其中。
-- 每条连接显示接口/功能、使用者（管理员、登录用户、命名主题令牌或未登录）、来源 IP、开始时间和持续时间；管理器下载会显示令牌名称（主令牌显示为「主令牌」）。
+- 每条连接显示接口/功能、使用者（管理员、登录用户、命名主题令牌、设备只读凭证或未登录）、来源 IP、开始时间和持续时间。
 - 来源 IP 依次取 `X-Forwarded-For`、`X-Real-IP`，最后回退到 TCP 对端地址；显示 `127.0.0.1`/`::1` 说明反向代理没有转发客户端 IP，需要在 Lucky 中启用 `X-Forwarded-For`。不再用 `local` 代表真实请求。
 - 只要请求携带有效登录会话（Cookie、`Authorization: Bearer`、`X-Sukisu-User-Token`、`X-Sukisu-Account-Token`、`X-Sukisu-Session` 或 `X-User-Token`），监控就优先显示账号完整信息：用户 ID、用户名、显示名、角色、账号状态、邮箱验证状态和 IP；即使同时带主题令牌也不会只显示令牌名。
 - 管理器下载主题时，如果客户端只发送主题令牌而不带账号会话，服务端无法知道是哪个登录账号，只能显示令牌名；管理器需要在 `/themes/*` 请求上同时携带账号 token 或用户 Cookie。GitHub OAuth 登录的用户 Cookie 已改为 `/`，确保浏览器下载主题时也会携带。
@@ -282,7 +285,7 @@ target/aarch64-unknown-linux-musl/release/sukisu-theme-web
 | 文件 | 用途 |
 | --- | --- |
 | `/etc/sukisu-theme-web/storage.env` | 存储目录、后端、S3 参数、配额 |
-| `/etc/sukisu-themes/store.env` | `THEME_STORE_TOKEN`（资源访问主令牌，兼容保留；多令牌存 SQLite） |
+| `/etc/sukisu-themes/store.env` | 旧共享令牌文件，已停止参与认证；独立凭证存 SQLite |
 | `/etc/sukisu-theme-web/admin.env` | 可选的预置管理员（`ADMIN_USERNAME` / `ADMIN_PASSWORD_HASH`） |
 | `/etc/sukisu-theme-web/config.env` | `PUBLIC_URL`、`ADMIN_URL` |
 | `/etc/sukisu-theme-web/network.env` | `ADMIN_BIND`、`ADMIN_PORT`、`PUBLIC_DOMAINS` |
@@ -310,20 +313,11 @@ S3_SECRET_KEY=
 S3_PATH_STYLE=true
 ```
 
-### `store.env`
+### 设备凭证与旧 `store.env`
 
-```bash
-openssl rand -hex 32
-```
+不再创建或内置 `THEME_STORE_TOKEN`。旧文件可以留作回退备份，但其值不再获得访问权限；旧管理器需要升级。新版管理器默认凭证留空，独立申请短期只读访问凭证，并在实际请求时轮换 refresh token。用户中心可签发和撤销个人设备凭证，完整 JSON 可导入管理器，后台可撤销全部设备中的指定授权。见 [凭证协议与部署](docs/DISTRIBUTION.md#个人设备凭证与管理器)。
 
-```ini
-# /etc/sukisu-themes/store.env
-THEME_STORE_TOKEN=<上面生成的 64 位十六进制>
-```
-
-管理器配置和应用必须使用同一个令牌。
-
-`THEME_STORE_TOKEN` 是全权限主令牌，用于兼容现有客户端；修改它会要求所有客户端同步更新。管理后台「设置 → 访问令牌」可以为每台管理器或每个镜像签发独立命名令牌：权限分为下载（`/catalog.json` 与资源文件）和上传（`/submit`），支持有效期、启用/停用和单独删除。令牌值只在创建时完整显示一次，数据库里仅存 SHA-256 哈希（随 `account.db` 一起备份）。
+管理后台仍可为受信脚本签发独立命名令牌，按下载/上传作用域、有效期和启用状态校验，数据库只保存哈希。命名脚本令牌不是管理器的默认凭证，也不存在全局主令牌兜底；备份使用配置的分库目录。
 
 ### `network.env` / `config.env`
 
@@ -451,7 +445,7 @@ bash scripts/deploy-binary.sh
 
 ### 2. 写入配置
 
-按上一节创建 `storage.env`、`store.env`、`network.env`、`config.env`；SMTP/GitHub 可选。
+按上一节创建 `storage.env`、`network.env`、`config.env`；SMTP/GitHub 可选。设备凭证通过接口独立申请，不需要 `store.env`。
 
 ### 3. systemd
 
@@ -488,7 +482,7 @@ systemctl enable --now sukisu-theme-web
 
 - Lucky 目标填写 `http://127.0.0.1:8080`；保留原始 Host 和路径，不需要改写 `/admin`。
 - 根路径 `/` 返回 `302` 到 `/account/login`，管理后台在 `/admin/`。
-- `/themes/*`、`/previews/*`、`/screenshots/*`、`/avatars/*`、`/catalog.json` 校验 `X-Sukisu-Theme-Token`（下载权限）；`/submit` 需要上传权限；主令牌两者皆可。`/i18n.js`、`/locales/*` 公开。
+- `/themes/*`、`/previews/*`、`/screenshots/*`、`/avatars/*`、`/catalog.json` 校验独立只读设备凭证或命名下载令牌；`/submit` 需要命名上传权限或相应账号授权。`/i18n.js`、`/locales/*` 公开。
 - 如果 Lucky 与服务不在同一台机器，或需要直接对外，可把 `ADMIN_BIND` 改为 `0.0.0.0` 并自行配置防火墙。
 - 修改端口或监听地址后，管理服务会重启；管理后台「网络」页会自动处理并回滚失败配置。
 

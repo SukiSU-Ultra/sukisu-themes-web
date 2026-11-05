@@ -712,7 +712,11 @@ pub async fn delete_session(db: &Database, token: &str) -> Result<()> {
 pub async fn revoke_user_sessions(db: &Database, user_id: &str) -> Result<()> {
     let user_id = user_id.to_string();
     db.call(move |conn| {
-        conn.execute("DELETE FROM sessions WHERE user_id = ?1", [user_id])?;
+        conn.execute("DELETE FROM sessions WHERE user_id = ?1", [&user_id])?;
+        conn.execute(
+            "UPDATE client_credentials SET revoked=1 WHERE user_id=?1",
+            [&user_id],
+        )?;
         Ok(())
     })
     .await

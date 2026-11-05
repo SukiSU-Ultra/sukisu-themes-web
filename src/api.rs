@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 use axum::body::Body;
 use axum::extract::{
@@ -33,9 +33,7 @@ use crate::jobs::JobManager;
 use crate::storage::{self, AssetStore, ServeBody, ServeError};
 use crate::system;
 use crate::uploads::{self, PublishError};
-use crate::util::{
-    image_extension_allowed, random_hex, valid_author_hash, valid_theme_id, valid_token,
-};
+use crate::util::{image_extension_allowed, valid_author_hash, valid_theme_id};
 
 const EMBEDDED_INDEX_HTML: &str = include_str!("../static/index.html");
 const EMBEDDED_LOGIN_HTML: &str = include_str!("../static/login.html");
@@ -45,6 +43,7 @@ const EMBEDDED_ACCOUNT_DEVICE_HTML: &str = include_str!("../static/account-devic
 const EMBEDDED_ACCOUNT_HTML: &str = include_str!("../static/account.html");
 const EMBEDDED_LOGO_SVG: &[u8] = include_bytes!("../static/logo.svg");
 const EMBEDDED_I18N_JS: &str = include_str!("../static/i18n.js");
+const EMBEDDED_UPLOAD_JS: &str = include_str!("../static/distributed-upload.js");
 const EMBEDDED_APP_CSS: &str = include_str!("../static/app.css");
 const EMBEDDED_LOCALE_EN: &str = include_str!("../static/locales/en.json");
 
@@ -62,13 +61,6 @@ struct MetaIndexCache {
     index: Option<Arc<catalog::MetaIndex>>,
 }
 
-#[derive(Clone, Default)]
-struct TokenCache {
-    mtime: Option<SystemTime>,
-    read_at: Option<Instant>,
-    token: String,
-}
-
 #[derive(Clone)]
 pub struct AppState {
     pub paths: Arc<Paths>,
@@ -84,6 +76,7 @@ pub struct AppState {
     pub sources: Arc<crate::sources::SourcesStore>,
     /// Optional HTTP mirrors used for package redirects.
     pub mirrors: crate::mirrors::MirrorPool,
+    pub distribution: Arc<crate::distribution::Distribution>,
     pub login_failures: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
     /// Site-wide maintenance switch; mirrored into `catalog.json` on every toggle.
     pub maintenance: Arc<AtomicBool>,
@@ -92,7 +85,6 @@ pub struct AppState {
     /// Real-time API usage monitoring and persisted request logs.
     pub monitor: Arc<crate::api_monitor::MonitorRuntime>,
     pub upload_semaphore: Arc<tokio::sync::Semaphore>,
-    token_cache: Arc<RwLock<TokenCache>>,
     named_token_cache: Arc<Mutex<HashMap<String, (bool, Instant)>>>,
     download_totals_cache: Arc<Mutex<Option<(Instant, (u64, u64))>>>,
     usage_cache: Arc<Mutex<Option<(Instant, u64, crate::models::StorageUsage)>>>,
@@ -167,6 +159,8 @@ impl AppState {
         ));
         let monitor = crate::api_monitor::MonitorRuntime::new(db.clone(), &paths).await;
         let upload_concurrency = performance_settings.upload_concurrency.max(1);
+        let distribution =
+            crate::distribution::Distribution::load(&paths, network_settings.outbound_ip_family)?;
         Ok(Self {
             paths,
             settings: Arc::new(settings),
@@ -180,12 +174,12 @@ impl AppState {
             sessions,
             sources,
             mirrors: crate::mirrors::MirrorPool::load(network_settings.outbound_ip_family).await,
+            distribution,
             login_failures: Arc::new(Mutex::new(HashMap::new())),
             maintenance: Arc::new(AtomicBool::new(maintenance)),
             performance,
             monitor,
             upload_semaphore: Arc::new(tokio::sync::Semaphore::new(upload_concurrency)),
-            token_cache: Arc::new(RwLock::new(TokenCache::default())),
             named_token_cache: Arc::new(Mutex::new(HashMap::new())),
             download_totals_cache: Arc::new(Mutex::new(None)),
             usage_cache: Arc::new(Mutex::new(None)),
@@ -202,35 +196,7 @@ impl AppState {
         })
     }
 
-    /// Cached `store.env` master token. The file is re-read when its mtime
-    /// changes or after five seconds, keeping the hot asset path off disk.
-    pub(crate) fn master_token(&self) -> String {
-        let path = &self.paths.token_env;
-        let mtime = std::fs::metadata(path)
-            .and_then(|metadata| metadata.modified())
-            .ok();
-        if let Ok(cache) = self.token_cache.read() {
-            if cache.mtime == mtime
-                && cache
-                    .read_at
-                    .is_some_and(|read_at| read_at.elapsed() < Duration::from_secs(5))
-            {
-                return cache.token.clone();
-            }
-        }
-        let token = read_token(&self.paths);
-        if let Ok(mut cache) = self.token_cache.write() {
-            cache.mtime = mtime;
-            cache.read_at = Some(Instant::now());
-            cache.token = token.clone();
-        }
-        token
-    }
-
     pub(crate) fn invalidate_token_cache(&self) {
-        if let Ok(mut cache) = self.token_cache.write() {
-            cache.read_at = None;
-        }
         if let Ok(mut cache) = self.named_token_cache.lock() {
             cache.clear();
         }
@@ -282,11 +248,7 @@ impl AppState {
     }
 
     pub fn flush_interval(&self) -> Duration {
-        Duration::from_secs(
-            self.performance
-                .flush_interval_secs
-                .load(Ordering::Relaxed),
-        )
+        Duration::from_secs(self.performance.flush_interval_secs.load(Ordering::Relaxed))
     }
 
     /// Count a package download in memory. The background flusher batches
@@ -485,8 +447,6 @@ pub fn router(state: AppState) -> Router {
         .route("/storage", get(storage_get))
         .route("/storage/job", get(storage_job))
         .route("/upload-theme", post(upload_theme))
-        .route("/token", post(set_token))
-        .route("/token/generate", post(generate_token))
         .route("/password", post(set_password))
         .route("/delete-theme", post(delete_theme))
         .route("/approve", post(approve))
@@ -514,6 +474,9 @@ pub fn router(state: AppState) -> Router {
         .merge(crate::theme_tokens::router())
         .merge(crate::api_monitor::router())
         .merge(crate::community::admin_router())
+        .merge(crate::distribution::admin_router())
+        .merge(crate::client_access::admin_router())
+        .merge(crate::site::admin_router())
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard))
         .layer(middleware::from_fn(csrf_guard));
 
@@ -527,6 +490,9 @@ pub fn router(state: AppState) -> Router {
         .nest("/api", api.clone())
         .nest("/admin/api", api)
         .nest("/account/api", account_api)
+        .merge(crate::distribution::origin_router())
+        .merge(crate::client_access::public_router())
+        .route("/_site/drain", post(crate::site::drain_child))
         .route("/submit", post(submit))
         .route("/health", get(health))
         .route("/healthz", get(health))
@@ -565,6 +531,7 @@ pub fn router(state: AppState) -> Router {
             crate::performance::live_request_metrics,
         ))
         .layer(middleware::from_fn(request_context))
+        .layer(middleware::from_fn(crate::site::child_guard))
         .with_state(state)
 }
 
@@ -602,8 +569,22 @@ async fn store_token_guard(
 
 /// CORS and sniffing headers that Caddy used to add in front of the service.
 async fn public_headers(request: Request, next: Next) -> Response {
+    let distribution_control = request.uri().path().starts_with("/client/")
+        || request.uri().path().contains("/access")
+        || request.uri().path().contains("/client-credentials")
+        || request.uri().path().contains("/sites")
+        || request.uri().path().starts_with("/distribution/")
+        || request.uri().path().starts_with("/api/uploads/")
+        || request.uri().path().starts_with("/admin/api/uploads/")
+        || request.uri().path().starts_with("/account/api/uploads/")
+        || request.uri().path().starts_with("/api/distribution")
+        || request.uri().path().starts_with("/admin/api/distribution");
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
+    if distribution_control {
+        headers.insert("Cache-Control", HeaderValue::from_static("no-store"));
+        headers.insert("Referrer-Policy", HeaderValue::from_static("no-referrer"));
+    }
     headers.insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
     headers.insert(
         "X-Content-Type-Options",
@@ -662,6 +643,7 @@ fn maintenance_path_exempt(path: &str) -> bool {
             | "/healthz"
             | "/catalog.json"
             | "/i18n.js"
+            | "/distributed-upload.js"
             | "/app.css"
             | "/logo.svg"
             | "/favicon.ico"
@@ -674,6 +656,7 @@ fn maintenance_path_exempt(path: &str) -> bool {
             | "/account/forgot"
             | "/account/reset"
     ) || path.starts_with("/admin")
+        || path.starts_with("/distribution/")
         || path.starts_with("/api")
         || path.starts_with("/locales/")
 }
@@ -1093,28 +1076,20 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
         .unwrap_or_else(|_| ApiError::internal("logout response").into_response())
 }
 
-pub(crate) fn read_token(paths: &Paths) -> String {
-    read_env(&paths.token_env)
-        .get("THEME_STORE_TOKEN")
-        .cloned()
-        .unwrap_or_default()
-}
-
 pub(crate) fn token_matches(expected: &str, provided: &str) -> bool {
     expected.len() == provided.len() && expected.as_bytes().ct_eq(provided.as_bytes()).into()
 }
 
-/// Validates an `X-Sukisu-Theme-Token` value: the `store.env` master token
-/// keeps full access for compatibility, additional named tokens live in the
-/// `theme_tokens` table and are checked against `scope`.
+/// Validates independent device credentials and explicitly scoped named tokens.
+/// Legacy shared store.env secrets no longer authorize resource requests.
 pub(crate) async fn check_theme_token(state: &AppState, provided: &str, scope: &str) -> bool {
     let provided = provided.trim();
     if provided.is_empty() {
         return false;
     }
-    let master = state.master_token();
-    if !master.is_empty() && token_matches(&master, provided) {
-        return true;
+    if provided.starts_with("sa_") {
+        return scope == crate::theme_tokens::SCOPE_READ
+            && crate::client_access::validate(&state.db, provided).await;
     }
     let cache_key = format!("{scope}:{}", crate::accounts::hash_token(provided));
     if let Ok(cache) = state.named_token_cache.lock() {
@@ -1187,7 +1162,6 @@ fn service_state_json(unit: &str, state: &AppState) -> Value {
 }
 
 async fn status(State(state): State<AppState>) -> Json<Value> {
-    let token = state.master_token();
     let config = read_env(&state.paths.admin_config);
     let public = config
         .get("PUBLIC_URL")
@@ -1220,7 +1194,8 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
             ("批准主题", "POST", "/approve"),
             ("拒绝主题", "POST", "/reject"),
             ("预览图", "GET", "/preview?path=previews/…"),
-            ("修改主令牌", "POST", "/token"),
+            ("设备凭证列表", "GET", "/client-credentials"),
+            ("站点状态", "GET", "/sites"),
             ("上传主题", "POST", "/upload-theme"),
             ("删除主题", "POST", "/delete-theme"),
             ("测试目录", "POST", "/test-catalog"),
@@ -1269,7 +1244,7 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
     let usage = state.storage_usage_cached().await;
     let storage_value = serde_json::to_value(&usage).unwrap_or_else(|_| json!({}));
     let sync_timer = system::service_state("sukisu-themes-sync.timer").await;
-    let admin_service = system::service_state("sukisu-theme-web.service").await;
+    let admin_service = system::service_state(system::service_unit()).await;
     let (downloads_total, recent_downloads) = state.download_totals_cached().await;
     let theme_stats = state.theme_stats();
     let mut ranked = catalog::admin_themes(&state.paths, theme_stats.as_ref()).await;
@@ -1299,8 +1274,9 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
         .await
         .unwrap_or(0);
     Json(json!({
-        "tokenSet": !token.is_empty() || token_count > 0,
-        "masterTokenSet": !token.is_empty(),
+        "tokenSet": true,
+        "masterTokenSet": false,
+        "clientAccess": true,
         "tokenHeader": TOKEN_HEADER,
         "tokensCount": token_count,
         "formatVersion": CURRENT_FORMAT_VERSION,
@@ -1327,6 +1303,7 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
         },
         "syncTimer": sync_timer,
         "adminService": admin_service,
+        "serviceUnit": system::service_unit(),
         "publicUrl": config.get("PUBLIC_URL").cloned().unwrap_or_default(),
         "adminUrl": config.get("ADMIN_URL").cloned().unwrap_or_default(),
         "adminApiBase": admin_api,
@@ -1732,6 +1709,9 @@ async fn preview(
             .body(Body::from(body))
             .map_err(ApiError::internal);
     }
+    if let Some(response) = crate::distribution::redirect_asset(&state, &relative, false).await? {
+        return Ok(response);
+    }
     let object = state
         .store
         .serve(&relative, None)
@@ -1748,6 +1728,7 @@ async fn preview(
 async fn asset(
     State(state): State<AppState>,
     OriginalUri(uri): OriginalUri,
+    method: Method,
     headers: HeaderMap,
 ) -> ApiResult<Response> {
     let path = uri.path().trim_start_matches('/').to_string();
@@ -1760,12 +1741,21 @@ async fn asset(
         .query()
         .map(|query| query.split('&').any(|part| part == "sukisu_mirror=1"))
         .unwrap_or(false);
+    if range.is_none() && !mirrored {
+        if let Some(response) =
+            crate::distribution::redirect_asset(&state, &path, method == Method::GET).await?
+        {
+            return Ok(response);
+        }
+    }
     // Fresh package downloads may be offloaded to a configured HTTP mirror.
     // Resumed Range requests stay local so a partial file never mixes origins.
     if range.is_none() && !mirrored {
         if let Some(theme_id) = catalog::theme_id_from_package_path(&path) {
             if let Some(location) = state.mirrors.pick(&path, &headers).await {
-                state.record_theme_download(&theme_id);
+                if method == Method::GET {
+                    state.record_theme_download(&theme_id);
+                }
                 let location =
                     axum::http::HeaderValue::from_str(&location).map_err(ApiError::internal)?;
                 return Ok(Response::builder()
@@ -1796,7 +1786,8 @@ async fn asset(
     if let Some(theme_id) = catalog::theme_id_from_package_path(&path) {
         // A redirected (or self-mirror) request was already counted when the
         // 302 was issued; don't count it again when serving locally.
-        let counts = !mirrored
+        let counts = method == Method::GET
+            && !mirrored
             && range
                 .map(|value| value.trim_start().starts_with("bytes=0-"))
                 .unwrap_or(true);
@@ -1861,7 +1852,7 @@ pub(crate) fn serve_object_response(
         .map_err(|error| ApiError::internal(error))
 }
 
-fn embedded_static(relative: &str) -> Option<(&'static [u8], &'static str)> {
+pub(crate) fn embedded_static(relative: &str) -> Option<(&'static [u8], &'static str)> {
     match relative {
         "index.html" => Some((EMBEDDED_INDEX_HTML.as_bytes(), "text/html; charset=utf-8")),
         "login.html" => Some((EMBEDDED_LOGIN_HTML.as_bytes(), "text/html; charset=utf-8")),
@@ -1878,6 +1869,10 @@ fn embedded_static(relative: &str) -> Option<(&'static [u8], &'static str)> {
         "logo.svg" => Some((EMBEDDED_LOGO_SVG, "image/svg+xml")),
         "i18n.js" => Some((
             EMBEDDED_I18N_JS.as_bytes(),
+            "application/javascript; charset=utf-8",
+        )),
+        "distributed-upload.js" => Some((
+            EMBEDDED_UPLOAD_JS.as_bytes(),
             "application/javascript; charset=utf-8",
         )),
         "app.css" => Some((EMBEDDED_APP_CSS.as_bytes(), "text/css; charset=utf-8")),
@@ -1905,6 +1900,7 @@ fn embedded_etags() -> &'static HashMap<&'static str, String> {
             "account-device.html",
             "logo.svg",
             "i18n.js",
+            "distributed-upload.js",
             "app.css",
             "locales/en.json",
         ];
@@ -2174,7 +2170,15 @@ async fn submit(
         )
         .await?;
         state.refresh_withdrawn_assets();
-        if let Err(error) = crate::community::record_release(&state.db, &author_hash, &theme_id, &release_name, release_version).await {
+        if let Err(error) = crate::community::record_release(
+            &state.db,
+            &author_hash,
+            &theme_id,
+            &release_name,
+            release_version,
+        )
+        .await
+        {
             tracing::warn!(?error, "failed to record theme update");
         }
         let _ = crate::authors::touch_author(&state.db, &author_hash).await;
@@ -2243,12 +2247,7 @@ async fn upload_theme(
     let mut form = uploads::parse_multipart(multipart)
         .await
         .map_err(ApiError::bad)?;
-    let upload_id = form.upload_id.clone();
-    if form.package.data.is_empty() {
-        if let Some(id) = upload_id.as_deref() {
-            form.package = crate::resumable::assemble(&state, &actor.user_id, id).await?;
-        }
-    }
+    let upload_ids = crate::resumable::resolve_form(&state, &actor.user_id, &mut form).await?;
     let requested_id = form.id.trim().to_string();
     let owner_hash_value = form
         .owner_hash
@@ -2318,11 +2317,19 @@ async fn upload_theme(
     .await?;
     state.refresh_withdrawn_assets();
     if let Some(hash) = publish_owner.as_deref() {
-        if let Err(error) = crate::community::record_release(&state.db, hash, &theme_id, &release_name, release_version).await {
+        if let Err(error) = crate::community::record_release(
+            &state.db,
+            hash,
+            &theme_id,
+            &release_name,
+            release_version,
+        )
+        .await
+        {
             tracing::warn!(?error, "failed to record theme update");
         }
     }
-    if let Some(id) = upload_id.as_deref() {
+    for id in &upload_ids {
         crate::resumable::remove_session(&state, &actor.user_id, id).await;
     }
     Ok(Json(json!({"ok": true, "id": theme_id, "themes": themes.len()})).into_response())
@@ -2704,53 +2711,12 @@ async fn sync_catalog(State(state): State<AppState>) -> ApiResult<Response> {
 }
 
 async fn test_catalog(State(state): State<AppState>) -> ApiResult<Response> {
-    let token = state.master_token();
-    if token.is_empty() {
-        // Issued DB tokens are stored hashed, so the self-request can only
-        // authenticate with the plaintext master token.
-        return Err(ApiError::bad("未设置主令牌，无法通过 HTTP 自测目录接口"));
-    }
-    let response = state
-        .http
-        .get("http://127.0.0.1:8080/catalog.json")
-        .header(TOKEN_HEADER, token)
-        .send()
-        .await;
-    match response {
-        Ok(response) => {
-            let status = response.status().as_u16();
-            let data: Value = response.json().await.unwrap_or_else(|_| json!({}));
-            let themes = data
-                .get("themes")
-                .and_then(|value| value.as_array())
-                .map(|value| value.len())
-                .unwrap_or(0);
-            Ok(Json(json!({"ok": true, "status": status, "themes": themes})).into_response())
-        }
-        Err(error) => Err(ApiError::new(
-            StatusCode::BAD_GATEWAY,
-            format!("目录接口不可用：{error}"),
-        )),
-    }
-}
-
-async fn set_token(State(state): State<AppState>, body: Bytes) -> ApiResult<Response> {
-    let value = json_body(body).await?;
-    let token = value
-        .get("token")
-        .and_then(|value| value.as_str())
-        .unwrap_or("")
-        .trim();
-    if !valid_token(token) {
-        return Err(ApiError::bad("token must be 16-128 safe characters"));
-    }
-    set_env_key(&state.paths.token_env, "THEME_STORE_TOKEN", token).map_err(ApiError::internal)?;
-    state.invalidate_token_cache();
-    Ok(Json(json!({"ok": true, "message": "令牌已保存"})).into_response())
-}
-
-async fn generate_token(State(_state): State<AppState>) -> Json<Value> {
-    Json(json!({"ok": true, "token": random_hex(32)}))
+    let catalog =
+        catalog::read_catalog(&state.paths).ok_or_else(|| ApiError::bad("目录不存在或无法解析"))?;
+    Ok(
+        Json(json!({"ok":true,"status":200,"themes":catalog.themes.len(),"check":"local-catalog"}))
+            .into_response(),
+    )
 }
 
 async fn set_password(
@@ -3378,7 +3344,13 @@ mod route_tests {
         ] {
             assert!(store_path_is_protected(path), "{path}");
         }
-        for path in ["/", "/i18n.js", "/locales/en.json", "/account/login", "/health"] {
+        for path in [
+            "/",
+            "/i18n.js",
+            "/locales/en.json",
+            "/account/login",
+            "/health",
+        ] {
             assert!(!store_path_is_protected(path), "{path}");
         }
     }

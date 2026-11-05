@@ -114,6 +114,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/submit", post(submit_theme))
         .merge(crate::community::account_router())
         .merge(crate::resumable::router())
+        .merge(crate::client_access::account_router())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             account_csrf_guard,
@@ -649,7 +650,16 @@ async fn revoke_session(
     if !revoked {
         return Err(ApiError::bad("会话不存在或已失效"));
     }
-    if let Err(error) = accounts::audit(&state.db, Some(&session.user_id), "session.revoke", Some("session"), None, None).await {
+    if let Err(error) = accounts::audit(
+        &state.db,
+        Some(&session.user_id),
+        "session.revoke",
+        Some("session"),
+        None,
+        None,
+    )
+    .await
+    {
         tracing::warn!(?error, "failed to audit session revocation");
     }
     Ok(Json(json!({"ok": true})))
@@ -2492,6 +2502,8 @@ async fn discover_themes(
 async fn download_published_theme(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    method: axum::http::Method,
+    headers: HeaderMap,
 ) -> ApiResult<Response> {
     if !valid_theme_id(&id) {
         return Err(ApiError::bad("无效的主题 ID"));
@@ -2503,12 +2515,25 @@ async fn download_published_theme(
     if meta.withdrawn_at.is_some() {
         return Err(ApiError::not_found("主题不存在"));
     }
+    if !headers.contains_key("Range") {
+        if let Some(response) = crate::distribution::redirect_asset(
+            &state,
+            &meta.package,
+            method == axum::http::Method::GET,
+        )
+        .await?
+        {
+            return Ok(response);
+        }
+    }
     let object = state
         .store
         .serve(&meta.package, None)
         .await
         .map_err(|_| ApiError::not_found("主题包不存在"))?;
-    state.record_theme_download(&meta.id);
+    if method == axum::http::Method::GET {
+        state.record_theme_download(&meta.id);
+    }
     let filename = format!("{}-v{}.sukisu", meta.id, meta.version);
     let mut response = crate::api::serve_object_response(
         object,
@@ -2610,6 +2635,8 @@ async fn download_my_theme(
     State(state): State<AppState>,
     Extension(session): Extension<SessionInfo>,
     Path(id): Path<String>,
+    method: axum::http::Method,
+    headers: HeaderMap,
 ) -> ApiResult<Response> {
     if !crate::util::valid_theme_id(&id) {
         return Err(ApiError::bad("无效的主题 ID"));
@@ -2621,12 +2648,25 @@ async fn download_my_theme(
     if !theme_owned_by_user(&state, &session, meta).await? {
         return Err(ApiError::forbidden("无权下载该主题"));
     }
+    if !headers.contains_key("Range") {
+        if let Some(response) = crate::distribution::redirect_asset(
+            &state,
+            &meta.package,
+            method == axum::http::Method::GET,
+        )
+        .await?
+        {
+            return Ok(response);
+        }
+    }
     let object = state
         .store
         .serve(&meta.package, None)
         .await
         .map_err(|_| ApiError::not_found("主题包不存在"))?;
-    state.record_theme_download(&meta.id);
+    if method == axum::http::Method::GET {
+        state.record_theme_download(&meta.id);
+    }
     let filename = format!("{}-v{}.sukisu", meta.id, meta.version);
     let mut response = crate::api::serve_object_response(
         object,
@@ -3014,6 +3054,9 @@ async fn account_preview(
             .body(axum::body::Body::from(data))
             .map_err(ApiError::internal);
     }
+    if let Some(response) = crate::distribution::redirect_asset(&state, &path, false).await? {
+        return Ok(response);
+    }
     let object = state
         .store
         .serve(&path, None)
@@ -3242,12 +3285,7 @@ async fn submit_theme(
     let mut form = crate::uploads::parse_multipart(multipart)
         .await
         .map_err(ApiError::bad)?;
-    let upload_id = form.upload_id.clone();
-    if form.package.data.is_empty() {
-        if let Some(id) = upload_id.as_deref() {
-            form.package = crate::resumable::assemble(&state, &session.user_id, id).await?;
-        }
-    }
+    let upload_ids = crate::resumable::resolve_form(&state, &session.user_id, &mut form).await?;
     let author_id = form.author_id.clone();
     let author_name = form.author.clone();
     let requested_id = form.id.trim().to_string();
@@ -3356,7 +3394,15 @@ async fn submit_theme(
         )
         .await?;
         state.refresh_withdrawn_assets();
-        if let Err(error) = crate::community::record_release(&state.db, &author_hash, &theme_id, &prepared_name, prepared_version).await {
+        if let Err(error) = crate::community::record_release(
+            &state.db,
+            &author_hash,
+            &theme_id,
+            &prepared_name,
+            prepared_version,
+        )
+        .await
+        {
             tracing::warn!(?error, "failed to record theme update");
         }
         let _ = authors::touch_author(&state.db, &author_hash).await;
@@ -3383,7 +3429,7 @@ async fn submit_theme(
         )
         .await
         .ok();
-        if let Some(id) = upload_id.as_deref() {
+        for id in &upload_ids {
             crate::resumable::remove_session(&state, &session.user_id, id).await;
         }
         return Ok(Json(json!({
@@ -3424,7 +3470,7 @@ async fn submit_theme(
     )
     .await
     .map_err(ApiError::internal)?;
-    if let Some(id) = upload_id.as_deref() {
+    for id in &upload_ids {
         crate::resumable::remove_session(&state, &session.user_id, id).await;
     }
     Ok((

@@ -649,11 +649,7 @@ pub fn ensure_split_schema(paths: &crate::config::Paths) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn table_columns(
-    conn: &Connection,
-    schema: &str,
-    table: &str,
-) -> anyhow::Result<Vec<String>> {
+fn table_columns(conn: &Connection, schema: &str, table: &str) -> anyhow::Result<Vec<String>> {
     let escaped = table.replace('\'', "''");
     let mut statement =
         conn.prepare(&format!("PRAGMA {schema}.table_info('{escaped}')"))?;
@@ -692,10 +688,7 @@ pub fn migrate_split(paths: &crate::config::Paths) -> anyhow::Result<MigrationRe
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(
-                &paths.db_dir,
-                std::fs::Permissions::from_mode(0o700),
-            );
+            let _ = std::fs::set_permissions(&paths.db_dir, std::fs::Permissions::from_mode(0o700));
         }
         for (name, kind) in [
             ("account.db", DbKind::Account),
@@ -733,10 +726,7 @@ pub fn migrate_split(paths: &crate::config::Paths) -> anyhow::Result<MigrationRe
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(
-            &paths.db_dir,
-            std::fs::Permissions::from_mode(0o700),
-        );
+        let _ = std::fs::set_permissions(&paths.db_dir, std::fs::Permissions::from_mode(0o700));
     }
 
     let target_account = paths.db_dir.join("account.db");
@@ -853,7 +843,9 @@ pub fn migrate_split(paths: &crate::config::Paths) -> anyhow::Result<MigrationRe
 
     for alias in ["new_account", "authors", "social", "stats", "audit"] {
         let check: String =
-            legacy.query_row(&format!("PRAGMA {alias}.integrity_check"), [], |row| row.get(0))?;
+            legacy.query_row(&format!("PRAGMA {alias}.integrity_check"), [], |row| {
+                row.get(0)
+            })?;
         if check.to_ascii_lowercase() != "ok" {
             anyhow::bail!("{alias} 完整性检查失败: {check}");
         }
@@ -863,11 +855,7 @@ pub fn migrate_split(paths: &crate::config::Paths) -> anyhow::Result<MigrationRe
     }
     drop(legacy);
 
-    crate::config::set_env_key(
-        &paths.admin_config,
-        "THEME_DB_LAYOUT",
-        "split",
-    )?;
+    crate::config::set_env_key(&paths.admin_config, "THEME_DB_LAYOUT", "split")?;
     crate::config::set_env_key(
         &paths.admin_config,
         "THEME_DB_DIR",
@@ -917,6 +905,11 @@ impl Database {
             next: Arc::new(AtomicUsize::new(0)),
         };
         db.initialize().await?;
+        db.call(|c| {
+            c.execute_batch(crate::client_access::SCHEMA)?;
+            Ok(())
+        })
+        .await?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -948,10 +941,7 @@ impl Database {
                 conn.execute_batch(CONNECTION_PRAGMAS)?;
                 for (alias, path) in &attachments {
                     let escaped = path.to_string_lossy().replace('\'', "''");
-                    conn.execute(
-                        &format!("ATTACH DATABASE '{escaped}' AS {alias}"),
-                        [],
-                    )?;
+                    conn.execute(&format!("ATTACH DATABASE '{escaped}' AS {alias}"), [])?;
                     conn.execute_batch(&format!(
                         "PRAGMA {alias}.journal_mode=WAL;
                          PRAGMA {alias}.cache_size=-8000;"
@@ -972,6 +962,11 @@ impl Database {
             use std::os::unix::fs::PermissionsExt;
             let _ = std::fs::set_permissions(main, std::fs::Permissions::from_mode(0o600));
         }
+        db.call(|c| {
+            c.execute_batch(crate::client_access::SCHEMA)?;
+            Ok(())
+        })
+        .await?;
         Ok(db)
     }
 
@@ -1704,7 +1699,9 @@ mod tests {
         ] {
             let conn = Connection::open(path).unwrap();
             let count: i64 = conn
-                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
                 .unwrap();
             assert_eq!(count, expected, "{table}");
         }

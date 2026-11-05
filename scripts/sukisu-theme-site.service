@@ -1,0 +1,28 @@
+[Unit]
+Description=SukiSU complete website node (single transferable writer)
+After=network-online.target
+Wants=network-online.target
+Conflicts=sukisu-theme-web.service
+
+[Service]
+Type=simple
+# Provision this account and grant access to the original seed paths first.
+User=sukisu-site
+Group=sukisu-site
+ExecStart=/opt/sukisu-theme-web/sukisu-theme-web-rs site /etc/sukisu-theme-site/site.json
+Environment=THEME_STATIC_DIR=/opt/sukisu-theme-web/static
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=120
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+# Adjust to match site.json dataDir and ALL initial seed paths before installing.
+ReadWritePaths=/etc/sukisu-theme-site /var/lib/sukisu-theme-site /etc/sukisu-theme-web /var/lib/sukisu-theme-web
+
+[Install]
+WantedBy=multi-user.target

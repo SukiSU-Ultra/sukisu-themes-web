@@ -10,10 +10,13 @@ mod auth;
 mod auth_settings_api;
 mod authors;
 mod catalog;
+mod client_access;
 mod comments;
 mod community;
 mod config;
 mod db;
+mod distribution;
+mod edge;
 mod follows;
 mod images;
 mod jobs;
@@ -28,11 +31,13 @@ mod package;
 mod performance;
 mod performance_api;
 mod resumable;
+mod site;
 mod sources;
 mod sources_api;
 mod storage;
 mod system;
 mod theme_tokens;
+mod upload_ingress;
 mod uploads;
 mod util;
 
@@ -50,6 +55,28 @@ fn main() -> anyhow::Result<()> {
         .with_target(false)
         .init();
 
+    if std::env::args().nth(1).as_deref() == Some("edge") {
+        let file = std::env::args_os()
+            .nth(2)
+            .ok_or_else(|| anyhow::anyhow!("用法: sukisu-theme-web edge <config.json>"))?;
+        return tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()?
+            .block_on(edge::run(std::path::Path::new(&file)));
+    }
+
+    if std::env::args().nth(1).as_deref() == Some("site") {
+        let file = std::env::args_os()
+            .nth(2)
+            .ok_or_else(|| anyhow::anyhow!("用法: sukisu-theme-web site <config.json>"))?;
+        return tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()?
+            .block_on(site::run(std::path::Path::new(&file)));
+    }
+
+    // Keep the lock until the runtime (including background DB tasks) is dropped.
+    let _writer_lock = site::lock_child()?;
     let storage_env = std::env::var("THEME_STORAGE_ENV")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("/etc/sukisu-theme-web/storage.env"));
@@ -76,6 +103,7 @@ fn main() -> anyhow::Result<()> {
 
 async fn run(settings: config::StorageSettings) -> anyhow::Result<()> {
     let state = api::AppState::new(settings).await?;
+    site::watch_child(state.clone());
     resumable::cleanup_stale(&state.paths);
 
     if let Err(error) = accounts::ensure_admin_seed(&state.db, &state.paths).await {
@@ -100,6 +128,9 @@ async fn run(settings: config::StorageSettings) -> anyhow::Result<()> {
         let mut last_flush = std::time::Instant::now();
         loop {
             tick.tick().await;
+            let Some(_background) = site::background().await else {
+                break;
+            };
             if last_flush.elapsed() >= flush_state.flush_interval() {
                 flush_state.flush_downloads().await;
                 last_flush = std::time::Instant::now();
@@ -107,18 +138,37 @@ async fn run(settings: config::StorageSettings) -> anyhow::Result<()> {
         }
     });
     let mirror_state = state.clone();
+    let distribution_state = state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            interval.tick().await;
+            let Some(_background) = site::background().await else {
+                break;
+            };
+            distribution_state.distribution.probe().await;
+        }
+    });
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             interval.tick().await;
+            let Some(_background) = site::background().await else {
+                break;
+            };
             mirror_state.mirrors.reload().await;
         }
     });
     let cleanup_state = state.clone();
     tokio::spawn(async move {
         loop {
-            match catalog::purge_expired_withdrawn(&cleanup_state.store, &cleanup_state.paths).await {
+            let Some(_background) = site::background().await else {
+                break;
+            };
+            match catalog::purge_expired_withdrawn(&cleanup_state.store, &cleanup_state.paths).await
+            {
                 Ok(ids) => {
                     for id in ids {
                         if let Err(error) = community::remove_theme_activity(&cleanup_state.db, &id).await {
@@ -149,6 +199,7 @@ async fn run(settings: config::StorageSettings) -> anyhow::Result<()> {
                 tracing::warn!("author auto-revoke warning: {error:#}");
             }
             cleanup_state.reload_theme_stats();
+            drop(_background);
             tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
         }
     });
@@ -188,13 +239,15 @@ async fn run(settings: config::StorageSettings) -> anyhow::Result<()> {
         }
         _ => {}
     }
-    let app = api::router(state);
+    let app = api::router(state.clone());
     let listener = tokio::net::TcpListener::bind((bind, network.port)).await?;
     tracing::info!("sukisu-theme-web listening on {bind}:{}", network.port);
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(site::shutdown_child())
     .await?;
+    state.flush_downloads().await;
     Ok(())
 }

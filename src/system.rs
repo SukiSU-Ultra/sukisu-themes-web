@@ -86,7 +86,30 @@ pub fn schedule_admin_restart() {
     );
 }
 
+/// The managed site child runs under the site supervisor, which keeps the legacy
+/// unit stopped on purpose. Report the unit that actually runs the process.
+pub fn site_managed() -> bool {
+    std::env::var_os("SUKISU_SITE_CONFIG").is_some()
+}
+
+pub fn service_unit() -> &'static str {
+    if site_managed() {
+        "sukisu-theme-site.service"
+    } else {
+        "sukisu-theme-web.service"
+    }
+}
+
 pub async fn service_state(unit: &str) -> String {
+    if site_managed() {
+        // systemctl is disabled inside the managed child; the supervisor owns the
+        // real unit and the child only exists while it is active.
+        return if unit == "sukisu-theme-web.service" || unit == "sukisu-theme-site.service" {
+            "active".to_string()
+        } else {
+            "inactive".to_string()
+        };
+    }
     if !cfg!(target_os = "linux") || systemctl_disabled() {
         return "unknown".to_string();
     }

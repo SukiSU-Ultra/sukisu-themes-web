@@ -3,7 +3,8 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::Mutex;
 
-const REPOSITORY: &str = "https://api.github.com/repos/SukiSU-Ultra/SukiSU-Ultra/commits?per_page=1";
+const REPOSITORY: &str =
+    "https://api.github.com/repos/SukiSU-Ultra/SukiSU-Ultra/commits?per_page=1";
 const VERSION_MAJOR: i64 = 4;
 const VERSION_BASE_COMMIT: i64 = 2815;
 const CACHE_TTL: Duration = Duration::from_secs(600);
@@ -19,7 +20,8 @@ fn page_count(link: Option<&str>, first_page_items: usize) -> Option<i64> {
     let Some(link) = link else {
         return Some(first_page_items as i64);
     };
-    let last_page = link.split(',')
+    let last_page = link
+        .split(',')
         .find(|part| part.contains(r#"rel="last""#))
         .and_then(|part| part.split(';').next())
         .and_then(|target| target.split("&page=").nth(1))
@@ -69,7 +71,11 @@ pub async fn current(paths: &crate::config::Paths) -> i64 {
 async fn fetch() -> anyhow::Result<i64> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(8))
-        .user_agent(concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!(
+            env!("CARGO_PKG_NAME"),
+            "/",
+            env!("CARGO_PKG_VERSION")
+        ))
         .build()?;
     let response = client.get(REPOSITORY).send().await?.error_for_status()?;
     let link = response
@@ -81,7 +87,10 @@ async fn fetch() -> anyhow::Result<i64> {
     let count = page_count(link.as_deref(), commits.len())
         .ok_or_else(|| anyhow::anyhow!("GitHub did not return a valid commit count"))?;
     let code = VERSION_MAJOR * 10_000 + count - VERSION_BASE_COMMIT;
-    anyhow::ensure!(code > 0, "GitHub commit count is below the manager version baseline");
+    anyhow::ensure!(
+        code > 0,
+        "GitHub commit count is below the manager version baseline"
+    );
     Ok(code)
 }
 
@@ -93,7 +102,9 @@ mod tests {
     fn reads_last_page_from_github_link_header() {
         assert_eq!(
             page_count(
-                Some(r#"<https://api.github.com/repos/example/repo/commits?per_page=1&page=3912>; rel="last", <https://api.github.com/repos/example/repo/commits?per_page=1&page=2>; rel="next""#),
+                Some(
+                    r#"<https://api.github.com/repos/example/repo/commits?per_page=1&page=3912>; rel="last", <https://api.github.com/repos/example/repo/commits?per_page=1&page=2>; rel="next""#
+                ),
                 1,
             ),
             Some(3912),
@@ -109,7 +120,10 @@ mod tests {
     #[test]
     fn rejects_incomplete_paginated_link_headers() {
         assert_eq!(
-            page_count(Some(r#"<https://api.github.com/repos/example/repo/commits?page=2>; rel="next""#), 1),
+            page_count(
+                Some(r#"<https://api.github.com/repos/example/repo/commits?page=2>; rel="next""#),
+                1
+            ),
             None,
         );
     }

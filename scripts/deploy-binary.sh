@@ -6,7 +6,10 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 HOST=${SUKISU_HOST:-root@ssh.neko.shirkneko.top}
+PORT=${SUKISU_PORT:-${SUKISU_SSH_PORT:-}}
 KEY=${SUKISU_SSH_KEY:-$HOME/.ssh/id_ed25519}
+SSH_ARGS=(-T -i "$KEY")
+[ -n "$PORT" ] && SSH_ARGS+=(-p "$PORT")
 BIN=${SUKISU_BIN:-$ROOT/target/aarch64-unknown-linux-musl/release/sukisu-theme-web}
 
 if [ ! -f "$BIN" ]; then
@@ -16,15 +19,27 @@ if [ ! -f "$BIN" ]; then
 fi
 
 echo "uploading $(du -h "$BIN" | awk '{print $1}') binary (xz-compressed) to $HOST"
-xz -9 -T0 -c "$BIN" | ssh -T -i "$KEY" "$HOST" '
+xz -9 -T0 -c "$BIN" | ssh "${SSH_ARGS[@]}" "$HOST" '
 set -euo pipefail
 TMP=$(mktemp)
 trap "rm -f \"$TMP\"" EXIT
 xz -dc > "$TMP"
 chmod 755 "$TMP"
-UNIT=sukisu-theme-web.service
+UNIT=${SUKISU_UNIT:-}
+if [ -z "$UNIT" ]; then
+  if systemctl cat sukisu-theme-site.service >/dev/null 2>&1; then
+    UNIT=sukisu-theme-site.service
+  else
+    UNIT=sukisu-theme-web.service
+  fi
+fi
 EXEC=$(systemctl show -p ExecStart --value "$UNIT" | sed -n "s/.*path=\([^ ;]*\).*/\1/p" | head -1)
 [ -n "$EXEC" ] || EXEC=/opt/sukisu-theme-web/sukisu-theme-web-rs
+HEALTH_URL=http://127.0.0.1:8080/health
+if [ "$UNIT" = "sukisu-theme-site.service" ] && [ -r /etc/sukisu-theme-site/site.json ]; then
+  SITE_BIND=$(python3 -c "import json;print(json.load(open(\"/etc/sukisu-theme-site/site.json\"))[\"bind\"])" 2>/dev/null || true)
+  [ -n "$SITE_BIND" ] && HEALTH_URL="http://127.0.0.1:${SITE_BIND##*:}/health"
+fi
 BACKUP=/root/sukisu-deploy-backup/$(date +%Y%m%d-%H%M%S)
 mkdir -p "$BACKUP"
 cp -a "$EXEC" "$BACKUP/$(basename "$EXEC")"
@@ -38,8 +53,8 @@ if ! systemctl is-active --quiet "$UNIT"; then
   exit 1
 fi
 HEALTH=0
-for i in $(seq 1 10); do
-  if curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1; then
+for i in $(seq 1 20); do
+  if curl -fsS "$HEALTH_URL" >/dev/null 2>&1; then
     HEALTH=1
     break
   fi

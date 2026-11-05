@@ -1,7 +1,6 @@
 //! Named, revocable theme access tokens (multi-token support).
 //!
-//! The legacy `THEME_STORE_TOKEN` in `store.env` stays as the always-valid
-//! master fallback; tokens created here are stored as SHA-256 hashes (same
+//! There is no shared master fallback; tokens created here are stored as SHA-256 hashes (same
 //! scheme as web sessions) and only their prefix is ever shown again after
 //! the one-time reveal on creation.
 
@@ -285,8 +284,7 @@ pub async fn name_for_token(db: &Database, token: &str) -> Option<String> {
     .flatten()
 }
 
-/// Enabled, unexpired token count; used to keep `status.tokenSet` honest
-/// when the env master token is not configured.
+/// Enabled, unexpired named script token count for the admin status panel.
 pub async fn enabled_count(db: &Database) -> anyhow::Result<i64> {
     let now = unix_now() as i64;
     db.call(move |conn| {

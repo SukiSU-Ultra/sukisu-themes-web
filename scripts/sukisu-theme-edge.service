@@ -1,0 +1,24 @@
+[Unit]
+Description=SukiSU published theme cache edge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sukisu-edge
+Group=sukisu-edge
+ExecStart=/opt/sukisu-theme-web/sukisu-theme-web-rs edge /etc/sukisu-theme-edge.json
+Restart=on-failure
+RestartSec=5
+CacheDirectory=sukisu-theme-edge
+CacheDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/cache/sukisu-theme-edge
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

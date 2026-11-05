@@ -135,7 +135,8 @@ async fn network_get(State(state): State<AppState>) -> Json<Value> {
         "settings": settings,
         "upstream": settings.upstream(),
         "systemctlDisabled": system::systemctl_disabled(),
-        "adminService": system::service_state("sukisu-theme-web.service").await,
+        "adminService": system::service_state(system::service_unit()).await,
+        "serviceUnit": system::service_unit(),
     }))
 }
 

@@ -15,6 +15,14 @@
 
 `THEME_STATIC_DIR=/opt/sukisu-theme-web/static` 由 systemd drop-in 设置（`/etc/systemd/system/sukisu-theme-web.service.d/static.conf`）。静态文件优先从磁盘读取，缺失时回退到二进制内嵌副本；只改 HTML/JS/语言包时运行 `bash scripts/hot-static.sh` 即可，无需重新构建或重启。Rust 改动仍需替换二进制。
 
+## 双站点与凭证升级
+
+需要 B 同样提供网站、管理入口和可切换写入时，按 [完整站点部署步骤](DISTRIBUTION.md#完整站点单个可切换写入节点) 配置 `site` 模式。不要仅运行 `edge` 或复制运行中的 SQLite 文件。首次启用需停止原普通服务；两台分别运行 `site`，使用 [服务模板](../scripts/sukisu-theme-site.service)，并按本机实际 seed、工作目录和账号权限调整路径。原本 `/data/sda1/` 的数据库路径需加入模板的读写许可；保留原 Lucky TLS 入口。
+
+本次升级停止接受 `store.env` 共享主令牌，旧 APK 会收到 401；应同时发布配套新管理器，或先给需要保留的脚本签发独立作用域令牌。新管理器留空凭证可独立申请和刷新；个人凭证从用户中心签发。不要把设备刷新秘密或站点内部密钥写入 APK。每个域名的 GitHub OAuth 回调需要按服务商配置验证；当前共享账号配置没有自动注册多域名回调。
+
+以下原单站运维步骤适用于普通模式；`site` 模式的角色和工作路径由本机 JSON 持久管理，切换时不会改成两边同时写入。实际生产切换应先演练双向交接和回退；失联情况下不会自动晋升跟随节点。
+
 ## 存储位置与导入
 
 主存储（`storage.env`）始终是第一个写入位置；`sources.json` 保存额外的导入/可写位置：
@@ -167,9 +175,11 @@ systemctl restart sukisu-theme-web.service
 镜像选择（`THEME_MIRRORS_FILE`）不经过 Lucky 配置：302 是普通 HTTP 响应，管理器会自动跟随到独立镜像。部署后确认：
 
 ```bash
-curl -sI -H "X-Sukisu-Theme-Token: $THEME_STORE_TOKEN" \
+curl -sI -H "X-Sukisu-Theme-Token: $DEVICE_ACCESS_TOKEN" \
   "https://<域名>/themes/<id>-v1.sukisu" | grep -iE 'HTTP|location'
 ```
+
+`DEVICE_ACCESS_TOKEN` 是本机临时持有的有效只读设备凭证（或显式签发的命名下载令牌），不再使用旧 `THEME_STORE_TOKEN`。
 
 - 有健康镜像时返回 `302` + 镜像地址；没有则返回 `200` 并由本服务器服务。
 - 镜像必须公网可达、路径结构一致，并接受转发过来的 token 或公开可读。
