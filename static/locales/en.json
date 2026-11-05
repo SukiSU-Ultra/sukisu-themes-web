@@ -2,6 +2,11 @@
   "code": "en",
   "label": "English",
   "messages": {
+    "页面导航": "Page navigation",
+    "打开页面导航": "Open page navigation",
+    "关闭页面导航": "Close page navigation",
+    "管理后台导航": "Admin navigation",
+    "用户中心导航": "Account navigation",
     "接入与 API": "Access & API",
     "接入信息与 API": "Access & API",
     "功能说明": "About this page",

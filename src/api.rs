@@ -45,6 +45,7 @@ const EMBEDDED_ACCOUNT_DEVICE_HTML: &str = include_str!("../static/account-devic
 const EMBEDDED_ACCOUNT_HTML: &str = include_str!("../static/account.html");
 const EMBEDDED_LOGO_SVG: &[u8] = include_bytes!("../static/logo.svg");
 const EMBEDDED_I18N_JS: &str = include_str!("../static/i18n.js");
+const EMBEDDED_APP_CSS: &str = include_str!("../static/app.css");
 const EMBEDDED_LOCALE_EN: &str = include_str!("../static/locales/en.json");
 
 tokio::task_local! {
@@ -660,6 +661,7 @@ fn maintenance_path_exempt(path: &str) -> bool {
             | "/healthz"
             | "/catalog.json"
             | "/i18n.js"
+            | "/app.css"
             | "/logo.svg"
             | "/favicon.ico"
             | "/admin/logo.svg"
@@ -1877,6 +1879,7 @@ fn embedded_static(relative: &str) -> Option<(&'static [u8], &'static str)> {
             EMBEDDED_I18N_JS.as_bytes(),
             "application/javascript; charset=utf-8",
         )),
+        "app.css" => Some((EMBEDDED_APP_CSS.as_bytes(), "text/css; charset=utf-8")),
         "locales/en.json" => Some((
             EMBEDDED_LOCALE_EN.as_bytes(),
             "application/json; charset=utf-8",
@@ -1901,6 +1904,7 @@ fn embedded_etags() -> &'static HashMap<&'static str, String> {
             "account-device.html",
             "logo.svg",
             "i18n.js",
+            "app.css",
             "locales/en.json",
         ];
         let mut map = HashMap::new();
