@@ -297,6 +297,12 @@ pub async fn set_status(
 pub async fn delete_user(db: &Database, user_id: &str) -> Result<()> {
     let user_id = user_id.to_string();
     db.call(move |conn| {
+        conn.execute("DELETE FROM social.theme_favorites WHERE user_id = ?1", [&user_id])?;
+        conn.execute("DELETE FROM social.theme_update_reads WHERE user_id = ?1", [&user_id])?;
+        conn.execute("DELETE FROM social.theme_appeals WHERE target_kind = 'report' AND target_id IN (SELECT id FROM social.theme_reports WHERE reporter_id = ?1)", [&user_id])?;
+        conn.execute("DELETE FROM social.theme_reports WHERE reporter_id = ?1", [&user_id])?;
+        conn.execute("DELETE FROM social.theme_appeals WHERE appellant_id = ?1", [&user_id])?;
+        conn.execute("DELETE FROM authors.submission_drafts WHERE user_id = ?1", [&user_id])?;
         conn.execute("DELETE FROM email_tokens WHERE user_id = ?1", [&user_id])?;
         conn.execute(
             "DELETE FROM oauth_states WHERE user_id = ?1 OR link_user_id = ?1",
@@ -708,6 +714,55 @@ pub async fn revoke_user_sessions(db: &Database, user_id: &str) -> Result<()> {
     db.call(move |conn| {
         conn.execute("DELETE FROM sessions WHERE user_id = ?1", [user_id])?;
         Ok(())
+    })
+    .await
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountSession {
+    pub id: String,
+    pub scope: String,
+    pub expires_at: i64,
+    pub created_at: String,
+    pub last_seen_at: Option<String>,
+    pub user_agent: Option<String>,
+    pub ip: Option<String>,
+}
+
+pub async fn user_sessions(db: &Database, user_id: &str) -> Result<Vec<AccountSession>> {
+    let user_id = user_id.to_string();
+    let now = unix_now() as i64;
+    db.call(move |conn| {
+        let mut statement = conn.prepare(
+            "SELECT token_hash, scope, expires_at, created_at, last_seen_at, user_agent, ip
+             FROM sessions WHERE user_id = ?1 AND expires_at > ?2
+             ORDER BY created_at DESC LIMIT 100",
+        )?;
+        let sessions = statement.query_map(params![user_id, now], |row| {
+            Ok(AccountSession {
+                id: row.get(0)?,
+                scope: row.get(1)?,
+                expires_at: row.get(2)?,
+                created_at: row.get(3)?,
+                last_seen_at: row.get(4)?,
+                user_agent: row.get(5)?,
+                ip: row.get(6)?,
+            })
+        })?;
+        Ok(sessions.collect::<rusqlite::Result<Vec<_>>>()?)
+    })
+    .await
+}
+
+pub async fn revoke_owned_session(db: &Database, user_id: &str, id: &str) -> Result<bool> {
+    let user_id = user_id.to_string();
+    let id = id.to_string();
+    db.call(move |conn| {
+        Ok(conn.execute(
+            "DELETE FROM sessions WHERE token_hash = ?1 AND user_id = ?2",
+            params![id, user_id],
+        )? > 0)
     })
     .await
 }

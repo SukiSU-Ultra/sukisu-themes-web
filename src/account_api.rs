@@ -76,6 +76,8 @@ pub fn router(state: AppState) -> Router<AppState> {
             get(get_preferences).post(update_preferences),
         )
         .route("/profile", get(profile).post(update_profile))
+        .route("/sessions", get(list_sessions))
+        .route("/sessions/revoke", post(revoke_session))
         .route("/password", post(change_password))
         .route("/email", post(change_email))
         .route("/avatar", post(upload_avatar))
@@ -110,6 +112,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/preview", get(account_preview))
         .route("/theme-id/next", get(next_theme_id))
         .route("/submit", post(submit_theme))
+        .merge(crate::community::account_router())
         .merge(crate::resumable::router())
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -291,7 +294,7 @@ fn user_json(user: &User) -> Value {
     })
 }
 
-fn require_active(session: &SessionInfo) -> ApiResult<()> {
+pub(crate) fn require_active(session: &SessionInfo) -> ApiResult<()> {
     if session.status != "active" {
         return Err(ApiError::new(
             StatusCode::FORBIDDEN,
@@ -600,6 +603,56 @@ async fn session_info(State(state): State<AppState>, headers: HeaderMap) -> Json
         "email": mailer::configured(&state.paths),
         "github": oauth::GithubSettings::load(&state.paths).is_some(),
     }))
+}
+
+async fn list_sessions(
+    State(state): State<AppState>,
+    Extension(session): Extension<SessionInfo>,
+    headers: HeaderMap,
+) -> ApiResult<Json<Value>> {
+    require_active(&session)?;
+    let current_hash = auth::bearer_token(&headers)
+        .or_else(|| auth::session_token(&headers, auth::USER_SESSION_COOKIE))
+        .or_else(|| auth::session_token(&headers, auth::ADMIN_SESSION_COOKIE))
+        .map(|token| accounts::hash_token(&token));
+    let sessions = accounts::user_sessions(&state.db, &session.user_id)
+        .await
+        .map_err(ApiError::internal)?;
+    let sessions: Vec<Value> = sessions
+        .into_iter()
+        .map(|item| {
+            let current = current_hash.as_deref() == Some(item.id.as_str());
+            let mut value = serde_json::to_value(item).unwrap_or(Value::Null);
+            value["current"] = json!(current);
+            value
+        })
+        .collect();
+    Ok(Json(json!({"ok": true, "sessions": sessions})))
+}
+
+async fn revoke_session(
+    State(state): State<AppState>,
+    Extension(session): Extension<SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
+    require_active(&session)?;
+    let value = json_body(body).await?;
+    let id = value.get("id").and_then(Value::as_str).unwrap_or("");
+    if id.len() != 64 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(ApiError::bad("无效的会话标识"));
+    }
+    let revoked = state
+        .sessions
+        .revoke_owned(&session.user_id, id)
+        .await
+        .map_err(ApiError::internal)?;
+    if !revoked {
+        return Err(ApiError::bad("会话不存在或已失效"));
+    }
+    if let Err(error) = accounts::audit(&state.db, Some(&session.user_id), "session.revoke", Some("session"), None, None).await {
+        tracing::warn!(?error, "failed to audit session revocation");
+    }
+    Ok(Json(json!({"ok": true})))
 }
 
 #[derive(Deserialize)]
@@ -1763,7 +1816,7 @@ async fn profile(
         "passwordConfigured": password_configured,
         "mailConfigured": mailer::configured(&state.paths),
         "githubConfigured": oauth::GithubSettings::load(&state.paths).is_some(),
-        "managerVersionCode": crate::config::manager_version_code(&state.paths),
+        "managerVersionCode": crate::manager_version::current(&state.paths).await,
     })))
 }
 
@@ -2281,7 +2334,7 @@ async fn owned_theme_ids(state: &AppState, session: &SessionInfo) -> ApiResult<H
     Ok(index.owned_ids(&hashes, &session.username))
 }
 
-async fn user_show_r18(state: &AppState, user_id: &str) -> ApiResult<bool> {
+pub(crate) async fn user_show_r18(state: &AppState, user_id: &str) -> ApiResult<bool> {
     let user_id = user_id.to_string();
     let enabled = state
         .db
@@ -2300,7 +2353,7 @@ async fn user_show_r18(state: &AppState, user_id: &str) -> ApiResult<bool> {
     Ok(enabled)
 }
 
-fn discover_theme_json(
+pub(crate) fn discover_theme_json(
     theme: &crate::models::CatalogEntry,
     stats: &HashMap<String, crate::db::ThemeStats>,
 ) -> Value {
@@ -2528,7 +2581,7 @@ async fn my_themes(
     Ok(Json(json!({"ok": true, "themes": themes})))
 }
 
-async fn theme_owned_by_user(
+pub(crate) async fn theme_owned_by_user(
     state: &AppState,
     session: &SessionInfo,
     meta: &crate::models::Meta,
@@ -2607,6 +2660,8 @@ async fn withdraw_my_theme(
     if state.jobs.is_running() {
         return Err(ApiError::conflict("存储迁移进行中，请稍后再试"));
     }
+    let lock = crate::catalog::theme_mutation_lock(&id);
+    let _guard = lock.lock().await;
     let Some((meta_file, meta)) = crate::catalog::find_theme_meta(&state.paths, &id) else {
         return Err(ApiError::not_found("主题不存在"));
     };
@@ -2668,6 +2723,8 @@ async fn restore_my_theme(
     if state.jobs.is_running() {
         return Err(ApiError::conflict("存储迁移进行中，请稍后再试"));
     }
+    let lock = crate::catalog::theme_mutation_lock(&id);
+    let guard = lock.lock().await;
     let Some((meta_file, meta)) = crate::catalog::find_theme_meta(&state.paths, &id) else {
         return Err(ApiError::not_found("主题不存在"));
     };
@@ -2678,7 +2735,14 @@ async fn restore_my_theme(
         return Err(ApiError::bad("该主题未撤回"));
     };
     if crate::catalog::withdrawal_expired(withdrawn_at) {
-        let _ = crate::catalog::purge_expired_withdrawn(&state.store, &state.paths).await;
+        drop(guard);
+        if let Ok(ids) = crate::catalog::purge_expired_withdrawn(&state.store, &state.paths).await {
+            for id in ids {
+                if let Err(error) = crate::community::remove_theme_activity(&state.db, &id).await {
+                    tracing::warn!(theme_id = %id, "failed to clean expired theme activity: {error:#}");
+                }
+            }
+        }
         return Err(ApiError::new(
             StatusCode::GONE,
             "该主题已超过 14 天保留期，无法恢复",
@@ -2734,10 +2798,13 @@ async fn delete_my_theme(
     if meta.withdrawn_at.is_none() {
         return Err(ApiError::bad("只有已撤回主题可以永久删除"));
     }
-    crate::catalog::remove_theme_files(&state.store, Some(&meta_file), &meta)
+    crate::catalog::remove_theme_files(&state.store, &state.paths, Some(&meta_file), &meta)
         .await
         .map_err(ApiError::internal)?;
     let _ = crate::comments::clear_theme(&state.db, &id).await;
+    if let Err(error) = crate::community::remove_theme_activity(&state.db, &id).await {
+        tracing::warn!(?error, "failed to clean theme community activity");
+    }
     crate::catalog::rebuild_catalog(&state.store, &state.paths)
         .await
         .map_err(ApiError::internal)?;
@@ -3289,6 +3356,9 @@ async fn submit_theme(
         )
         .await?;
         state.refresh_withdrawn_assets();
+        if let Err(error) = crate::community::record_release(&state.db, &author_hash, &theme_id, &prepared_name, prepared_version).await {
+            tracing::warn!(?error, "failed to record theme update");
+        }
         let _ = authors::touch_author(&state.db, &author_hash).await;
         let submission_id = crate::util::submission_id();
         accounts::record_submission(

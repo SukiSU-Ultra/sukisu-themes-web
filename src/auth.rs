@@ -110,6 +110,16 @@ impl SessionStore {
         }
     }
 
+    pub async fn revoke_owned(&self, user_id: &str, session_hash: &str) -> anyhow::Result<bool> {
+        let revoked = accounts::revoke_owned_session(&self.db, user_id, session_hash).await?;
+        if revoked {
+            if let Ok(mut cache) = self.cache.lock() {
+                cache.retain(|(cached_hash, _), _| cached_hash != session_hash);
+            }
+        }
+        Ok(revoked)
+    }
+
     pub async fn revoke_user(&self, user_id: &str) {
         if let Ok(mut cache) = self.cache.lock() {
             cache.retain(|_, cached| cached.info.user_id != user_id);

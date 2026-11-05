@@ -43,8 +43,14 @@
       <button data-view="preferences">内容偏好</button>
       <button data-view="author">作者身份</button>
       <button data-view="upload">上传主题</button>
+      <button data-view="drafts">投稿草稿箱</button>
       <button data-view="content">我的内容 <span class="view-badge hidden" id="contentBadge">0</span></button>
       <button data-view="discover">发现主题</button>
+      <button data-view="gallery">主题图库</button>
+      <button data-view="favorites">我的收藏</button>
+      <button data-view="updates">关注更新 <span class="view-badge hidden" id="updatesBadge">0</span></button>
+      <button data-view="dashboard">作者数据</button>
+      <button data-view="reports">举报与申诉</button>
       <button data-view="messages">消息</button>
       <div class="side-foot" id="sideInfo">—</div>
     </aside>
@@ -93,6 +99,11 @@
           <h3>GitHub</h3>
           <p class="hint" id="githubHint">绑定 GitHub 后可以使用 GitHub 登录用户中心。</p>
           <div class="row" id="githubActions"></div>
+        </div>
+        <div class="card">
+          <h3>登录设备</h3>
+          <p class="hint">查看近期登录，并撤销不认识的设备会话。</p>
+          <div id="sessionList" aria-live="polite">加载中…</div>
         </div>
       </section>
 
@@ -176,7 +187,7 @@
               <button type="button" class="mention-chip" data-tag="green">green</button>
             </div><div class="field-hint">包含亮/暗两套外观的自适应主题包会自动添加「自适应主题」标签。</div></div>
             <div class="field"><label for="userUpLicense">许可证</label><select id="userUpLicense"><option value="CC-BY-4.0">CC-BY-4.0</option><option value="CC-BY-SA-4.0">CC-BY-SA-4.0</option><option value="CC-BY-NC-4.0">CC-BY-NC-4.0</option><option value="CC-BY-NC-SA-4.0">CC-BY-NC-SA-4.0</option><option value="CC0-1.0">CC0-1.0</option><option value="MIT">MIT</option><option value="Apache-2.0">Apache-2.0</option><option value="GPL-3.0">GPL-3.0</option><option value="All Rights Reserved">All Rights Reserved</option><option value="">未指定</option></select></div>
-            <div class="field"><label for="userUpMin">最低管理器版本</label><input id="userUpMin" type="number" min="0" value="0"><div class="muted">默认使用当前管理器版本，可手动修改</div></div>
+            <div class="field"><label for="userUpMin">最低管理器版本</label><input id="userUpMin" type="number" min="0" value="0"><div class="muted">默认从 SukiSU-Ultra GitHub 提交历史计算，也可手动修改</div></div>
             <div class="field"><label for="userUpAuthor">作者</label><input id="userUpAuthor" readonly placeholder="账号作者"></div>
             <div class="field"><label for="userUpPackage">主题包 (.sukisu)</label><input id="userUpPackage" type="file" accept=".sukisu,application/octet-stream"></div>
             <div class="field"><label for="userUpPreview">预览图</label><input id="userUpPreview" type="file" accept="image/webp,image/png,image/jpeg"></div>
@@ -222,9 +233,17 @@
           </div>
           <div class="row">
             <button class="btn primary" id="userUpSubmit">上传并提交审核</button>
+            <button class="btn" id="saveSubmissionDraft" type="button">保存草稿</button>
             <span class="pill" id="userUpSizeHint">主题包 ≤ 128 MB，单张图片原始 ≤ 12 MB（自动压缩，输出 ≤ 2 MB） · 支持断点续传</span>
             <span class="muted" id="userUpHint">首次投稿需要管理员审核。</span>
           </div>
+        </div>
+      </section>
+
+      <section id="view-drafts" class="view hidden">
+        <div class="card">
+          <div class="discover-head"><div><h3>投稿草稿箱</h3><p class="hint">仅保存主题资料；文件不会上传到草稿，恢复时需重新选择。</p></div><button class="btn" id="draftsRefresh" type="button">刷新</button></div>
+          <div class="list" id="draftList"></div><div class="empty hidden" id="draftEmpty">还没有草稿</div>
         </div>
       </section>
 
@@ -291,6 +310,27 @@
         </div>
       </section>
 
+      <section id="view-gallery" class="view hidden">
+        <div class="card">
+          <div class="discover-head"><div><h3>主题图库</h3><p class="hint">浏览所有公开主题，支持搜索、标签和排序。</p></div><button class="btn" id="galleryRefresh" type="button">刷新</button></div>
+          <div class="toolbar"><div class="search"><input id="gallerySearch" type="search" placeholder="搜索名称、作者或主题 ID"></div><input id="galleryTag" placeholder="标签（可选）" aria-label="标签"><select id="gallerySort" aria-label="排序"><option value="updated">最近更新</option><option value="hot">热度</option><option value="downloads">下载量</option><option value="name">名称</option></select><button class="btn primary" id="galleryApply" type="button">筛选</button></div>
+          <div class="theme-grid" id="galleryGrid"></div><div class="empty hidden" id="galleryEmpty">没有找到主题</div><div class="row"><button class="btn hidden" id="galleryMore" type="button">加载更多</button><span class="muted" id="galleryCount"></span></div>
+        </div>
+      </section>
+
+      <section id="view-favorites" class="view hidden"><div class="card"><div class="discover-head"><div><h3>我的收藏</h3><p class="hint">收藏的主题集中在这里。</p></div><button class="btn" id="favoritesRefresh" type="button">刷新</button></div><div class="theme-grid" id="favoritesGrid"></div><div class="empty hidden" id="favoritesEmpty">还没有收藏主题</div></div></section>
+
+      <section id="view-updates" class="view hidden"><div class="card"><div class="discover-head"><div><h3>关注更新</h3><p class="hint">关注作者发布新版后，在此查看更新记录。</p></div><button class="btn" id="updatesRefresh" type="button">刷新</button></div><div class="list" id="updatesList"></div><div class="empty hidden" id="updatesEmpty">关注的作者还没有新动态</div></div></section>
+
+      <section id="view-dashboard" class="view hidden"><div class="card"><div class="discover-head"><div><h3>作者数据面板</h3><p class="hint">你的公开主题、下载趋势与粉丝数据。</p></div><button class="btn" id="dashboardRefresh" type="button">刷新</button></div><div class="grid2" id="dashboardStats"></div><h4>近 14 天下载</h4><div id="dashboardTrend" class="list"></div><h4>主题表现</h4><div class="list" id="dashboardThemes"></div></div></section>
+
+      <section id="view-reports" class="view hidden">
+        <div class="card"><h3>举报主题</h3><p class="hint">请提供准确主题 ID 与具体说明，管理员处理后会显示结果。</p><div class="grid2"><div class="field"><label for="reportThemeId">主题 ID</label><input id="reportThemeId" maxlength="96"></div><div class="field"><label for="reportCategory">类型</label><select id="reportCategory"><option value="copyright">版权问题</option><option value="malware">恶意内容</option><option value="inappropriate">不适宜内容</option><option value="broken">主题损坏</option><option value="other">其他</option></select></div></div><div class="field"><label for="reportDetail">说明（10–2000 字）</label><textarea id="reportDetail" maxlength="2000"></textarea></div><div class="row"><button class="btn primary" id="reportSubmit" type="button">提交举报</button></div></div>
+        <div class="card"><h3>我的举报</h3><div class="list" id="reportsList"></div><div class="empty hidden" id="reportsEmpty">暂无举报记录</div></div>
+        <div class="card"><h3>提交申诉</h3><p class="hint">仅支持申诉自己被驳回的投稿，或自己主题被受理的举报。</p><div class="grid2"><div class="field"><label for="appealKind">申诉对象</label><select id="appealKind"><option value="submission">被驳回的投稿</option><option value="report">已受理的举报</option></select></div><div class="field"><label for="appealTarget">投稿 / 举报 ID</label><input id="appealTarget" maxlength="96"></div></div><div class="field"><label for="appealDetail">说明（10–2000 字）</label><textarea id="appealDetail" maxlength="2000"></textarea></div><div class="row"><button class="btn primary" id="appealSubmit" type="button">提交申诉</button></div></div>
+        <div class="card"><h3>我的申诉</h3><div class="list" id="appealsList"></div><div class="empty hidden" id="appealsEmpty">暂无申诉记录</div></div>
+      </section>
+
       <section id="view-messages" class="view hidden">
         <div class="card">
           <div class="discover-head">
@@ -351,6 +391,14 @@
   let popularThemes = [];
   let leaderboardAuthors = [];
   let followedAuthors = new Set();
+  let favoriteIds = new Set();
+  let galleryThemes = [];
+  let galleryOffset = 0;
+  let galleryTotal = 0;
+  let galleryBusy = false;
+  let galleryRequestId = 0;
+  let currentDraftId = '';
+  let pendingDraft = null;
   let followsLoaded = false;
   let commentTheme = null;
   let commentItems = [];
@@ -671,7 +719,10 @@
       loadSubmissions();
     }
     if (name === 'author') loadAuthors();
-    if (name === 'upload') loadUploadView();
+    if (name === 'security') loadSessions();
+    if (name === 'upload') loadUploadView().then(() => {
+      if (pendingDraft) { restoreDraftFields(pendingDraft); pendingDraft = null; }
+    });
     if (name === 'preferences') loadPreferences();
     if (name === 'discover') {
       loadPopular();
@@ -679,6 +730,12 @@
       if (!discoverLoaded) loadDiscover();
     }
     if (name === 'messages') loadMessages(true);
+    if (name === 'gallery') loadGallery(true);
+    if (name === 'favorites') loadFavorites();
+    if (name === 'updates') loadUpdates();
+    if (name === 'drafts') loadDrafts();
+    if (name === 'dashboard') loadDashboard();
+    if (name === 'reports') loadReportHistory();
   }
 
   function renderProfile(data) {
@@ -849,6 +906,8 @@
       data.requests = (await api('/author/requests')).requests || [];
       authorRequests = data.requests;
       renderProfile(data);
+      loadFavorites();
+      loadUpdates();
       $('bindName').value = data.user.displayName || '';
       $('newAuthorName').value = data.user.displayName || '';
     } catch (error) {
@@ -1072,15 +1131,17 @@
         ${withdrawn ? '<span>已撤回</span>' : ''}
       </div>
       ${withdrawn && theme.expiresAt ? '<div class="dialog-meta"><span>撤回保留至 ' + escapeHtml(formatTime(theme.expiresAt)) + '</span></div>' : ''}
-      <div class="dialog-meta">${tags}${adaptiveMeta}</div>
+      <div class="dialog-meta">${tags}${adaptiveMeta}${compatibilityChips(theme)}</div>
       <div class="dialog-section">
         <h4>SHA-256 完整性校验</h4>
         <div class="sha-box">${sha ? escapeHtml(sha) : '未生成校验值'}</div>
       </div>
       <div class="dialog-section"><h4>描述</h4><p class="markdown">${renderInlineMarkdown(theme.description || '暂无描述')}</p></div>
       ${theme.changelog ? '<div class="dialog-section"><h4>更新说明</h4><p class="markdown">' + renderInlineMarkdown(theme.changelog) + '</p></div>' : ''}
+      <div class="dialog-section"><h4>版本历史</h4><div class="list" id="myThemeVersions">正在加载…</div></div>
       <div class="row" style="margin-top:16px">
         <a class="btn primary" href="${escapeHtml(API + '/my-themes/' + encodeURIComponent(theme.id) + '/download')}">下载主题包</a>
+        <a class="btn" href="${escapeHtml(managerDeepLink(theme.id))}">在管理器中打开</a>
         ${withdrawAction}
       </div>`;
     $('myThemeBody').querySelectorAll('.dialog-thumbs button').forEach(button => {
@@ -1129,6 +1190,7 @@
         } catch (error) { toast(error.message, true); }
       });
     }
+    loadVersions(theme.id, 'myThemeVersions', true);
     dialog.showModal();
   }
 
@@ -1379,13 +1441,26 @@
       '<div class="theme-stat-row">' +
       '<span class="theme-stat hot" title="热度：总下载量 + 近 7 天下载 × 10">热度 ' + formatCount(theme.heat) + '</span>' +
       '<span class="theme-stat dl" title="累计下载量">下载 ' + formatCount(theme.downloads) + '</span>' +
-      '</div><div class="theme-tags">' + renderTagChips(theme.tags) + '</div></div>';
+      '</div><div class="theme-tags">' + renderTagChips(theme.tags) + compatibilityChips(theme) + '</div></div>';
+    const favorite = document.createElement('button');
+    favorite.type = 'button';
+    favorite.className = 'btn small';
+    favorite.textContent = theme.favorite || favoriteIds.has(theme.id) ? '★ 已收藏' : '☆ 收藏';
+    favorite.setAttribute('aria-label', favorite.textContent);
+    favorite.addEventListener('click', event => {
+      event.stopPropagation();
+      toggleFavorite(theme, favorite);
+    });
+    card.querySelector('.theme-body').appendChild(favorite);
     card.addEventListener('click', () => openDiscoverTheme(theme));
     const authorButton = card.querySelector('.author-link');
     if (authorButton) {
       authorButton.addEventListener('click', event => {
         event.stopPropagation();
-        filterDiscoverByAuthor(theme.author);
+        if (currentView === 'gallery' || currentView === 'favorites') {
+          $('gallerySearch').value = theme.author || '';
+          setView('gallery');
+        } else filterDiscoverByAuthor(theme.author);
       });
     }
     const followButtonEl = card.querySelector('.follow-btn');
@@ -1495,7 +1570,7 @@
         <span class="theme-stat hot">热度 ${formatCount(theme.heat)}</span>
         <span class="theme-stat dl">下载 ${formatCount(theme.downloads)}</span>
       </div>
-      <div class="dialog-meta">${tags}${adaptiveMeta}</div>
+      <div class="dialog-meta">${tags}${adaptiveMeta}${compatibilityChips(theme)}</div>
       <div class="dialog-section"><h4>描述</h4><p class="markdown">${renderInlineMarkdown(theme.description || '暂无描述')}</p></div>
       ${theme.changelog ? '<div class="dialog-section"><h4>更新说明</h4><p class="markdown">' + renderInlineMarkdown(theme.changelog) + '</p></div>' : ''}
       <div class="dialog-section">
@@ -1504,8 +1579,12 @@
       </div>
       <div class="row" style="margin-top:16px">
         <a class="btn primary" href="${escapeHtml(downloadUrl)}">下载主题包</a>
+        <a class="btn" href="${escapeHtml(managerDeepLink(theme.id))}">在管理器中打开</a>
         <button class="btn" id="discoverAuthorThemes" type="button">查看该作者的主题</button>
+        <button class="btn" id="discoverFavorite" type="button">${favoriteIds.has(theme.id) || theme.favorite ? '★ 已收藏' : '☆ 收藏'}</button>
+        <button class="btn" id="discoverReport" type="button">举报</button>
       </div>
+      <div class="dialog-section"><h4>版本历史</h4><div class="list" id="discoverVersions">正在加载…</div></div>
       <div class="dialog-section comment-section" id="discoverComments">
         <div class="comment-head">
           <h4>留言与回复</h4>
@@ -1550,6 +1629,13 @@
         filterDiscoverByAuthor(theme.author);
       });
     }
+    $('discoverFavorite').addEventListener('click', () => toggleFavorite(theme, $('discoverFavorite')));
+    $('discoverReport').addEventListener('click', () => {
+      $('reportThemeId').value = theme.id;
+      dialog.close();
+      setView('reports');
+    });
+    loadVersions(theme.id, 'discoverVersions', false);
     commentReplyTarget = null;
     commentVisibility = 'public';
     const commentInput = $('discoverCommentInput');
@@ -2203,6 +2289,35 @@
     return isNaN(date.getTime()) ? value : date.toLocaleString(window.SukisuI18n ? SukisuI18n.locale : 'zh-CN', { hour12: false });
   }
 
+  async function loadSessions() {
+    const list = $('sessionList');
+    list.textContent = '加载中…';
+    try {
+      const data = await api('/sessions');
+      const sessions = data.sessions || [];
+      if (!sessions.length) { list.textContent = '暂无登录设备'; return; }
+      list.innerHTML = sessions.map(item => '<div class="list-item">' +
+        '<div class="item-head"><b>' + escapeHtml(item.userAgent || '未知设备') + '</b>' +
+        (item.current ? '<span class="pill ok">当前设备</span>' : '') + '</div>' +
+        '<div class="item-meta">' + escapeHtml(item.ip || '未知 IP') + ' · ' +
+        escapeHtml(item.scope || '') + ' · 最近活动：' + escapeHtml(formatTime(item.lastSeenAt || item.createdAt)) +
+        ' · 到期：' + escapeHtml(formatTime(new Date(item.expiresAt * 1000).toISOString())) + '</div>' +
+        '<button class="btn small" data-revoke-session="' + escapeHtml(item.id) + '">撤销会话</button></div>').join('');
+    } catch (error) { list.textContent = error.message; }
+  }
+
+  $('sessionList').addEventListener('click', async event => {
+    const button = event.target.closest('[data-revoke-session]');
+    if (!button) return;
+    button.disabled = true;
+    try {
+      await api('/sessions/revoke', { method: 'POST', body: JSON.stringify({ id: button.dataset.revokeSession }) });
+      toast('会话已撤销');
+      if (button.closest('.list-item')?.querySelector('.pill.ok')) location.replace(basePath + 'login');
+      else loadSessions();
+    } catch (error) { button.disabled = false; toast(error.message, true); }
+  });
+
   $('accountNavToggle').addEventListener('click', () => {
     const open = $('accountLayout').classList.toggle('nav-open');
     $('accountNavToggle').setAttribute('aria-expanded', String(open));
@@ -2330,6 +2445,262 @@
     document.documentElement.dataset.theme = next;
     try { localStorage.setItem('sukisu-admin-theme', next); } catch (_) {}
   });
+
+function compatibilityChips(theme) {
+  const manager = Number(theme.minManagerVersion || 0);
+  const format = Number(theme.formatVersion || 0);
+  return (manager > 0 ? '<span class="pill">管理器 ≥ ' + escapeHtml(manager) + '</span>' : '') +
+    (format > 0 ? '<span class="pill">主题格式 v' + escapeHtml(format) + '</span>' : '');
+}
+
+function managerDeepLink(id) {
+  return 'sukisu-theme://open?' + new URLSearchParams({ id, source: location.origin }).toString();
+}
+
+async function toggleFavorite(theme, button) {
+  const wanted = !favoriteIds.has(theme.id);
+  button.disabled = true;
+  try {
+    await api('/favorites/toggle', { method: 'POST', body: JSON.stringify({ themeId: theme.id, favorite: wanted }) });
+    if (wanted) favoriteIds.add(theme.id);
+    else favoriteIds.delete(theme.id);
+    theme.favorite = wanted;
+    button.textContent = wanted ? '★ 已收藏' : '☆ 收藏';
+    if (currentView === 'favorites') await loadFavorites();
+    toast(wanted ? '已收藏主题' : '已取消收藏');
+  } catch (error) { toast(error.message, true); }
+  finally { button.disabled = false; }
+}
+
+function renderGallery() {
+  const host = $('galleryGrid');
+  host.replaceChildren(...galleryThemes.map(theme => discoverCard(theme)));
+  $('galleryEmpty').classList.toggle('hidden', galleryThemes.length > 0);
+  $('galleryMore').classList.toggle('hidden', galleryThemes.length >= galleryTotal);
+  $('galleryCount').textContent = '已显示 ' + galleryThemes.length + ' / ' + galleryTotal;
+}
+
+async function loadGallery(reset) {
+  if (galleryBusy && !reset) return;
+  const requestId = ++galleryRequestId;
+  galleryBusy = true;
+  $('galleryMore').disabled = true;
+  if (reset) { galleryThemes = []; galleryOffset = 0; }
+  try {
+    const params = new URLSearchParams({ q: $('gallerySearch').value.trim(), tag: $('galleryTag').value.trim(),
+      sort: $('gallerySort').value, offset: String(galleryOffset), limit: '24' });
+    const data = await api('/gallery?' + params);
+    if (requestId !== galleryRequestId) return;
+    galleryThemes.push(...(data.themes || []));
+    galleryOffset = galleryThemes.length;
+    galleryTotal = Number(data.total || 0);
+    renderGallery();
+  } catch (error) { if (requestId === galleryRequestId) toast(error.message, true); }
+  finally {
+    if (requestId === galleryRequestId) {
+      galleryBusy = false;
+      $('galleryMore').disabled = false;
+    }
+  }
+}
+
+async function loadFavorites() {
+  try {
+    const data = await api('/favorites');
+    favoriteIds = new Set(data.ids || []);
+    const themes = data.themes || [];
+    $('favoritesGrid').replaceChildren(...themes.map(theme => discoverCard(theme)));
+    $('favoritesEmpty').classList.toggle('hidden', themes.length > 0);
+    if (currentView === 'gallery') renderGallery();
+    if (currentView === 'discover') renderDiscover();
+  } catch (error) { if (currentView === 'favorites') toast(error.message, true); }
+}
+
+async function loadVersions(id, hostId, owned) {
+  const host = $(hostId);
+  if (!host) return;
+  try {
+    const data = await api('/themes/' + encodeURIComponent(id) + '/versions');
+    const versions = data.versions || [];
+    host.innerHTML = versions.length ? versions.map(item =>
+      '<div class="list-item"><div class="item-head"><b>v' + escapeHtml(item.version) + '</b>' +
+      (item.current ? '<span class="pill ok">当前版本</span>' : '') + '</div><div class="item-meta">' +
+      escapeHtml(formatTime(item.updatedAt)) + ' · ' + compatibilityChips(item) + '</div>' +
+      '<p class="hint">' + escapeHtml(item.changelog || '无更新说明') + '</p>' +
+      (owned && data.canRollback && !item.current ? '<button class="btn small" data-rollback-version="' +
+      escapeHtml(item.version) + '">回退此版本</button>' : '') + '</div>').join('') : '暂无版本记录';
+    host.querySelectorAll('[data-rollback-version]').forEach(button => button.addEventListener('click', async () => {
+      const version = Number(button.dataset.rollbackVersion);
+      if (!confirm('将 v' + version + ' 的内容重新发布为新版本？当前版本仍保留在历史中。')) return;
+      button.disabled = true;
+      try {
+        const result = await api('/themes/' + encodeURIComponent(id) + '/rollback', {
+          method: 'POST', body: JSON.stringify({ version }) });
+        toast('已发布回退版本 v' + result.version);
+        $('myThemeDialog').close();
+        await loadThemes();
+      } catch (error) { toast(error.message, true); button.disabled = false; }
+    }));
+  } catch (error) { host.textContent = error.message; }
+}
+
+async function loadUpdates() {
+  try {
+    const data = await api('/updates');
+    const updates = data.updates || [];
+    $('updatesBadge').textContent = data.unread > 99 ? '99+' : String(data.unread || 0);
+    $('updatesBadge').classList.toggle('hidden', !data.unread);
+    $('updatesEmpty').classList.toggle('hidden', updates.length > 0);
+    $('updatesList').innerHTML = updates.map(item => '<div class="list-item"><div class="item-head"><b>' +
+      escapeHtml(item.name) + ' · v' + escapeHtml(item.version) + '</b>' +
+      (item.read ? '' : '<span class="pill warn">未读</span>') + '</div><div class="item-meta">' +
+      escapeHtml(formatTime(item.createdAt)) + '</div><button class="btn small" data-update-id="' +
+      escapeHtml(item.id) + '" data-theme-id="' + escapeHtml(item.themeId) + '">查看主题</button></div>').join('');
+  } catch (error) { if (currentView === 'updates') toast(error.message, true); }
+}
+
+$('updatesList').addEventListener('click', async event => {
+  const button = event.target.closest('[data-update-id]');
+  if (!button) return;
+  try {
+    await api('/updates/read', { method: 'POST', body: JSON.stringify({ id: button.dataset.updateId }) });
+    const data = await api('/gallery?q=' + encodeURIComponent(button.dataset.themeId) + '&limit=10');
+    const theme = (data.themes || []).find(item => item.id === button.dataset.themeId);
+    if (theme) openDiscoverTheme(theme);
+    else toast('主题已不在公开目录中', true);
+    loadUpdates();
+  } catch (error) { toast(error.message, true); }
+});
+$('galleryApply').addEventListener('click', () => loadGallery(true));
+$('galleryRefresh').addEventListener('click', () => loadGallery(true));
+$('galleryMore').addEventListener('click', () => loadGallery(false));
+$('favoritesRefresh').addEventListener('click', loadFavorites);
+$('updatesRefresh').addEventListener('click', loadUpdates);
+$('gallerySearch').addEventListener('keydown', event => { if (event.key === 'Enter') loadGallery(true); });
+$('galleryTag').addEventListener('keydown', event => { if (event.key === 'Enter') loadGallery(true); });
+
+function draftPayload() {
+  return {
+    updateId: $('userUpUpdate').value, version: $('userUpVersion').value,
+    name: $('userUpName').value.trim(), tags: $('userUpTags').value.trim(),
+    license: $('userUpLicense').value, minManagerVersion: $('userUpMin').value,
+    description: $('userUpDescription').value, changelog: $('userUpChangelog').value,
+  };
+}
+
+function restoreDraftFields(draft) {
+  const value = draft.payload || {};
+  const updateId = String(value.updateId || '');
+  if (updateId && !userUploadThemes.some(theme => theme.id === updateId)) {
+    toast('原主题已不可选，请核对投稿资料', true);
+  }
+  $('userUpUpdate').value = updateId;
+  if ($('userUpUpdate').value) $('userUpUpdate').dispatchEvent(new Event('change'));
+  for (const [key, field] of Object.entries({ version: 'userUpVersion', name: 'userUpName',
+    tags: 'userUpTags', license: 'userUpLicense', minManagerVersion: 'userUpMin',
+    description: 'userUpDescription', changelog: 'userUpChangelog' })) {
+    if (value[key] !== undefined) $(field).value = String(value[key]);
+  }
+  for (const field of ['userUpPackage', 'userUpPreview', 'userUpAvatar', 'userUpScreenshots']) $(field).value = '';
+  currentDraftId = draft.id;
+  toast('草稿已恢复；请重新选择主题包和图片');
+}
+
+async function loadDrafts() {
+  try {
+    const data = await api('/drafts');
+    const drafts = data.drafts || [];
+    $('draftEmpty').classList.toggle('hidden', drafts.length > 0);
+    $('draftList').innerHTML = drafts.map(item => '<div class="list-item"><div class="item-head"><b>' +
+      escapeHtml(item.payload?.name || '未命名草稿') + '</b><span class="pill">v' +
+      escapeHtml(item.payload?.version || 1) + '</span></div><div class="item-meta">' +
+      escapeHtml(formatTime(item.updatedAt)) + '</div><div class="row"><button class="btn small" data-draft-restore="' +
+      escapeHtml(item.id) + '">继续编辑</button><button class="btn danger small" data-draft-delete="' +
+      escapeHtml(item.id) + '">删除草稿</button></div></div>').join('');
+    $('draftList').querySelectorAll('[data-draft-restore]').forEach(button => button.addEventListener('click', () => {
+      pendingDraft = drafts.find(item => item.id === button.dataset.draftRestore);
+      if (pendingDraft) setView('upload');
+    }));
+  } catch (error) { toast(error.message, true); }
+}
+
+$('saveSubmissionDraft').addEventListener('click', async () => {
+  try {
+    const data = await api('/drafts', { method: 'POST', body: JSON.stringify({ id: currentDraftId, payload: draftPayload() }) });
+    currentDraftId = data.id;
+    toast('草稿已保存');
+  } catch (error) { toast(error.message, true); }
+});
+$('draftsRefresh').addEventListener('click', loadDrafts);
+$('draftList').addEventListener('click', async event => {
+  const button = event.target.closest('[data-draft-delete]');
+  if (!button || !confirm('删除这份草稿？')) return;
+  try {
+    await api('/drafts/delete', { method: 'POST', body: JSON.stringify({ id: button.dataset.draftDelete }) });
+    if (currentDraftId === button.dataset.draftDelete) currentDraftId = '';
+    loadDrafts();
+  } catch (error) { toast(error.message, true); }
+});
+
+async function loadDashboard() {
+  try {
+    const data = await api('/author/dashboard');
+    const stats = [['公开主题', data.published], ['累计下载', data.downloads],
+      ['粉丝', data.followers], ['待审投稿', data.pendingSubmissions]];
+    $('dashboardStats').innerHTML = stats.map(item => '<div class="list-item"><div class="muted">' +
+      item[0] + '</div><b>' + formatCount(item[1]) + '</b></div>').join('');
+    const daily = data.daily || [];
+    const max = Math.max(1, ...daily.map(item => Number(item.downloads) || 0));
+    $('dashboardTrend').innerHTML = daily.length ? daily.map(item => '<div class="list-item"><div class="item-head"><span>' +
+      escapeHtml(item.day) + '</span><b>' + formatCount(item.downloads) + '</b></div><div class="progress-track"><i style="width:' +
+      Math.round(100 * (Number(item.downloads) || 0) / max) + '%"></i></div></div>').join('') : '<div class="empty">近 14 天暂无下载</div>';
+    $('dashboardThemes').innerHTML = (data.themes || []).length ? data.themes.map(item => '<div class="list-item"><div class="item-head"><b>' +
+      escapeHtml(item.name) + '</b><span class="pill">v' + escapeHtml(item.version) + '</span></div><div class="item-meta">下载 ' +
+      formatCount(item.downloads) + ' · 热度 ' + formatCount(item.heat) + '</div></div>').join('') : '<div class="empty">暂无公开主题</div>';
+  } catch (error) { toast(error.message, true); }
+}
+$('dashboardRefresh').addEventListener('click', loadDashboard);
+
+function caseStatus(status) {
+  return ({ pending: '待处理', accepted: '已受理', dismissed: '未受理', rejected: '已驳回', overturned: '申诉撤销' })[status] || status;
+}
+async function loadReportHistory() {
+  try {
+    const [reportsData, appealsData] = await Promise.all([api('/reports'), api('/appeals')]);
+    const reports = reportsData.reports || [];
+    const appeals = appealsData.appeals || [];
+    $('reportsEmpty').classList.toggle('hidden', reports.length > 0);
+    $('appealsEmpty').classList.toggle('hidden', appeals.length > 0);
+    $('reportsList').innerHTML = reports.map(item => '<div class="list-item"><div class="item-head"><b>' +
+      escapeHtml(item.themeId) + '</b><span class="pill">' + escapeHtml(caseStatus(item.status)) +
+      '</span></div><div class="item-meta">举报 ID：' + escapeHtml(item.id) + ' · ' +
+      escapeHtml(formatTime(item.createdAt)) + '</div><p>' + escapeHtml(item.detail) + '</p>' +
+      (item.resolution ? '<p class="hint">处理说明：' + escapeHtml(item.resolution) + '</p>' : '') + '</div>').join('');
+    $('appealsList').innerHTML = appeals.map(item => '<div class="list-item"><div class="item-head"><b>' +
+      escapeHtml(item.targetId) + '</b><span class="pill">' + escapeHtml(caseStatus(item.status)) +
+      '</span></div><div class="item-meta">' + escapeHtml(formatTime(item.createdAt)) +
+      '</div><p>' + escapeHtml(item.detail) + '</p>' +
+      (item.resolution ? '<p class="hint">处理说明：' + escapeHtml(item.resolution) + '</p>' : '') + '</div>').join('');
+  } catch (error) { toast(error.message, true); }
+}
+$('reportSubmit').addEventListener('click', async () => {
+  try {
+    await api('/reports', { method: 'POST', body: JSON.stringify({ themeId: $('reportThemeId').value.trim(),
+      category: $('reportCategory').value, detail: $('reportDetail').value.trim() }) });
+    $('reportDetail').value = '';
+    toast('举报已提交');
+    loadReportHistory();
+  } catch (error) { toast(error.message, true); }
+});
+$('appealSubmit').addEventListener('click', async () => {
+  try {
+    await api('/appeals', { method: 'POST', body: JSON.stringify({ targetKind: $('appealKind').value,
+      targetId: $('appealTarget').value.trim(), detail: $('appealDetail').value.trim() }) });
+    $('appealDetail').value = '';
+    toast('申诉已提交');
+    loadReportHistory();
+  } catch (error) { toast(error.message, true); }
+});
 
 let userUploadThemes = [];
 let userUploadNextId = '';
@@ -2498,6 +2869,12 @@ $('userUpSubmit').addEventListener('click', async () => {
       true,
     );
     clearResumableKey(packageFile);
+    if (currentDraftId) {
+      try {
+        await api('/drafts/delete', { method: 'POST', body: JSON.stringify({ id: currentDraftId }) });
+        currentDraftId = '';
+      } catch (error) { toast('投稿成功，但草稿未能自动删除：' + error.message, true); }
+    }
     toast(data.message || ('已提交：' + (data.id || themeId || userUploadNextId)));
     $('userUpName').value = '';
     $('userUpTags').value = '';

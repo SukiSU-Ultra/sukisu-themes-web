@@ -11,12 +11,14 @@ mod auth_settings_api;
 mod authors;
 mod catalog;
 mod comments;
+mod community;
 mod config;
 mod db;
 mod follows;
 mod images;
 mod jobs;
 mod mailer;
+mod manager_version;
 mod mirrors;
 mod models;
 mod net;
@@ -116,10 +118,15 @@ async fn run(settings: config::StorageSettings) -> anyhow::Result<()> {
     let cleanup_state = state.clone();
     tokio::spawn(async move {
         loop {
-            if let Err(error) =
-                catalog::purge_expired_withdrawn(&cleanup_state.store, &cleanup_state.paths).await
-            {
-                tracing::warn!("withdrawn cleanup warning: {error:#}");
+            match catalog::purge_expired_withdrawn(&cleanup_state.store, &cleanup_state.paths).await {
+                Ok(ids) => {
+                    for id in ids {
+                        if let Err(error) = community::remove_theme_activity(&cleanup_state.db, &id).await {
+                            tracing::warn!(theme_id = %id, "withdrawn community cleanup warning: {error:#}");
+                        }
+                    }
+                }
+                Err(error) => tracing::warn!("withdrawn cleanup warning: {error:#}"),
             }
             cleanup_state.refresh_withdrawn_assets();
             resumable::cleanup_stale(&cleanup_state.paths);

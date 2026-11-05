@@ -513,6 +513,7 @@ pub fn router(state: AppState) -> Router {
         .merge(crate::resumable::router())
         .merge(crate::theme_tokens::router())
         .merge(crate::api_monitor::router())
+        .merge(crate::community::admin_router())
         .layer(middleware::from_fn_with_state(state.clone(), auth_guard))
         .layer(middleware::from_fn(csrf_guard));
 
@@ -1315,7 +1316,7 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
         "authorRequestsPending": author_requests_pending,
         "mailConfigured": crate::mailer::configured(&state.paths),
         "githubConfigured": crate::oauth::GithubSettings::load(&state.paths).is_some(),
-        "managerVersionCode": crate::config::manager_version_code(&state.paths),
+        "managerVersionCode": crate::manager_version::current(&state.paths).await,
         "storage": storage_value,
         "storageBackend": state.settings.backend.as_str(),
         "stateDir": state.paths.root.to_string_lossy(),
@@ -2110,6 +2111,8 @@ async fn submit(
     }
     let prepared = uploads::prepare_upload(form).await.map_err(ApiError::bad)?;
     let theme_id = prepared.id.clone();
+    let release_name = prepared.name.clone();
+    let release_version = prepared.version as i64;
     let author_hash = crate::util::author_key(&author_id);
     let author_fp = crate::util::author_fingerprint(&author_hash);
     if crate::authors::author_by_hash(&state.db, &author_hash)
@@ -2171,6 +2174,9 @@ async fn submit(
         )
         .await?;
         state.refresh_withdrawn_assets();
+        if let Err(error) = crate::community::record_release(&state.db, &author_hash, &theme_id, &release_name, release_version).await {
+            tracing::warn!(?error, "failed to record theme update");
+        }
         let _ = crate::authors::touch_author(&state.db, &author_hash).await;
         return Ok(Json(json!({
             "ok": true,
@@ -2297,18 +2303,25 @@ async fn upload_theme(
     }
     form.id = theme_id.clone();
     let prepared = uploads::prepare_upload(form).await.map_err(ApiError::bad)?;
+    let release_name = prepared.name.clone();
+    let release_version = prepared.version as i64;
     let themes = uploads::publish_theme(
         &state.store,
         &state.settings,
         &state.paths,
         state.limit_bytes.load(Ordering::Relaxed),
         prepared,
-        publish_owner,
+        publish_owner.clone(),
         0,
         old_meta,
     )
     .await?;
     state.refresh_withdrawn_assets();
+    if let Some(hash) = publish_owner.as_deref() {
+        if let Err(error) = crate::community::record_release(&state.db, hash, &theme_id, &release_name, release_version).await {
+            tracing::warn!(?error, "failed to record theme update");
+        }
+    }
     if let Some(id) = upload_id.as_deref() {
         crate::resumable::remove_session(&state, &actor.user_id, id).await;
     }
@@ -2372,6 +2385,11 @@ async fn approve(
     )
     .await?;
     state.refresh_withdrawn_assets();
+    if let Some(hash) = author_hash.as_deref() {
+        if let Err(error) = crate::community::record_release(&state.db, hash, &theme_id, &meta.name, meta.version).await {
+            tracing::warn!(?error, "failed to record theme update");
+        }
+    }
     if let Some(hash) = &author_hash {
         if valid_author_hash(hash) {
             if crate::authors::author_by_hash(&state.db, hash)
@@ -2539,10 +2557,13 @@ async fn delete_theme(State(state): State<AppState>, body: Bytes) -> ApiResult<R
     let Some((meta_file, meta)) = catalog::find_theme_meta(&state.paths, id) else {
         return Err(ApiError::not_found("theme not found"));
     };
-    catalog::remove_theme_files(&state.store, Some(&meta_file), &meta)
+    catalog::remove_theme_files(&state.store, &state.paths, Some(&meta_file), &meta)
         .await
         .map_err(ApiError::internal)?;
     let _ = crate::comments::clear_theme(&state.db, id).await;
+    if let Err(error) = crate::community::remove_theme_activity(&state.db, id).await {
+        tracing::warn!(?error, "failed to clean theme community activity");
+    }
     let themes = catalog::rebuild_catalog(&state.store, &state.paths)
         .await
         .map_err(ApiError::internal)?;
@@ -2603,6 +2624,8 @@ async fn set_theme_tags(
     if tags.len() > 10 {
         return Err(ApiError::bad("标签最多 10 个"));
     }
+    let lock = catalog::theme_mutation_lock(&id);
+    let _guard = lock.lock().await;
     let Some((meta_path, mut meta)) = catalog::find_theme_meta(&state.paths, &id) else {
         return Err(ApiError::not_found("主题不存在"));
     };

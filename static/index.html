@@ -39,11 +39,13 @@
       <div class="nav-label">主题</div>
       <a href="#pending"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 5h14v14H5z"/><path d="M8 9h8M8 13h5"/></svg>待审核 <span class="nav-badge" id="pendingNavBadge">0</span></a>
       <a href="#comments"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 12a7 7 0 0 1-7 7H8l-4 3v-4.5A7 7 0 0 1 4 12a7 7 0 0 1 7-7h2a7 7 0 0 1 7 7Z"/><path d="M8.5 11h7M8.5 14h4"/></svg>评论管理 <span class="nav-badge" id="commentsNavBadge">0</span></a>
+      <a href="#community"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5h16v12H9l-5 3V5Z"/><path d="M8 9h8M8 13h5"/></svg>举报与申诉</a>
       <a href="#themes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="m4 16 4.5-4.5 3 3 3-3L20 16"/><circle cx="15.5" cy="8.5" r="1.6"/></svg>主题预览</a>
       <a href="#upload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>上传主题</a>
       <div class="nav-label">系统</div>
       <a href="#storage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/><path d="M4.5 11.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg>存储与配额</a>
       <a href="#network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.4 3.6 5.3 3.6 8.5s-1.2 6.1-3.6 8.5c-2.4-2.4-3.6-5.3-3.6-8.5S9.6 5.9 12 3.5Z"/></svg>网络</a>
+      <a href="#mirrors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4a13 13 0 0 1 0 16M12 4a13 13 0 0 0 0 16"/></svg>镜像健康</a>
       <a href="#performance"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 18a8 8 0 1 1 16 0"/><path d="m12 14 4-5"/><circle cx="12" cy="18" r="1.6"/></svg>性能</a>
       <a href="#monitor"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 12h3l2.2-5.5L12 18l2.4-7 1.8 3H21"/></svg>接口监控</a>
       <a href="#auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="m4 7 8 6 8-6"/></svg>认证</a>
@@ -379,7 +381,7 @@
               <button type="button" class="mention-chip" data-tag="green">green</button>
             </div><div class="field-hint">包含亮/暗两套外观的自适应主题包会自动添加「自适应主题」标签。</div></div>
             <div><label for="upLicense">许可证</label><select id="upLicense" name="license"><option value="CC-BY-4.0">CC-BY-4.0</option><option value="CC-BY-SA-4.0">CC-BY-SA-4.0</option><option value="CC-BY-NC-4.0">CC-BY-NC-4.0</option><option value="CC-BY-NC-SA-4.0">CC-BY-NC-SA-4.0</option><option value="CC0-1.0">CC0-1.0</option><option value="MIT">MIT</option><option value="Apache-2.0">Apache-2.0</option><option value="GPL-3.0">GPL-3.0</option><option value="All Rights Reserved">All Rights Reserved</option><option value="">未指定</option></select></div>
-            <div><label for="upMin">最低管理器版本</label><input id="upMin" name="minManagerVersion" type="number" min="0" value="0"><div class="field-hint">默认使用当前管理器版本，可手动修改</div></div>
+            <div><label for="upMin">最低管理器版本</label><input id="upMin" name="minManagerVersion" type="number" min="0" value="0"><div class="field-hint">默认从 SukiSU-Ultra GitHub 提交历史计算，也可手动修改</div></div>
             <div><label for="upPackage">主题包 (.sukisu)</label><input id="upPackage" name="package" type="file" accept=".sukisu,application/octet-stream" required></div>
             <div><label for="upPreview">预览图</label><input id="upPreview" name="preview" type="file" accept="image/webp,image/png,image/jpeg" required></div>
             <div><label for="upAvatar">作者头像（可选）</label><input id="upAvatar" name="avatar" type="file" accept="image/webp,image/png,image/jpeg"></div>
@@ -964,6 +966,17 @@
           </div>
         </div>
       </div>
+    </section>
+
+    <section id="community" class="page">
+      <div class="section-head"><div><h3>举报与申诉</h3><p>核查举报证据与作者申诉，记录可追溯的处理说明。</p></div><button class="btn" id="communityRefresh" type="button">刷新</button></div>
+      <div class="card"><h4>主题举报</h4><p class="hint">受理仅记录审核结果；如需下架，请到「上传主题 → 主题维护」执行。</p><div id="adminReportsList"></div><div class="empty hidden" id="adminReportsEmpty">暂无举报</div></div>
+      <div class="card" style="margin-top:14px"><h4>作者申诉</h4><p class="hint">申诉受理会撤销对应举报的处理状态；被驳回的投稿仍需作者重新投稿或由管理员另行处理。</p><div id="adminAppealsList"></div><div class="empty hidden" id="adminAppealsEmpty">暂无申诉</div></div>
+    </section>
+
+    <section id="mirrors" class="page">
+      <div class="section-head"><div><h3>镜像健康</h3><p>使用一份已发布主题包检测各镜像可达性与响应延迟。</p></div><button class="btn" id="mirrorsRefresh" type="button">重新检测</button></div>
+      <div class="card"><p class="hint" id="mirrorSample">正在读取检测样本…</p><div id="mirrorHealthList"></div><div class="empty hidden" id="mirrorHealthEmpty">没有配置镜像</div></div>
     </section>
 
     <section id="access" class="page">
@@ -4655,6 +4668,8 @@ async function loadCurrentPageData() {
   if (currentPage === 'users') await loadUsers();
   if (currentPage === 'follows') await loadFollows();
   if (currentPage === 'comments') await loadCommentsAdmin(0);
+  if (currentPage === 'community') await loadCommunityAdmin();
+  if (currentPage === 'mirrors') await loadMirrorHealth();
   if (currentPage === 'performance') await loadPerformanceStats();
   if (currentPage === 'monitor' && monitorAutoRefresh) await loadMonitorLive();
 }
@@ -4702,6 +4717,79 @@ async function refresh(silent = false, includePage = true) {
   }
 }
 
+function reviewCaseHtml(item, kind) {
+  const isReport = kind === 'report';
+  const target = isReport ? item.themeId : item.targetId;
+  const statusLabels = { pending: '待处理', accepted: '已受理', dismissed: '不予受理',
+    rejected: '已驳回', overturned: '申诉撤销' };
+  return '<div class="card" style="margin:12px 0"><div class="row"><b>' + escapeHtml(target) +
+    '</b><span class="pill">' + escapeHtml(statusLabels[item.status] || item.status) +
+    '</span></div><p class="hint">' + escapeHtml((isReport ? item.reporter : item.appellant) || '未知用户') +
+    ' · ' + escapeHtml(item.createdAt || '') + ' · ID：' + escapeHtml(item.id) + '</p><p>' +
+    escapeHtml(item.detail) + '</p>' + (item.resolution ? '<p class="hint">处理说明：' +
+    escapeHtml(item.resolution) + '</p>' : '') + (item.status === 'pending' ?
+    '<div class="row"><input maxlength="2000" data-review-reason aria-label="处理说明" placeholder="填写处理说明" style="min-width:min(100%,320px)">' +
+    '<button class="btn primary" data-review-kind="' + kind + '" data-review-id="' + escapeHtml(item.id) +
+    '" data-review-status="accepted">受理</button><button class="btn" data-review-kind="' + kind +
+    '" data-review-id="' + escapeHtml(item.id) + '" data-review-status="' +
+    (isReport ? 'dismissed' : 'rejected') + '">' + (isReport ? '不予受理' : '驳回') +
+    '</button></div>' : '') + '</div>';
+}
+
+async function loadCommunityAdmin() {
+  try {
+    const [reports, appeals] = await Promise.all([
+      api('/community/reports'), api('/community/appeals')
+    ]);
+    $('adminReportsList').innerHTML = (reports.reports || []).map(item => reviewCaseHtml(item, 'report')).join('');
+    $('adminAppealsList').innerHTML = (appeals.appeals || []).map(item => reviewCaseHtml(item, 'appeal')).join('');
+    $('adminReportsEmpty').classList.toggle('hidden', Boolean((reports.reports || []).length));
+    $('adminAppealsEmpty').classList.toggle('hidden', Boolean((appeals.appeals || []).length));
+  } catch (error) { toast('读取举报与申诉失败：' + error.message, 'bad'); }
+}
+
+async function handleCommunityReview(event) {
+  const button = event.target.closest('[data-review-kind]');
+  if (!button) return;
+  const input = button.closest('.card').querySelector('[data-review-reason]');
+  const resolution = input?.value.trim() || '';
+  if (!resolution) { toast('请填写处理说明', 'bad'); input?.focus(); return; }
+  button.disabled = true;
+  try {
+    const kind = button.dataset.reviewKind;
+    await api('/community/' + (kind === 'report' ? 'reports' : 'appeals') + '/resolve', {
+      method: 'POST', body: JSON.stringify({ id: button.dataset.reviewId,
+        status: button.dataset.reviewStatus, resolution })
+    });
+    toast('处理结果已保存');
+    await loadCommunityAdmin();
+  } catch (error) { toast(error.message, 'bad'); button.disabled = false; }
+}
+$('adminReportsList').addEventListener('click', handleCommunityReview);
+$('adminAppealsList').addEventListener('click', handleCommunityReview);
+$('communityRefresh').addEventListener('click', loadCommunityAdmin);
+
+async function loadMirrorHealth() {
+  const button = $('mirrorsRefresh');
+  button.disabled = true;
+  $('mirrorSample').textContent = '正在检测镜像…';
+  try {
+    const data = await api('/mirrors/health');
+    $('mirrorSample').textContent = data.samplePath ? '检测资源：' + data.samplePath : '没有已发布的本地主题包，暂时无法检测镜像可达性。';
+    const mirrors = data.mirrors || [];
+    $('mirrorHealthEmpty').classList.toggle('hidden', mirrors.length > 0);
+    $('mirrorHealthList').innerHTML = mirrors.map(item => '<div class="card" style="margin:12px 0"><div class="row"><b>' +
+      escapeHtml(item.name) + '</b><span class="pill ' + (item.status === 'healthy' ? 'ok' :
+      item.status === 'unreachable' ? 'bad' : 'warn') + '">' +
+      (item.status === 'healthy' ? '健康' : item.status === 'unreachable' ? '不可达' : item.status === 'disabled' ? '已禁用' : '未检测') +
+      '</span></div><p class="hint">' + escapeHtml(item.baseUrl || '') + ' · 优先级 ' +
+      escapeHtml(item.priority) + (item.latencyMs == null ? '' : ' · ' + escapeHtml(item.latencyMs) + ' ms') +
+      (item.checkedAt ? ' · ' + escapeHtml(item.checkedAt) : '') + '</p></div>').join('');
+  } catch (error) { $('mirrorSample').textContent = error.message; toast('镜像检测失败：' + error.message, 'bad'); }
+  finally { button.disabled = false; }
+}
+$('mirrorsRefresh').addEventListener('click', loadMirrorHealth);
+
 const PAGE_GUIDES = {
   overview: {
     title: '概览',
@@ -4738,6 +4826,18 @@ const PAGE_GUIDES = {
     what: '管理所有主题下的公开留言和仅作者可见留言。',
     abilities: ['按用户、主题、可见性和关键词筛选', '删除单条留言或按主题清空', '设置自动清理保留天数'],
     steps: ['选择筛选条件', '定位留言并删除', '按需调整自动清理天数'],
+  },
+  community: {
+    title: '举报与申诉',
+    what: '审核用户举报和作者申诉，并保存处理理由。',
+    abilities: ['查看待处理与历史记录', '受理或驳回并写明理由', '受理后前往主题维护执行下架'],
+    steps: ['核对主题与说明', '填写处理理由并保存结果', '必要时到主题维护处理内容'],
+  },
+  mirrors: {
+    title: '镜像健康',
+    what: '用已发布的主题包对各个镜像进行可达性检测。',
+    abilities: ['查看健康状态、响应延迟与优先级', '按需重新检测'],
+    steps: ['确认存在检测样本', '点击重新检测', '异常时检查镜像服务器和配置'],
   },
   authors: {
     title: '作者许可',
@@ -4822,6 +4922,8 @@ const PAGE_LABELS = {
   follows: 'Follows',
   pending: 'Review queue',
   comments: 'Comments',
+  community: 'Reports & appeals',
+  mirrors: 'Mirror health',
   authors: 'Author licenses',
   themes: 'Theme preview',
   upload: 'Upload theme',
@@ -4841,6 +4943,8 @@ const PAGE_TITLES = {
   follows: '关注关系',
   pending: '待审核投稿',
   comments: '评论管理',
+  community: '举报与申诉',
+  mirrors: '镜像健康',
   authors: '作者许可',
   themes: '主题预览',
   upload: '上传主题',
@@ -4860,6 +4964,8 @@ const PAGE_LEADS = {
   follows: '查看关注关系、被关注的作者以及作者归属账号。',
   pending: '检查投稿预览、作者信息与包内容，通过后立即写入 catalog。',
   comments: '查看所有主题留言与私密留言，删除单条、按主题清理或设置自动清理天数。',
+  community: '审核主题举报与作者申诉，保存处理理由。',
+  mirrors: '检测镜像可达性与响应延迟。',
   authors: '维护可信作者指纹与自动发布许可。',
   themes: '浏览已发布主题，检查预览图、截图和下载信息；预览页只读。',
   upload: '从主题包或当前设备预设创建投稿，并在发布前校验内容。',
@@ -4908,6 +5014,8 @@ function showPage(id, smooth = false) {
   if (page === 'user-detail' && selectedUserId) loadUserDetail(selectedUserId);
   if (page === 'follows') loadFollows();
   if (page === 'comments') loadCommentsAdmin(0);
+  if (page === 'community') loadCommunityAdmin();
+  if (page === 'mirrors') loadMirrorHealth();
   if (page === 'network') loadNetwork();
   if (page === 'performance') loadPerformance();
   if (page === 'monitor') { loadMonitorLive(); loadMonitorLogs(0); }

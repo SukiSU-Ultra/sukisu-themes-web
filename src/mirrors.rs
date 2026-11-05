@@ -39,6 +39,7 @@ use std::time::{Duration, Instant, SystemTime};
 use axum::http::HeaderMap;
 use reqwest::header::RANGE;
 use reqwest::{Client, StatusCode};
+use serde_json::{json, Value};
 
 use crate::config::TOKEN_HEADER;
 
@@ -59,6 +60,7 @@ struct Mirror {
     base_url: String,
     token: String,
     priority: i32,
+    enabled: bool,
 }
 
 #[derive(Default)]
@@ -121,6 +123,32 @@ fn mirrors_path() -> PathBuf {
 }
 
 impl MirrorPool {
+    /// Probe every configured mirror against one published package without
+    /// exposing its probe token to the admin browser.
+    pub async fn health(&self, sample: Option<&str>) -> Vec<Value> {
+        let mirrors = self.state.read().map(|state| state.mirrors.clone()).unwrap_or_default();
+        let Some(path) = sample.filter(|path| path.starts_with("themes/")) else {
+            return mirrors.into_iter().map(|mirror| json!({
+                "name": mirror.name, "baseUrl": mirror.base_url, "priority": mirror.priority,
+                "status": if mirror.enabled { "unknown" } else { "disabled" }, "latencyMs": null
+            })).collect();
+        };
+        let checks = mirrors.into_iter().map(|mirror| async move {
+            if !mirror.enabled {
+                return json!({"name": mirror.name, "baseUrl": mirror.base_url, "priority": mirror.priority,
+                    "status": "disabled", "latencyMs": null});
+            }
+            let target = join_url(&mirror.base_url, path);
+            let started = Instant::now();
+            let healthy = mirror_available(&self.client, &mirror, &target).await;
+            self.remember(&format!("{}|{}", mirror.base_url, path), healthy);
+            json!({"name": mirror.name, "baseUrl": mirror.base_url, "priority": mirror.priority,
+                "status": if healthy { "healthy" } else { "unreachable" },
+                "latencyMs": started.elapsed().as_millis(), "checkedAt": crate::util::now_iso()})
+        });
+        futures::future::join_all(checks).await
+    }
+
     pub async fn load(family: crate::net::IpFamily) -> Self {
         let path = mirrors_path();
         let client = crate::net::apply_client_family(
@@ -178,9 +206,7 @@ impl MirrorPool {
             }
         };
         let mut mirrors = Vec::new();
-        for entry in parsed.mirrors.into_iter().take(MAX_MIRRORS) {            if !entry.enabled {
-                continue;
-            }
+        for entry in parsed.mirrors.into_iter().take(MAX_MIRRORS) {
             let Some(base_url) = normalize_base_url(&entry.base_url) else {
                 tracing::warn!(name = %entry.name, url = %entry.base_url, "ignoring invalid mirror URL");
                 continue;
@@ -194,6 +220,7 @@ impl MirrorPool {
                 base_url,
                 token: entry.token.trim().to_string(),
                 priority: entry.priority,
+                enabled: entry.enabled,
             });
         }
         mirrors.sort_by(|left, right| left.base_url.cmp(&right.base_url));
@@ -220,7 +247,7 @@ impl MirrorPool {
         }
         let mirrors = {
             let state = self.state.read().ok()?;
-            state.mirrors.clone()
+            state.mirrors.iter().filter(|mirror| mirror.enabled).cloned().collect::<Vec<_>>()
         };
         if mirrors.is_empty() {
             return None;
@@ -384,6 +411,7 @@ mod tests {
             base_url: "http://127.0.0.1:1".to_string(),
             token: String::new(),
             priority: 1,
+            enabled: true,
         });
         let pool = MirrorPool {
             path: PathBuf::from("/nonexistent"),

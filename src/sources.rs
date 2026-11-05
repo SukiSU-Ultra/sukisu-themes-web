@@ -961,19 +961,26 @@ pub async fn import_theme(
     let prepared = uploads::prepare_upload(form)
         .await
         .map_err(|error| error.to_string())?;
+    let release_name = prepared.name.clone();
+    let release_version = prepared.version as i64;
     let themes = uploads::publish_theme(
         &state.store,
         &state.settings,
         &state.paths,
         state.limit_bytes.load(std::sync::atomic::Ordering::Relaxed),
         prepared,
-        publish_owner,
+        publish_owner.clone(),
         0,
         old_meta,
     )
     .await
     .map_err(publish_error_message)?;
     state.refresh_withdrawn_assets();
+    if let Some(hash) = publish_owner.as_deref() {
+        if let Err(error) = crate::community::record_release(&state.db, hash, &theme_id, &release_name, release_version).await {
+            tracing::warn!(?error, "failed to record imported theme update");
+        }
+    }
     if let (Some(author), Some(avatar)) = (author.as_ref(), author_avatar.as_ref()) {
         let _ = uploads::persist_author_avatar(&state.store, &author.hash, avatar).await;
     }

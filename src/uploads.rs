@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -606,10 +605,27 @@ pub async fn publish_theme(
     _reclaim_bytes: u64,
     old_meta: Option<(PathBuf, Meta)>,
 ) -> Result<Vec<crate::models::CatalogEntry>, PublishError> {
-    let old_meta = match old_meta {
-        Some(value) => Some(value),
-        None => catalog::find_theme_meta(paths, &prepared.id),
+    let lock = catalog::theme_mutation_lock(&prepared.id);
+    let _guard = lock.lock().await;
+    let latest = catalog::find_theme_meta(paths, &prepared.id);
+    let unchanged = match (&old_meta, &latest) {
+        (None, None) => true,
+        (Some((_, seen)), Some((_, current))) => {
+            seen.version == current.version
+                && seen.author_hash == current.author_hash
+                && seen.author == current.author
+                && seen.withdrawn_at == current.withdrawn_at
+                && seen.package == current.package
+        }
+        _ => false,
     };
+    if !unchanged {
+        return Err(PublishError::Conflict("主题在上传期间发生变化，请刷新后重试".to_string()));
+    }
+    if latest.as_ref().is_some_and(|(_, meta)| meta.version >= prepared.version as i64) {
+        return Err(PublishError::Conflict("该主题已有同版本或更高版本，请提升版本号".to_string()));
+    }
+    let old_meta = latest;
     let stem = format!("{}-v{}", prepared.id, prepared.version);
     let new_size = prepared.new_size();
     let location = store
@@ -618,33 +634,12 @@ pub async fn publish_theme(
         .map_err(|error| PublishError::Bad(error.to_string()))?;
     let keys = AssetKeys::new_at(&stem, &prepared, location.as_deref());
 
-    let mut old_keys: HashSet<String> = HashSet::new();
-    let mut keep_old_avatar: Option<String> = None;
-    if let Some((_, old)) = &old_meta {
-        for name in ["package", "preview"] {
-            let relative = match name {
-                "package" => &old.package,
-                _ => &old.preview,
-            };
-            if !relative.is_empty() && store.exists(relative).await {
-                old_keys.insert(relative.clone());
-            }
+    let keep_old_avatar = if prepared.avatar.is_none() {
+        match old_meta.as_ref().and_then(|(_, old)| old.avatar.as_ref()) {
+            Some(avatar) if store.exists(avatar).await => Some(avatar.clone()),
+            _ => None,
         }
-        if let Some(avatar) = &old.avatar {
-            if !avatar.is_empty() && store.exists(avatar).await {
-                if prepared.avatar.is_none() {
-                    keep_old_avatar = Some(avatar.clone());
-                } else {
-                    old_keys.insert(avatar.clone());
-                }
-            }
-        }
-        for relative in &old.screenshots {
-            if store.exists(relative).await {
-                old_keys.insert(relative.clone());
-            }
-        }
-    }
+    } else { None };
 
     let mut items: Vec<(&str, &[u8])> = vec![
         (keys.package.as_str(), prepared.package.data.as_slice()),
@@ -656,8 +651,8 @@ pub async fn publish_theme(
     for (screenshot, key) in prepared.screenshots.iter().zip(keys.screenshots.iter()) {
         items.push((key.as_str(), screenshot.data.as_slice()));
     }
+    let uploaded_keys: Vec<String> = items.iter().map(|(key, _)| (*key).to_string()).collect();
     let location_id = location.as_deref();
-    let mut written: HashSet<String> = HashSet::new();
     for chunk in items.chunks(4) {
         let uploads = chunk.iter().map(|&(key, data)| {
             let store = &store;
@@ -669,13 +664,15 @@ pub async fn publish_theme(
                 Ok::<String, anyhow::Error>(key.to_string())
             }
         });
-        for result in futures::future::join_all(uploads).await {
-            written.insert(result?);
+        if let Some(error) = futures::future::join_all(uploads).await.into_iter().find_map(Result::err) {
+            for key in &uploaded_keys { let _ = store.delete(key).await; }
+            return Err(PublishError::Internal(error));
         }
     }
-    for key in &old_keys {
-        if !written.contains(key) {
-            let _ = store.delete(key).await;
+    if let Some((_, old)) = &old_meta {
+        if let Err(error) = catalog::archive_version(paths, old) {
+            for key in &uploaded_keys { let _ = store.delete(key).await; }
+            return Err(PublishError::Internal(error));
         }
     }
 
@@ -707,15 +704,31 @@ pub async fn publish_theme(
         meta.asset_size = Some(new_size + store.size(avatar).await);
     }
     let meta_file = paths.meta.join(format!("{}.json", prepared.id));
-    catalog::write_meta(&meta_file, &meta)?;
+    if let Err(error) = catalog::write_meta(&meta_file, &meta) {
+        for key in &uploaded_keys { let _ = store.delete(key).await; }
+        return Err(PublishError::Internal(error));
+    }
     if let Some((old_file, _)) = &old_meta {
         if old_file != &meta_file {
             let _ = fs::remove_file(old_file);
         }
     }
-    let themes = catalog::rebuild_catalog(store, paths)
-        .await
-        .map_err(PublishError::Internal)?;
+    let themes = match catalog::rebuild_catalog(store, paths).await {
+        Ok(themes) => themes,
+        Err(error) => {
+            if let Some((old_file, old)) = &old_meta {
+                if old_file != &meta_file { let _ = fs::remove_file(&meta_file); }
+                if let Err(restore_error) = catalog::write_meta(old_file, old) {
+                    tracing::error!(?restore_error, theme_id = %prepared.id, "failed to restore theme metadata");
+                }
+            } else {
+                let _ = fs::remove_file(&meta_file);
+            }
+            let _ = catalog::rebuild_catalog(store, paths).await;
+            for key in &uploaded_keys { let _ = store.delete(key).await; }
+            return Err(PublishError::Internal(error));
+        }
+    };
     Ok(themes)
 }
 

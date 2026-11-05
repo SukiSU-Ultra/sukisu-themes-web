@@ -386,6 +386,14 @@ CREATE TABLE IF NOT EXISTS submissions (
 CREATE INDEX IF NOT EXISTS submissions_user_idx ON submissions(user_id, submitted_at);
 CREATE INDEX IF NOT EXISTS submissions_status_idx ON submissions(status, submitted_at);
 CREATE INDEX IF NOT EXISTS submissions_theme_idx ON submissions(theme_id);
+CREATE TABLE IF NOT EXISTS submission_drafts (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS submission_drafts_user_idx ON submission_drafts(user_id, updated_at);
 CREATE TABLE IF NOT EXISTS author_restrictions (
     author_hash TEXT PRIMARY KEY,
     features TEXT NOT NULL DEFAULT '',
@@ -427,6 +435,55 @@ CREATE TABLE IF NOT EXISTS user_follows (
 );
 CREATE INDEX IF NOT EXISTS user_follows_author_idx
     ON user_follows(author_hash);
+CREATE TABLE IF NOT EXISTS theme_favorites (
+    user_id TEXT NOT NULL,
+    theme_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, theme_id)
+);
+CREATE INDEX IF NOT EXISTS theme_favorites_theme_idx ON theme_favorites(theme_id);
+CREATE TABLE IF NOT EXISTS theme_updates (
+    id TEXT PRIMARY KEY,
+    theme_id TEXT NOT NULL,
+    author_hash TEXT NOT NULL,
+    name TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS theme_updates_author_idx ON theme_updates(author_hash, created_at);
+CREATE TABLE IF NOT EXISTS theme_update_reads (
+    user_id TEXT NOT NULL,
+    update_id TEXT NOT NULL,
+    read_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, update_id)
+);
+CREATE TABLE IF NOT EXISTS theme_reports (
+    id TEXT PRIMARY KEY,
+    reporter_id TEXT NOT NULL,
+    theme_id TEXT NOT NULL,
+    category TEXT NOT NULL,
+    detail TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    resolution TEXT,
+    moderator_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS theme_reports_status_idx ON theme_reports(status, created_at);
+CREATE INDEX IF NOT EXISTS theme_reports_reporter_idx ON theme_reports(reporter_id, created_at);
+CREATE TABLE IF NOT EXISTS theme_appeals (
+    id TEXT PRIMARY KEY,
+    appellant_id TEXT NOT NULL,
+    target_kind TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    detail TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    resolution TEXT,
+    moderator_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS theme_appeals_status_idx ON theme_appeals(status, created_at);
 "#;
 
 const STATS_SCHEMA: &str = r#"
@@ -1169,6 +1226,12 @@ impl Database {
                 "DELETE FROM social.user_follows
                  WHERE follower_id NOT IN (SELECT id FROM users)
                     OR author_hash NOT IN (SELECT hash FROM authors.authors)",
+                "DELETE FROM social.theme_favorites WHERE user_id NOT IN (SELECT id FROM users)",
+                "DELETE FROM social.theme_update_reads WHERE user_id NOT IN (SELECT id FROM users)",
+                "DELETE FROM social.theme_appeals WHERE target_kind = 'report' AND target_id IN (SELECT id FROM social.theme_reports WHERE reporter_id NOT IN (SELECT id FROM users))",
+                "DELETE FROM social.theme_reports WHERE reporter_id NOT IN (SELECT id FROM users)",
+                "DELETE FROM social.theme_appeals WHERE appellant_id NOT IN (SELECT id FROM users)",
+                "DELETE FROM authors.submission_drafts WHERE user_id NOT IN (SELECT id FROM users)",
                 "UPDATE authors.authors SET user_id = NULL
                  WHERE user_id IS NOT NULL
                    AND user_id NOT IN (SELECT id FROM users)",

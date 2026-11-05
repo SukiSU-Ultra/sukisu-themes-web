@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::SystemTime;
 
 use anyhow::Result;
@@ -37,6 +37,20 @@ struct CachedCatalog {
 static CATALOG_CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedCatalog>>> = OnceLock::new();
 /// Serializes read-modify-write cycles on catalog.json.
 static CATALOG_WRITE_LOCK: Mutex<()> = Mutex::new(());
+/// Keep mutations of one theme ordered without serializing unrelated uploads.
+static THEME_LOCKS: OnceLock<Mutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>> = OnceLock::new();
+
+pub fn theme_mutation_lock(id: &str) -> Arc<tokio::sync::Mutex<()>> {
+    let locks = THEME_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut locks = locks.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    if let Some(lock) = locks.get(id).and_then(Weak::upgrade) {
+        return lock;
+    }
+    let lock = Arc::new(tokio::sync::Mutex::new(()));
+    locks.insert(id.to_string(), Arc::downgrade(&lock));
+    lock
+}
 
 fn catalog_write_guard() -> std::sync::MutexGuard<'static, ()> {
     CATALOG_WRITE_LOCK
@@ -203,6 +217,90 @@ pub fn write_meta(path: &Path, meta: &Meta) -> Result<()> {
     write_atomic(path, &data, 0o644)?;
     bump_meta_revision();
     Ok(())
+}
+
+fn history_dir(paths: &Paths, id: &str) -> Option<PathBuf> {
+    valid_theme_id(id).then(|| paths.root.join("version-history").join(id))
+}
+
+/// Preserve the published metadata before replacing its assets. Existing
+/// archives are immutable so a repeated publish cannot rewrite history.
+pub fn archive_version(paths: &Paths, meta: &Meta) -> Result<()> {
+    let Some(dir) = history_dir(paths, &meta.id) else {
+        anyhow::bail!("invalid theme id");
+    };
+    let path = dir.join(format!("v{}.json", meta.version));
+    if !path.exists() {
+        let mut data = serde_json::to_vec_pretty(meta)?;
+        data.push(b'\n');
+        write_atomic(&path, &data, 0o644)?;
+    }
+    Ok(())
+}
+
+pub fn theme_versions(paths: &Paths, id: &str) -> Vec<Meta> {
+    let mut versions = Vec::new();
+    if let Some((_, current)) = find_theme_meta(paths, id) {
+        versions.push(current);
+    }
+    if let Some(dir) = history_dir(paths, id) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                if entry.path().extension().and_then(|ext| ext.to_str()) == Some("json") {
+                    if let Some(meta) = read_meta_file(&entry.path()) {
+                        if meta.id == id && !versions.iter().any(|item| item.version == meta.version) {
+                            versions.push(meta);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    versions.sort_by(|left, right| right.version.cmp(&left.version));
+    versions
+}
+
+pub async fn rollback_version(store: &AssetStore, paths: &Paths, id: &str, version: i64, expected: &Meta) -> Result<Meta> {
+    let lock = theme_mutation_lock(id);
+    let _guard = lock.lock().await;
+    let Some((path, current)) = find_theme_meta(paths, id) else {
+        anyhow::bail!("theme not found");
+    };
+    if current.version != expected.version
+        || current.author_hash != expected.author_hash
+        || current.author != expected.author
+        || current.withdrawn_at != expected.withdrawn_at
+        || current.package != expected.package
+    {
+        anyhow::bail!("theme changed during rollback");
+    }
+    if version >= current.version || current.version == i64::MAX {
+        anyhow::bail!("rollback target must be an earlier version");
+    }
+    let Some(previous) = theme_versions(paths, id).into_iter().find(|item| item.version == version) else {
+        anyhow::bail!("version not found");
+    };
+    if !store.exists(&previous.package).await || !store.exists(&previous.preview).await {
+        anyhow::bail!("archived assets are missing");
+    }
+    archive_version(paths, &current)?;
+    let mut restored = previous;
+    restored.version = current.version + 1;
+    // A rollback restores release content, never an obsolete owner identity.
+    restored.author_hash = current.author_hash.clone();
+    restored.author = current.author.clone();
+    restored.updated_at = now_iso();
+    restored.changelog = format!("回退至 v{version}");
+    restored.withdrawn_at = None;
+    write_meta(&path, &restored)?;
+    if let Err(error) = rebuild_catalog(store, paths).await {
+        if let Err(restore_error) = write_meta(&path, &current) {
+            tracing::error!(?restore_error, theme_id = %id, "failed to restore theme metadata after rollback");
+        }
+        let _ = rebuild_catalog(store, paths).await;
+        return Err(error);
+    }
+    Ok(restored)
 }
 
 pub fn find_theme_meta(paths: &Paths, theme_id: &str) -> Option<(PathBuf, Meta)> {
@@ -526,11 +624,40 @@ pub fn theme_id_from_package_path(path: &str) -> Option<String> {
 
 pub async fn remove_theme_files(
     store: &AssetStore,
+    paths: &Paths,
     meta_file: Option<&Path>,
     meta: &Meta,
 ) -> Result<()> {
-    for key in meta.asset_keys() {
+    let lock = theme_mutation_lock(&meta.id);
+    let _guard = lock.lock().await;
+    let Some((latest_path, latest)) = find_theme_meta(paths, &meta.id) else {
+        anyhow::bail!("theme changed during deletion");
+    };
+    if meta_file.is_some_and(|path| path != latest_path)
+        || latest.version != meta.version
+        || latest.updated_at != meta.updated_at
+        || latest.withdrawn_at != meta.withdrawn_at
+        || latest.package != meta.package
+        || latest.preview != meta.preview
+        || latest.author_hash != meta.author_hash
+    {
+        anyhow::bail!("theme changed during deletion");
+    }
+    let mut keys: HashSet<String> = theme_versions(paths, &meta.id)
+        .into_iter().flat_map(|version| version.asset_keys()).collect();
+    keys.extend(meta.asset_keys());
+    for key in keys {
         let _ = store.delete(&key).await;
+    }
+    if let Some(dir) = history_dir(paths, &meta.id) {
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                if entry.path().extension().and_then(|ext| ext.to_str()) == Some("json") {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+            let _ = fs::remove_dir(&dir);
+        }
     }
     if let Some(path) = meta_file {
         let _ = fs::remove_file(path);
@@ -559,10 +686,10 @@ pub fn withdrawn_asset_keys(paths: &Paths) -> std::collections::HashSet<String> 
     keys
 }
 
-pub async fn purge_expired_withdrawn(store: &AssetStore, paths: &Paths) -> Result<usize> {
-    let mut removed = 0usize;
+pub async fn purge_expired_withdrawn(store: &AssetStore, paths: &Paths) -> Result<Vec<String>> {
+    let mut removed = Vec::new();
     let Ok(entries) = fs::read_dir(&paths.meta) else {
-        return Ok(0);
+        return Ok(removed);
     };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -578,10 +705,10 @@ pub async fn purge_expired_withdrawn(store: &AssetStore, paths: &Paths) -> Resul
         if !withdrawal_expired(withdrawn_at) {
             continue;
         }
-        remove_theme_files(store, Some(&path), &meta).await?;
-        removed += 1;
+        remove_theme_files(store, paths, Some(&path), &meta).await?;
+        removed.push(meta.id);
     }
-    if removed > 0 {
+    if !removed.is_empty() {
         rebuild_catalog(store, paths).await?;
     }
     Ok(removed)
@@ -1121,5 +1248,42 @@ mod tests {
         crate::config::set_maintenance_enabled(&paths, false).unwrap();
         rebuild_catalog(&store, &paths).await.unwrap();
         assert!(!read_catalog(&paths).unwrap().maintenance);
+    }
+
+    #[tokio::test]
+    async fn rollback_publishes_new_version_and_preserves_history() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        let paths = test_paths(root);
+        for name in ["meta", "themes", "previews"] {
+            std::fs::create_dir_all(root.join(name)).unwrap();
+        }
+        for version in [1, 2] {
+            std::fs::write(root.join(format!("themes/demo-v{version}.sukisu")), b"package").unwrap();
+            std::fs::write(root.join(format!("previews/demo-v{version}.jpg")), b"preview").unwrap();
+        }
+        let first: Meta = serde_json::from_value(json!({
+            "id": "demo", "version": 1, "name": "Demo", "author": "Alice",
+            "authorHash": "old-license",
+            "package": "themes/demo-v1.sukisu", "preview": "previews/demo-v1.jpg"
+        })).unwrap();
+        let second: Meta = serde_json::from_value(json!({
+            "id": "demo", "version": 2, "name": "Demo", "author": "Alice New",
+            "authorHash": "current-license",
+            "package": "themes/demo-v2.sukisu", "preview": "previews/demo-v2.jpg"
+        })).unwrap();
+        archive_version(&paths, &first).unwrap();
+        write_meta(&paths.meta.join("demo.json"), &second).unwrap();
+        let store = AssetStore::Local(LocalStore::new(root));
+        rebuild_catalog(&store, &paths).await.unwrap();
+
+        let restored = rollback_version(&store, &paths, "demo", 1, &second).await.unwrap();
+        assert_eq!(restored.version, 3);
+        assert_eq!(restored.package, first.package);
+        assert_eq!(restored.author_hash, second.author_hash);
+        assert_eq!(restored.author, second.author);
+        assert_eq!(restored.changelog, "回退至 v1");
+        assert_eq!(theme_versions(&paths, "demo").iter().map(|meta| meta.version).collect::<Vec<_>>(), vec![3, 2, 1]);
+        assert_eq!(read_catalog(&paths).unwrap().themes[0].version, 3);
     }
 }
