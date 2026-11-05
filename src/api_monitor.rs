@@ -40,6 +40,7 @@ type ApiResult<T> = Result<T, ApiError>;
 
 const DEFAULT_BODY_LIMIT: usize = 128 * 1024;
 const DEFAULT_CAPTURE_BUDGET: usize = 32 * 1024 * 1024;
+const DEFAULT_RETENTION: i64 = 2_000_000;
 const MAX_EXPORT_BATCH: i64 = 200;
 const MAX_DELETE_IDS: usize = 500;
 const RECENT_LIMIT: usize = 100;
@@ -91,7 +92,7 @@ impl MonitorSettings {
         let retention = env
             .get("API_MONITOR_RETENTION")
             .and_then(|value| value.trim().parse::<i64>().ok())
-            .unwrap_or(20_000)
+            .unwrap_or(DEFAULT_RETENTION)
             .max(0);
         Self {
             enabled,

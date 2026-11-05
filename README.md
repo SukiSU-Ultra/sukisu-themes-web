@@ -135,8 +135,8 @@ Rust 编写的主题镜像、投稿审核和账号系统，提供 Android 管理
 - 请求与响应内容以可读格式保存：请求参数、响应正文、请求/响应头（含 Cookie）、User-Agent、状态码和耗时。正文默认最多保留 128 KiB，超出部分标记截断；所有活跃连接共享 32 MiB 抓取缓存，避免慢速大请求占用过多内存。
 - 「断开」会立即取消正在执行的请求，并撤销该连接携带的管理员/用户会话；操作写入管理员操作日志（`api.abort`）。
 - 日志支持按路径/功能、用户、IP、身份、状态和方法筛选，支持单条/批量删除、清空和导出 NDJSON 文件；删除/清空/导出同样写入管理员操作日志。
-- 日志保存在 `audit.db` 的 `api_request_logs` 表，默认最多保留 20000 条（`API_MONITOR_RETENTION`，0 为不自动清理）。
-- 配置项（`config.env`）：`API_MONITOR_ENABLED`（默认 1）、`API_MONITOR_BODY_LIMIT`（默认 131072，范围 16 KiB–4 MiB）、`API_MONITOR_CAPTURE_BUDGET`（默认 33554432，范围 1–512 MiB）、`API_MONITOR_RETENTION`（默认 20000）。
+- 日志保存在 `audit.db` 的 `api_request_logs` 表，默认最多保留 2000000 条（`API_MONITOR_RETENTION`，0 为不自动清理）。
+- 配置项（`config.env`）：`API_MONITOR_ENABLED`（默认 1）、`API_MONITOR_BODY_LIMIT`（默认 131072，范围 16 KiB–4 MiB）、`API_MONITOR_CAPTURE_BUDGET`（默认 33554432，范围 1–512 MiB）、`API_MONITOR_RETENTION`（默认 2000000）。
 
 ## 上传进度与并发
 
@@ -359,7 +359,7 @@ PERF_DB_POOL_SIZE=4
 API_MONITOR_ENABLED=1
 API_MONITOR_BODY_LIMIT=131072
 API_MONITOR_CAPTURE_BUDGET=33554432
-API_MONITOR_RETENTION=20000
+API_MONITOR_RETENTION=2000000
 ```
 
 ### `account.env`
@@ -383,7 +383,7 @@ SMTP_TLS=starttls
 
 ### 数据库布局（分库）
 
-当前版本运行在分库布局：`account.db`（主库）+ `authors.db` + `social.db` + `stats.db` + `audit.db`，默认位于 `/var/lib/sukisu-theme-web/db-split/`。
+当前版本运行在分库布局：`account.db`（主库）+ `authors.db` + `social.db` + `stats.db` + `audit.db`，默认位于 `/var/lib/sukisu-theme-web/db-split/`。生产环境可通过 `config.env` 的 `THEME_DB_DIR` 指向其他磁盘；本机部署在 `/data/sda1/sukisu-theme-web/db-split/`（根分区只有 6GB），备份必须包含该目录。
 
 - 进程仍是同一个连接池；每条连接通过 SQLite `ATTACH` 挂载 5 个文件，所以跨库 JOIN 仍然可用。
 - SQLite 每个文件仍只有一个写者，但账号、作者、评论/关注、下载统计、审计的写可以落在不同文件上并行。
@@ -432,7 +432,22 @@ install -m 0755 target/aarch64-unknown-linux-musl/release/sukisu-theme-web \
   /opt/sukisu-theme-web/sukisu-theme-web-rs
 ```
 
-静态资源已嵌入二进制。生产环境不要设置 `THEME_STATIC_DIR`；修改 HTML/JS/语言文件后必须重新构建并替换二进制。
+生产环境通过 `/etc/systemd/system/sukisu-theme-web.service.d/static.conf` 设置 `THEME_STATIC_DIR=/opt/sukisu-theme-web/static`：静态文件优先从磁盘读取，缺失时回退到二进制内嵌副本。**只改 HTML/JS/语言包时不需要重新编译或重启**：
+
+```bash
+bash scripts/hot-static.sh
+```
+
+脚本会把整个 `static/`（约 200KB 压缩后）传到服务器，服务在下次请求时直接读取新文件。浏览器有缓存时按 `Ctrl+F5`。
+
+Rust 后端改动仍需构建并替换二进制，可用 xz 压缩上传脚本（自动备份并在启动失败时回滚）：
+
+```bash
+powershell -ExecutionPolicy Bypass -File scripts/build-aarch64.ps1
+bash scripts/deploy-binary.sh
+```
+
+`deploy-binary.sh` 会上传 xz 压缩后的二进制并重启服务；静态文件不受影响，继续由磁盘目录提供。
 
 ### 2. 写入配置
 
@@ -540,7 +555,7 @@ systemctl is-active sukisu-theme-web
 
 - **页面没有语言下拉框**：应用已公开 `/i18n.js` 和 `/locales/*`；若仍 401，检查 Lucky/Nginx 是否额外加了鉴权。
 - **`/account/i18n.js` 404**：正确路径是根路径 `/i18n.js`；不要加 `/account` 前缀。
-- **改了 HTML/JS 线上没变化**：生产环境未设置 `THEME_STATIC_DIR`，资源在二进制里，重新构建并替换二进制。
+- **改了 HTML/JS 线上没变化**：确认服务进程有 `THEME_STATIC_DIR=/opt/sukisu-theme-web/static`，并用 `bash scripts/hot-static.sh` 上传；浏览器再按 `Ctrl+F5`。Rust 代码改动仍需替换二进制。
 - **页面 502 / 无法访问**：确认服务监听 `127.0.0.1:8080`，Lucky 目标端口一致；`/admin` 前缀由应用内部处理，不需要反代改写。
 - **首次打不开初始化页**：确认没有预置 `admin.env`；已有管理员时请走 `/account/login`。
 - **浏览器显示旧页面**：`Ctrl + F5` 强制刷新。

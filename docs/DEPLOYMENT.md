@@ -13,7 +13,7 @@
 | 导入来源 | `/etc/sukisu-theme-web/sources.json`（`THEME_SOURCES_FILE`） |
 | 密钥 | `~/.ssh/id_ed25519`（有口令） |
 
-`THEME_STATIC_DIR` 未设置，`index.html`、`account.html`、`i18n.js`、`locales/en.json`、`logo.svg` 等全部通过 `include_str!` / `include_bytes!` 打进二进制。改静态文件也必须重新构建并替换二进制。
+`THEME_STATIC_DIR=/opt/sukisu-theme-web/static` 由 systemd drop-in 设置（`/etc/systemd/system/sukisu-theme-web.service.d/static.conf`）。静态文件优先从磁盘读取，缺失时回退到二进制内嵌副本；只改 HTML/JS/语言包时运行 `bash scripts/hot-static.sh` 即可，无需重新构建或重启。Rust 改动仍需替换二进制。
 
 ## 存储位置与导入
 
@@ -61,6 +61,20 @@ target/aarch64-unknown-linux-musl/release/sukisu-theme-web
 od -An -t x1 -j 18 -N 2 target/aarch64-unknown-linux-musl/release/sukisu-theme-web
 # b7 00
 ```
+
+## 热更新
+
+生产环境已把静态文件目录挂到磁盘，并设置了 systemd drop-in：
+
+```ini
+# /etc/systemd/system/sukisu-theme-web.service.d/static.conf
+[Service]
+Environment=THEME_STATIC_DIR=/opt/sukisu-theme-web/static
+```
+
+- **只改 HTML/JS/语言包**：运行 `bash scripts/hot-static.sh`，脚本把 `static/` 传到 `/opt/sukisu-theme-web/static`，服务下一次请求直接读取，无需重启或重编译；浏览器按 `Ctrl+F5`。
+- **改了 Rust 后端**：先构建，再运行 `bash scripts/deploy-binary.sh`。脚本用 xz 压缩上传二进制、备份旧文件、重启并在启动失败时回滚。
+- 静态目录缺失文件时会回退到二进制内嵌副本；删除文件需手动删除远端 `static/` 下的对应文件（脚本只覆盖/新增，不删除）。
 
 ## 上传与替换
 
