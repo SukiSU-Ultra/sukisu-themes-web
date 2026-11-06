@@ -2078,6 +2078,20 @@ async fn create_author_request(
         .unwrap_or(&session.display_name)
         .trim()
         .to_string();
+    let note_text = value
+        .get("note")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if note_text.chars().count() > 500 {
+        return Err(ApiError::bad("申请说明不能超过 500 个字符"));
+    }
+    let note = if note_text.is_empty() {
+        None
+    } else {
+        Some(note_text.as_str())
+    };
     if !matches!(kind.as_str(), "bind" | "new" | "reset") {
         return Err(ApiError::bad("未知的作者申请类型"));
     }
@@ -2093,6 +2107,18 @@ async fn create_author_request(
     let existing = authors::authors_for_user(&state.db, &session.user_id)
         .await
         .map_err(ApiError::internal)?;
+    let reapplying = matches!(kind.as_str(), "bind" | "new")
+        && existing
+            .iter()
+            .any(|author| author.status == "revoked" || author.status == "retired");
+    if reapplying && note_text.chars().count() < 10 {
+        return Err(ApiError::bad(
+            "作者身份曾被撤销，重新申请需要填写至少 10 字的说明",
+        ));
+    }
+    if kind == "reset" && note_text.chars().count() < 5 {
+        return Err(ApiError::bad("重置作者 ID 需要填写至少 5 字的说明"));
+    }
     if kind == "new" && existing.iter().any(|author| author.status == "active") {
         return Err(ApiError::conflict(
             "当前已有作者身份，如需换号请申请重置作者 ID",
@@ -2109,7 +2135,7 @@ async fn create_author_request(
             "reset",
             Some(&active.hash),
             &active.display_name.clone().unwrap_or(display_name),
-            value.get("note").and_then(|value| value.as_str()),
+            note,
         )
         .await
         .map_err(ApiError::internal)?;
@@ -2155,7 +2181,7 @@ async fn create_author_request(
                     "bind",
                     Some(&hash),
                     &display_name,
-                    value.get("note").and_then(|value| value.as_str()),
+                    note,
                 )
                 .await
                 .map_err(ApiError::internal)?;
@@ -2181,7 +2207,7 @@ async fn create_author_request(
                     "new",
                     Some(&hash),
                     &display_name,
-                    value.get("note").and_then(|value| value.as_str()),
+                    note,
                 )
                 .await
                 .map_err(ApiError::internal)?;
@@ -2227,7 +2253,7 @@ async fn create_author_request(
         "new",
         Some(&hash),
         &display_name,
-        value.get("note").and_then(|value| value.as_str()),
+        note,
     )
     .await
     .map_err(ApiError::internal)?;
@@ -2501,6 +2527,7 @@ async fn discover_themes(
 
 async fn download_published_theme(
     State(state): State<AppState>,
+    Extension(session): Extension<SessionInfo>,
     Path(id): Path<String>,
     method: axum::http::Method,
     headers: HeaderMap,
@@ -2514,6 +2541,15 @@ async fn download_published_theme(
     };
     if meta.withdrawn_at.is_some() {
         return Err(ApiError::not_found("主题不存在"));
+    }
+    if method == axum::http::Method::GET {
+        let _ = crate::community::record_theme_history(
+            &state.db,
+            &session.user_id,
+            &meta.id,
+            "download",
+        )
+        .await;
     }
     if !headers.contains_key("Range") {
         if let Some(response) = crate::distribution::redirect_asset(
@@ -2647,6 +2683,15 @@ async fn download_my_theme(
     };
     if !theme_owned_by_user(&state, &session, meta).await? {
         return Err(ApiError::forbidden("无权下载该主题"));
+    }
+    if method == axum::http::Method::GET {
+        let _ = crate::community::record_theme_history(
+            &state.db,
+            &session.user_id,
+            &meta.id,
+            "download",
+        )
+        .await;
     }
     if !headers.contains_key("Range") {
         if let Some(response) = crate::distribution::redirect_asset(
@@ -3318,7 +3363,7 @@ async fn submit_theme(
         .map_err(ApiError::bad)?;
     let prepared_version = prepared.version as i64;
     let prepared_name = prepared.name.clone();
-    let package_sha256 = crate::util::sha256_hex(&prepared.package.data);
+    let package_sha256 = prepared.package_sha256.clone();
     let old_meta = crate::catalog::find_theme_meta(&state.paths, &theme_id);
     let author_hash = resolved.author.hash.clone();
     if let Some((_, old)) = &old_meta {
@@ -3448,16 +3493,30 @@ async fn submit_theme(
 
     let submission = crate::util::submission_id();
     let remote = request_ip(&headers);
-    crate::uploads::write_pending(
-        &state.paths,
-        &prepared,
-        &author_hash,
-        &resolved.author.fingerprint,
-        &remote,
-        &submission,
-        Some(&session.user_id),
-    )
-    .map_err(ApiError::internal)?;
+    {
+        // Writing a 128 MB package to the pending directory is blocking file IO.
+        // Doing it inline stalled the async runtime right when the manager was
+        // waiting for the verification result.
+        let paths = state.paths.clone();
+        let author_hash = author_hash.clone();
+        let author_fingerprint = resolved.author.fingerprint.clone();
+        let user_id = session.user_id.clone();
+        let write_submission = submission.clone();
+        tokio::task::spawn_blocking(move || {
+            crate::uploads::write_pending(
+                &paths,
+                &prepared,
+                &author_hash,
+                &author_fingerprint,
+                &remote,
+                &write_submission,
+                Some(&user_id),
+            )
+        })
+        .await
+        .map_err(ApiError::internal)?
+        .map_err(ApiError::internal)?;
+    }
     accounts::record_submission(
         &state.db,
         &submission,

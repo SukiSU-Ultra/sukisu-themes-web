@@ -181,8 +181,8 @@ async fn run(settings: config::StorageSettings) -> anyhow::Result<()> {
             cleanup_state.refresh_withdrawn_assets();
             resumable::cleanup_stale(&cleanup_state.paths);
             cleanup_state.flush_downloads().await;
-            if let Err(error) = cleanup_state.db.optimize().await {
-                tracing::warn!("database optimize warning: {error:#}");
+            if let Err(error) = cleanup_state.db.reclaim_space().await {
+                tracing::warn!("database reclaim warning: {error:#}");
             }
             if let Err(error) = cleanup_state.db.repair_orphans().await {
                 tracing::warn!("database orphan repair warning: {error:#}");

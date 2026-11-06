@@ -2,6 +2,7 @@ use std::net::{IpAddr, TcpListener};
 use std::path::{Path, PathBuf};
 
 use axum::extract::{Extension, State};
+use axum::http::{header, HeaderMap};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use bytes::Bytes;
@@ -69,6 +70,115 @@ impl NetworkBody {
     }
 }
 
+fn site_config() -> Option<crate::site::SiteConfig> {
+    let file = std::env::var_os("SUKISU_SITE_CONFIG")?;
+    let bytes = std::fs::read(file).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+fn site_public_entry() -> Option<String> {
+    let config = site_config()?;
+    config
+        .peers
+        .iter()
+        .find(|peer| peer.id == config.node_id)
+        .map(|peer| peer.base_url.clone())
+}
+
+fn url_host(url: &str) -> &str {
+    let rest = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
+    let authority = rest
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("")
+        .rsplit('@')
+        .next()
+        .unwrap_or("");
+    if let Some(rest) = authority.strip_prefix('[') {
+        return rest.split(']').next().unwrap_or("");
+    }
+    authority.split(':').next().unwrap_or("")
+}
+
+/// Loopback and link-local addresses only work on this machine or link.
+/// Private LAN addresses are still valid endpoints for LAN users, so they are
+/// kept; loopback is only the internal listener.
+fn is_direct_host(host: &str) -> bool {
+    if host.eq_ignore_ascii_case("localhost") {
+        return false;
+    }
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(ip)) => !(ip.is_loopback() || ip.is_link_local() || ip.is_unspecified()),
+        Ok(IpAddr::V6(ip)) => {
+            let first = ip.segments()[0];
+            !(ip.is_loopback()
+                || ip.is_unspecified()
+                || (first & 0xffc0) == 0xfe80)
+        }
+        Err(_) => true,
+    }
+}
+
+/// The address users actually connect to. `bind:port` is only the local
+/// listener and may be a random port in complete-site mode.
+fn public_entry(settings: &NetworkSettings) -> (String, &'static str) {
+    let public_url = settings.public_url.trim();
+    if !public_url.is_empty() && is_direct_host(url_host(public_url)) {
+        return (public_url.trim_end_matches('/').to_string(), "network");
+    }
+    if let Some(url) = site_public_entry() {
+        if is_direct_host(url_host(&url)) {
+            return (url.trim_end_matches('/').to_string(), "site");
+        }
+    }
+    if let Some(domain) = settings.domains.first().map(|value| value.trim()) {
+        let domain = domain.trim_end_matches('/');
+        if !domain.is_empty() {
+            let url = if domain.contains("://") {
+                domain.to_string()
+            } else {
+                format!("https://{domain}")
+            };
+            if is_direct_host(url_host(&url)) {
+                return (url, "domain");
+            }
+        }
+    }
+    (String::new(), "none")
+}
+
+/// In a complete site, the reverse proxy points at the supervisor's bind
+/// address. The child process listens on a separately allocated random port.
+fn proxy_target(settings: &NetworkSettings) -> String {
+    if let Some(config) = site_config() {
+        config.bind.to_string()
+    } else {
+        settings.upstream()
+    }
+}
+
+/// Last resort: the address this admin page was reached on. Behind a reverse
+/// proxy the forwarded headers carry the public scheme and host.
+fn request_entry(headers: &HeaderMap) -> Option<String> {
+    let first = |name: header::HeaderName| {
+        headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.split(',').next())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    };
+    let host = first(header::HeaderName::from_static("x-forwarded-host"))
+        .or_else(|| first(header::HOST))?;
+    if !is_direct_host(url_host(&host)) {
+        return None;
+    }
+    let scheme = first(header::HeaderName::from_static("x-forwarded-proto"))
+        .unwrap_or_else(|| "http".to_string());
+    Some(format!("{}://{}", scheme.trim_end_matches(':'), host))
+}
+
 fn health_host(settings: &NetworkSettings) -> String {
     match settings.bind.as_str() {
         "0.0.0.0" => "127.0.0.1".to_string(),
@@ -128,12 +238,27 @@ fn restore_backup(paths: &config::Paths, backup: &Path) {
     }
 }
 
-async fn network_get(State(state): State<AppState>) -> Json<Value> {
+async fn network_get(State(state): State<AppState>, headers: HeaderMap) -> Json<Value> {
     let settings = config::read_network_settings(&state.paths);
+    let (public_entry, public_entry_source) = public_entry(&settings);
+    let (public_entry, public_entry_source) = if public_entry_source == "none" {
+        match request_entry(&headers) {
+            Some(entry) => (entry, "request"),
+            None => (public_entry, public_entry_source),
+        }
+    } else {
+        (public_entry, public_entry_source)
+    };
+    let upstream = proxy_target(&settings);
+    let internal = settings.upstream();
     Json(json!({
         "ok": true,
         "settings": settings,
-        "upstream": settings.upstream(),
+        "upstream": upstream,
+        "internal": internal,
+        "mode": if system::site_managed() { "site" } else { "standalone" },
+        "publicEntry": public_entry,
+        "publicEntrySource": public_entry_source,
         "systemctlDisabled": system::systemctl_disabled(),
         "adminService": system::service_state(system::service_unit()).await,
         "serviceUnit": system::service_unit(),
@@ -148,7 +273,17 @@ async fn network_test(State(state): State<AppState>, body: Bytes) -> ApiResult<J
         .validate()
         .map_err(|error| ApiError::bad(error.to_string()))?;
     let current = config::read_network_settings(&state.paths);
-    if settings.port != current.port {
+    let site_bind = site_config().map(|config| config.bind);
+    if site_bind.is_some() {
+        let ip: IpAddr = settings
+            .bind
+            .parse()
+            .map_err(|_| ApiError::bad("监听地址无效"))?;
+        if !ip.is_loopback() {
+            return Err(ApiError::bad("完整站点只允许回环监听地址"));
+        }
+    }
+    if settings.port != current.port && site_bind.map(|bind| bind.port()) != Some(settings.port) {
         test_bind(&settings)?;
     }
     Ok(Json(json!({
@@ -170,17 +305,58 @@ async fn network_apply(
         .validate()
         .map_err(|error| ApiError::bad(error.to_string()))?;
     let current = config::read_network_settings(&state.paths);
-    if settings.port != current.port {
+    let site = site_config();
+    let bind_ip: IpAddr = settings
+        .bind
+        .parse()
+        .map_err(|_| ApiError::bad("监听地址无效"))?;
+    if site.is_some() && !bind_ip.is_loopback() {
+        return Err(ApiError::bad("完整站点只允许回环监听地址"));
+    }
+    let site_port = site.as_ref().map(|config| config.bind.port());
+    if settings.port != current.port && site_port != Some(settings.port) {
         test_bind(&settings)?;
     }
 
     let backup = make_backup(&state.paths).map_err(ApiError::internal)?;
-    if let Err(error) = config::write_network_settings(&state.paths, &settings) {
+    let mut persisted = settings.clone();
+    if site.is_some() {
+        // The site supervisor owns the child's port and loopback family; keep
+        // them aligned with the new site bind instead of the public target.
+        persisted.bind = (if bind_ip.is_ipv4() { "127.0.0.1" } else { "::1" }).to_string();
+        persisted.port = current.port;
+    }
+    if let Err(error) = config::write_network_settings(&state.paths, &persisted) {
         restore_backup(&state.paths, &backup);
         return Err(ApiError::internal(error));
     }
 
+    let mut site_changed = false;
+    if let Some(config) = &site {
+        let next = std::net::SocketAddr::new(bind_ip, settings.port);
+        if next != config.bind {
+            if let Err(error) = crate::site::update_bind(next) {
+                restore_backup(&state.paths, &backup);
+                return Err(ApiError::internal(error));
+            }
+            site_changed = true;
+        }
+    }
+
     accounts_audit(&state, &actor.user_id, &settings).await;
+
+    if site.is_some() {
+        return Ok(Json(json!({
+            "ok": true,
+            "restart": false,
+            "message": if site_changed {
+                "网络配置已保存；站点监听地址已更新，请重启 sukisu-theme-site.service 生效"
+            } else {
+                "网络配置已保存；请重启 sukisu-theme-site.service 使配置生效"
+            },
+            "settings": settings,
+        })));
+    }
 
     if system::systemctl_disabled() {
         return Ok(Json(json!({

@@ -472,6 +472,22 @@ fn persist(path: &Path, value: &SiteConfig) -> Result<()> {
     atomic(path, &serde_json::to_vec_pretty(value)?)
 }
 
+/// Update the supervisor listener from the network page. The supervisor reads
+/// this file at startup, so the caller must restart the site service.
+pub fn update_bind(bind: std::net::SocketAddr) -> Result<bool> {
+    let file = std::env::var_os("SUKISU_SITE_CONFIG").context("当前不是完整站点进程")?;
+    let path = PathBuf::from(file);
+    let bytes = std::fs::read(&path)?;
+    let mut config: SiteConfig = serde_json::from_slice(&bytes)?;
+    if config.bind == bind {
+        return Ok(false);
+    }
+    anyhow::ensure!(bind.ip().is_loopback(), "完整站点只允许回环监听地址");
+    config.bind = bind;
+    persist(&path, &config)?;
+    Ok(true)
+}
+
 pub fn public_endpoints(paths: &Paths) -> Value {
     if let Some(file) = std::env::var_os("SUKISU_SITE_CONFIG") {
         if let Ok(bytes) = std::fs::read(file) {
@@ -1027,6 +1043,11 @@ impl Host {
         let storage = runtime.join("storage.env");
         let network = runtime.join("network.env");
         let port = free_port().await?;
+        let core_base = if c.bind.is_ipv4() {
+            format!("http://127.0.0.1:{port}")
+        } else {
+            format!("http://[::1]:{port}")
+        };
         atomic(
             &storage,
             format!(
@@ -1036,15 +1057,26 @@ impl Host {
             )
             .as_bytes(),
         )?;
+        let mut network_values = config::read_env(&network);
+        let loopback = if c.bind.is_ipv4() { "127.0.0.1" } else { "::1" };
+        network_values.insert("ADMIN_BIND".to_string(), loopback.to_string());
+        network_values.insert("ADMIN_PORT".to_string(), port.to_string());
+        network_values
+            .entry("OUTBOUND_IP_FAMILY".to_string())
+            .or_insert_with(|| "auto".to_string());
         atomic(
             &network,
-            format!("ADMIN_BIND=127.0.0.1\nADMIN_PORT={port}\nOUTBOUND_IP_FAMILY=auto\n")
+            network_values
+                .into_iter()
+                .map(|(key, value)| format!("{key}={value}\n"))
+                .collect::<String>()
                 .as_bytes(),
         )?;
         // The source config remains at its original location; only the selected
         // node's local PUBLIC_URL/DB directory are adjusted in a private runtime copy.
         let config_file = runtime.join("config.env");
-        let mut values = config::read_env(if config_file.exists() {
+        let config_exists = config_file.exists();
+        let mut values = config::read_env(if config_exists {
             &config_file
         } else {
             source.files.get("config.env").context("缺少站点配置")?
@@ -1054,11 +1086,26 @@ impl Host {
             "THEME_DB_DIR".into(),
             source.db_dir.to_string_lossy().replace('\\', "/"),
         );
-        values.insert("PUBLIC_URL".into(), c.url()?.to_string());
-        values.insert(
-            "ADMIN_URL".into(),
-            format!("{}/admin/", c.url()?.trim_end_matches('/')),
-        );
+        let public_url = c.url()?.to_string();
+        let admin_url = format!("{}/admin/", public_url.trim_end_matches('/'));
+        if config_exists {
+            // Keep values customised on the network page across child restarts.
+            if values
+                .get("PUBLIC_URL")
+                .is_none_or(|value| value.trim().is_empty())
+            {
+                values.insert("PUBLIC_URL".into(), public_url);
+            }
+            if values
+                .get("ADMIN_URL")
+                .is_none_or(|value| value.trim().is_empty())
+            {
+                values.insert("ADMIN_URL".into(), admin_url);
+            }
+        } else {
+            values.insert("PUBLIC_URL".into(), public_url);
+            values.insert("ADMIN_URL".into(), admin_url);
+        }
         atomic(
             &config_file,
             values
@@ -1138,14 +1185,14 @@ impl Host {
         {
             let mut children = self.children.lock().await;
             children.core = Some(child);
-            children.core_url = Some(format!("http://127.0.0.1:{port}"));
+            children.core_url = Some(core_base.clone());
             children.core_key = core_key;
         }
         for _ in 0..100 {
             let key = self.children.lock().await.core_key.clone();
             if self
                 .client
-                .get(format!("http://127.0.0.1:{port}/healthz"))
+                .get(format!("{core_base}/healthz"))
                 .header("X-Sukisu-Site-Internal", key)
                 .send()
                 .await

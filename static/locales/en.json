@@ -132,6 +132,32 @@
     "删除草稿": "Delete draft",
     "删除这份草稿？": "Delete this draft?",
     "主题图库": "Theme gallery",
+    "主题广场": "Theme plaza",
+    "最近查看": "Recently viewed",
+    "最近下载": "Recently downloaded",
+    "打开过的主题会按时间排列；清除记录不会影响收藏或已下载的主题。": "Themes you opened, newest first. Clearing this history does not affect favorites or downloaded packages.",
+    "下载过的主题会按时间排列；清除记录不会删除已经保存的主题包。": "Themes you downloaded, newest first. Clearing this history does not delete saved packages.",
+    "还没有查看记录": "No viewing history yet",
+    "还没有下载记录": "No download history yet",
+    "选择": "Select",
+    "全选": "Select all",
+    "取消全选": "Clear selection",
+    "清空全部": "Clear all",
+    "删除选中（0）": "Delete selected (0)",
+    "请选择要删除的记录": "Select records to delete",
+    "加载中…": "Loading…",
+    "清空全部最近查看记录？此操作不可恢复。": "Clear all viewing history? This cannot be undone.",
+    "清空全部最近下载记录？此操作不可恢复。": "Clear all download history? This cannot be undone.",
+    "最近查看记录已清空": "Viewing history cleared",
+    "最近下载记录已清空": "Download history cleared",
+    "已删除选中记录": "Selected records deleted",
+    "主题广场分类": "Theme plaza sections",
+    "热门": "Popular",
+    "图库": "Library",
+    "热门排行、完整图库和随机推荐集中在这里；找到喜欢的主题后可直接收藏或下载。": "Popular rankings, the full library, and random picks are all here; favorite or download anything you like.",
+    "换一批": "Shuffle",
+    "去随便看看": "Surprise me",
+    "还没有留言。到「主题广场」里打开一个主题就能留言。": "No comments yet. Open a theme in the theme plaza to leave one.",
     "浏览所有公开主题，支持搜索、标签和排序。": "Browse published themes with search, tags, and sorting.",
     "搜索名称、作者或主题 ID": "Search name, author, or theme ID",
     "标签（可选）": "Tag (optional)",
@@ -331,6 +357,8 @@
     "压缩分类": "Compression by content type",
     "重置统计": "Reset stats",
     "数据库结构": "Database structure",
+    "每小时自动执行增量回收（auto_vacuum=INCREMENTAL），删除日志、留言或主题记录后释放的页会逐步归还；空闲页数量如下。": "Incremental reclaim runs automatically every hour (auto_vacuum=INCREMENTAL); pages freed by deleting logs, comments, or themes are returned over time. Free-page counts are shown below.",
+    "空闲页 / 回收": "Free pages / reclaim",
     "路由与压缩链": "Routes & compression chain",
     "压缩链": "Compression chain",
     "压缩已启用": "Compression enabled",
@@ -533,7 +561,36 @@
     "新令牌": "New token",
     "新密码": "New password",
     "修改成功后需要重新登录。": "You will need to log in again after the change.",
-    "服务直接监听该地址与端口。修改后会自动重启；Lucky 等反向代理需要指向同一端口。绑定 127.0.0.1 时仅本机反代可访问，绑定 0.0.0.0 可对外提供服务。": "The service listens on this address and port directly. Changes restart it automatically; point Lucky or another reverse proxy at the same port. Binding 127.0.0.1 allows only local reverse proxies, while 0.0.0.0 accepts external connections.",
+    "这里配置的是内部监听地址和端口，不一定是公网入口或反代目标。修改后会自动重启；独立部署时 Lucky 等反向代理指向此端口，完整站点模式下请以「反代目标」为准。绑定 127.0.0.1 时仅本机反代可访问，绑定 0.0.0.0 可对外提供服务。": "This configures the internal listen address and port, which may be neither the public endpoint nor the reverse-proxy target. Changes restart the service automatically; in standalone mode point Lucky or another reverse proxy here, while in complete-site mode use the reverse-proxy target shown above. Binding 127.0.0.1 allows only local reverse proxies, while 0.0.0.0 accepts external connections.",
+    "运行模式": "Run mode",
+    "公开入口": "Public endpoint",
+    "内部监听": "Internal listener",
+    "用户和管理器直接连接": "Users and the manager connect directly",
+    "仅本机进程或站点转发使用": "Local process or site forwarding only",
+    "站点子进程实际监听": "Actual child-process listener",
+    "反向代理应指向此端口": "Point the reverse proxy here",
+    "由站点配置管理": "Managed by the site config",
+    "保存后需重启站点服务": "Restart the site service after saving",
+    "保存后需要重启站点服务才能生效，是否继续？": "The site service must be restarted for changes to take effect. Continue?",
+    "完整站点只允许回环监听地址": "Complete sites only allow loopback listen addresses",
+    "网络配置已保存；站点监听地址已更新，请重启 sukisu-theme-site.service 生效": "Network settings saved; the site listener was updated. Restart sukisu-theme-site.service to apply it.",
+    "网络配置已保存；请重启 sukisu-theme-site.service 使配置生效": "Network settings saved; restart sukisu-theme-site.service to apply them.",
+    "反代目标（站点监听）": "Reverse-proxy target (site listener)",
+    "完整站点模式下，这里显示并修改站点进程的监听地址，也就是 Lucky 应指向的反代目标；保存后需要重启 sukisu-theme-site.service 才会绑定新端口。内部子进程端口由站点随机分配。": "In complete-site mode this shows and edits the site process listener, which is the reverse-proxy target Lucky should use. A restart of sukisu-theme-site.service is required before a new port is bound; the child-process port is allocated randomly by the site.",
+    "完整站点模式下，公开地址会保存到站点运行配置，重启站点服务后生效。": "In complete-site mode the public URLs are saved to the site runtime config and apply after the site service restarts.",
+    "这里配置的是服务监听地址和端口，修改后会自动重启；Lucky 等反向代理指向这个地址。绑定 127.0.0.1 时仅本机反代可访问，绑定 0.0.0.0 可对外提供服务。": "Configure the service listen address and port here. Changes restart the service automatically; point Lucky or another reverse proxy at this address. Binding 127.0.0.1 allows only local reverse proxies, while 0.0.0.0 accepts external connections.",
+    "完整站点": "Complete site",
+    "独立部署": "Standalone",
+    "由站点进程管理": "Managed by the site process",
+    "本机进程监听": "Listened by the local process",
+    "来自完整站点配置": "From complete-site config",
+    "来自镜像公开地址": "From public mirror URL",
+    "来自公开域名": "From public domain",
+    "来自当前访问地址": "From the current address",
+    "请在下方填写公开地址": "Fill in a public URL below",
+    "完整站点模式：公开入口优先取「镜像公开地址」；反代目标是站点监听地址；内部监听端口由站点进程随机分配，保存后需重启站点服务。": "Complete-site mode: the public endpoint prefers the public mirror URL; the reverse-proxy target is the site listener; the internal port is allocated randomly by the site. Restart the site service after saving.",
+    "独立部署：公开入口优先取「镜像公开地址」，其次取第一条公开域名；反代目标与内部监听相同，Lucky 指向下方地址即可。": "Standalone mode: the public endpoint uses the public mirror URL first, then the first public domain; the reverse-proxy target and internal listener are the same, so point Lucky at the address below.",
+    "入口来源": "Endpoint source",
     "修改后下次登录使用新用户名": "Takes effect at your next login",
     "许可证": "License",
     "选择作者": "Select author",
@@ -883,6 +940,7 @@
     "撤回并下架": "Withdraw from store",
     "ID：": "ID: ",
     "未知作者": "Unknown author",
+    "未知主题": "Unknown theme",
     "撤回保留至 ": "Kept until ",
     "SHA-256 完整性校验": "SHA-256 integrity check",
     "下载主题包": "Download theme package",
@@ -1525,7 +1583,6 @@
     "这里汇总你参与的留言和作者回复；作者还能看到自己主题下的全部留言。只有作者和管理员能看到私密留言。": "Messages you take part in and author replies. Authors also see every comment on their own themes. Private comments are visible only to the theme author and admins.",
     "刷新": "Refresh",
     "一键清空": "Clear all",
-    "还没有留言。到「发现主题」里打开一个主题就能留言。": "No messages yet. Open a theme in Discover to leave a comment.",
     "正在加载留言…": "Loading comments…",
     "还没有留言，来留下第一条吧。": "No comments yet. Be the first to leave one.",
     "取消": "Cancel",
@@ -1756,7 +1813,88 @@
     "清空 API 日志": "Clear API logs",
     "导出 API 日志": "Export API logs",
     "API 连接": "API connection",
-    "API 日志": "API logs"
+    "API 日志": "API logs",
+    "主题管理": "Theme management",
+    "查看、编辑或删除所有已发布主题；上传与更新主题包也在这里完成。": "View, edit or delete any published theme; upload and update packages here too.",
+    "上传与更新": "Upload & update",
+    "搜索主题、作者、标签…": "Search themes, authors or tags…",
+    "在「上传与更新」中上传主题包后，这里会显示预览图。": "Upload a theme package under Upload & update to see its preview here.",
+    "编辑主题": "Edit theme",
+    "作者账号": "Author account",
+    "保留当前作者绑定": "Keep current author binding",
+    "选择其他作者会改变主题归属。": "Selecting another author changes theme ownership.",
+    "标签最多 10 个；R18 与自适应主题由下方勾选控制。": "Up to 10 tags. R18 and adaptive flags are controlled by the checkboxes below.",
+    "标记为 R18（管理器主题商店默认隐藏）": "Mark as R18 (hidden by default in the manager store)",
+    "自适应主题（包含亮/暗两套外观）": "Adaptive theme (includes light and dark appearances)",
+    "保存修改": "Save changes",
+    "更新主题包或图片": "Update package or images",
+    "当前绑定": "current binding",
+    "管理员视图": "Admin view",
+    "已保存主题信息": "Theme information saved",
+    "修改主题信息": "Update theme information",
+    "管理主题": "Manage theme",
+    "举报人：": "Reporter: ",
+    "申诉人：": "Appellant: ",
+    "类型：": "Category: ",
+    "主题 ID：": "Theme ID: ",
+    "其他问题": "Other",
+    "核查举报证据与作者申诉，直接查看被举报主题与作者，记录可追溯的处理说明。": "Review reports and author appeals with the reported theme and author shown up front, and keep a traceable decision note.",
+    "受理仅记录审核结果；如需下架或修改主题，请到「主题管理」执行。": "Acceptance records the review outcome. Remove or edit the theme from Theme management.",
+    "查看主题名称、作者、主题 ID 和预览图": "See the theme name, author, theme ID and preview",
+    "一键跳转主题管理执行下架或修改": "Jump to Theme management to remove or edit the theme",
+    "核对主题、作者与举报说明": "Check the theme, author and report details",
+    "需要处理内容时点击“管理主题”": "Use Manage theme when the content needs action",
+    "搜索、排序和查看主题详情": "Search, sort and view theme details",
+    "编辑名称、作者、标签、描述、许可证等全部元数据": "Edit all metadata: name, author, tags, description, license and more",
+    "删除主题或跳转上传页更新主题包与图片": "Delete a theme or jump to the upload page to update its package and images",
+    "搜索或排序定位主题": "Search or sort to find a theme",
+    "点击卡片查看详情，或直接点击“编辑”": "Open a card for details, or click Edit directly",
+    "保存修改；需要换包时在“上传与更新”中继续": "Save changes; switch to Upload & update when replacing the package",
+    "主题管理的二级页面：上传新主题，或为已有主题更新版本、主题包、预览图和截图。": "A secondary page under Theme management for uploading new themes or updating versions, packages, previews and screenshots.",
+    "填写理由": "Enter a reason",
+    "理由": "Reason",
+    "请填写会记录到操作日志并展示给用户的原因": "Enter a reason that will be recorded in the audit log and shown to the user",
+    "确认": "Confirm",
+    "撤销原因": "Revocation reason",
+    "限制原因": "Restriction reason",
+    "申请说明": "Application note",
+    "上次撤销原因": "Previous revocation reason",
+    "拒绝原因": "Rejection reason",
+    "重置说明": "Reset note",
+    "提交重置申请": "Submit reset request",
+    "删除原因": "Deletion reason",
+    "禁用原因": "Disable reason",
+    "理由会写入操作日志；涉及用户操作时也会展示在用户中心。": "The reason is written to the audit log and shown in the user center for user-facing actions.",
+    "请填写理由": "Enter a reason",
+    "拒绝原因会展示给投稿作者，并记录到操作日志。": "The rejection reason is shown to the submitter and recorded in the audit log.",
+    "删除原因会记录到操作日志，并用于后续申诉核查。": "The deletion reason is recorded in the audit log for later appeal review.",
+    "拒绝原因会展示在用户中心，并发送到用户邮箱。": "The rejection reason is shown in the user center and emailed to the user.",
+    "禁用原因会展示在用户中心，并发送到用户邮箱。": "The disable reason is shown in the user center and emailed to the user.",
+    "账号无法恢复，绑定的作者许可会一并删除，已发布主题仍保留。删除原因会记录到操作日志。": "The account cannot be restored. Bound author licenses are removed while published themes remain. The deletion reason is recorded in the audit log.",
+    "撤销、停用或删除作者许可必须填写原因；撤销和停用原因会展示在用户中心。": "A reason is required to revoke, disable or delete author licenses. Revocation and disable reasons are shown in the user center.",
+    "撤销原因会展示在用户中心，并允许作者据此重新申请。": "The revocation reason is shown in the user center so the author can apply again with context.",
+    "删除后许可记录无法恢复，已发布主题会保留。": "The license record cannot be restored after deletion. Published themes are kept.",
+    "限制原因会展示在用户中心，并记录到操作日志。": "The restriction reason is shown in the user center and recorded in the audit log.",
+    "作者身份已被撤销。": "Author identity revoked.",
+    "作者身份已被撤销或停用。": "Author identity revoked or disabled.",
+    "如要再次投稿，请填写说明后重新申请作者身份。": "To publish again, explain the reason and re-apply for author identity.",
+    "作者身份曾被撤销，重新申请需要填写至少 10 字的说明。": "Author identity was revoked before; re-applying requires a note of at least 10 characters.",
+    "可选；说明申请作者身份的原因，最多 500 字。": "Optional; explain why you are applying for author identity, up to 500 characters.",
+    "至少填写 5 字，说明需要重置作者 ID 的原因。": "Enter at least 5 characters explaining why the author ID needs to be reset.",
+    "说明需要重置作者 ID 的原因（至少 5 字）": "Explain why the author ID needs to be reset (at least 5 characters)",
+    "说明申请作者身份的原因；曾被撤销时至少填写 10 字": "Explain why you are applying for author identity; at least 10 characters if previously revoked",
+    "作者身份曾被撤销，请填写至少 10 字的申请说明": "Author identity was revoked before; enter a note of at least 10 characters",
+    "请填写至少 5 字的重置说明": "Enter a reset note of at least 5 characters",
+    "删除连接日志": "Delete connection log",
+    "清空全部连接日志": "Clear all connection logs",
+    "日志删除后无法恢复；原因会记录到管理员操作日志。": "Deleted logs cannot be restored. The reason is recorded in the admin audit log.",
+    "批量删除后无法恢复；原因会记录到管理员操作日志。": "Bulk deletion cannot be undone. The reason is recorded in the admin audit log.",
+    "全部连接日志会被永久删除，管理员操作日志会保留；原因会记录到管理员操作日志。": "All connection logs will be permanently deleted while the admin audit log is kept. The reason is recorded in the audit log.",
+    "该操作不可恢复，请再次确认。": "This action cannot be undone. Please confirm again.",
+    "保存后会立即应用新的名称、权限和有效期，是否继续？": "The new name, scopes and expiry apply immediately. Continue?",
+    "删除后其下的回复也会一并移除，原因会记录到操作日志。": "Replies under this comment are removed too. The reason is recorded in the audit log.",
+    "清空后无法恢复，原因会记录到操作日志。": "Clearing cannot be undone. The reason is recorded in the audit log.",
+    "上传新主题，或为已有主题更新版本、主题包、预览图和截图。": "Upload new themes or update versions, packages, previews and screenshots for existing ones."
   },
   "patterns": [
     [
@@ -1834,6 +1972,30 @@
     [
       "^(\\d+) 个主题$",
       "$1 {{p:$1|theme|themes}}"
+    ],
+    [
+      "^(\\d+) 个设备$",
+      "$1 {{p:$1|device|devices}}"
+    ],
+    [
+      "^共 (\\d+) 条记录$",
+      "$1 {{p:$1|record|records}}"
+    ],
+    [
+      "^删除选中（(\\d+)）$",
+      "Delete selected ($1)"
+    ],
+    [
+      "^删除选中的 (\\d+) 条记录？此操作不可恢复。$",
+      "Delete the $1 selected {{p:$1|record|records}}? This cannot be undone."
+    ],
+    [
+      "^(.+) 页 · 增量自动回收$",
+      "$1 pages · incremental reclaim"
+    ],
+    [
+      "^(.+) 页 · 未开启$",
+      "$1 pages · disabled"
     ],
     [
       "^(\\d+) 主题$",
@@ -2374,6 +2536,50 @@
     [
       "^已加入追踪：(.*)$",
       "Added to tracking: $1"
+    ],
+    [
+      "^编辑主题 · (.*)$",
+      "Edit theme · $1"
+    ],
+    [
+      "^当前 v(.*) · 格式 v(.*) · (.*) · 更新于 (.*)$",
+      "Current v$1 · format v$2 · $3 · updated $4"
+    ],
+    [
+      "^主题 ID：(.*) · v(.*)$",
+      "Theme ID: $1 · v$2"
+    ],
+    [
+      "^主题 ID：(.*)$",
+      "Theme ID: $1"
+    ],
+    [
+      "^类型：(.*)$",
+      "Category: $1"
+    ],
+    [
+      "^读取主题失败：(.*)$",
+      "Failed to load theme: $1"
+    ],
+    [
+      "^请填写至少 ([0-9]+) 个字的理由$",
+      "Enter a reason of at least $1 characters"
+    ],
+    [
+      "^理由不能超过 ([0-9]+) 个字$",
+      "The reason cannot exceed $1 characters"
+    ],
+    [
+      "^撤销原因：(.*)$",
+      "Revocation reason: $1"
+    ],
+    [
+      "^限制原因：(.*)$",
+      "Restriction reason: $1"
+    ],
+    [
+      "^申请说明：(.*)$",
+      "Application note: $1"
     ]
   ]
 }

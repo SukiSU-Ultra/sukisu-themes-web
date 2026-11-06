@@ -1380,6 +1380,7 @@ fn admin_function<'a>(method: &str, path: &str) -> Option<&'a str> {
         ("POST", "/approve") => "批准主题投稿",
         ("POST", "/reject") => "拒绝主题投稿",
         ("POST", "/theme-tags") => "修改主题标签",
+        ("POST", "/theme-meta") => "修改主题信息",
         ("GET", "/maintenance") => "读取维护状态",
         ("POST", "/maintenance") => "切换维护模式",
         ("POST", "/author/revoke") => "撤销作者许可",
@@ -1501,7 +1502,10 @@ fn account_function<'a>(method: &str, path: &str) -> Option<&'a str> {
         ("GET", "/authors") => "读取我的作者",
         ("GET", "/author/requests") => "读取作者申请",
         ("POST", "/author/requests") => "提交作者申请",
-        ("GET", "/discover") => "发现主题",
+        ("GET", "/discover") => "主题广场推荐",
+        ("GET", "/history") => "读取最近主题",
+        ("POST", "/history/view") => "记录主题查看",
+        ("POST", "/history/delete") => "删除主题历史",
         ("GET", "/messages") => "读取消息",
         ("GET", "/users/search") => "搜索用户",
         ("POST", "/comments/delete") => "删除我的留言",
@@ -2025,6 +2029,9 @@ struct DeleteLogsBody {
     ids: Vec<i64>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct ClearLogsBody {}
+
 async fn delete_logs_handler(
     State(state): State<AppState>,
     Extension(actor): Extension<SessionInfo>,
@@ -2065,6 +2072,7 @@ async fn delete_logs_handler(
 async fn clear_logs_handler(
     State(state): State<AppState>,
     Extension(actor): Extension<SessionInfo>,
+    Json(_body): Json<ClearLogsBody>,
 ) -> ApiResult<Json<Value>> {
     let deleted = clear_logs(&state.db).await.map_err(ApiError::internal)?;
     state.monitor.refresh_counts().await;

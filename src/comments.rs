@@ -955,6 +955,8 @@ pub async fn account_create(
 struct DeleteBody {
     #[serde(default)]
     id: String,
+    #[serde(default)]
+    reason: String,
 }
 
 pub async fn account_delete(
@@ -1307,6 +1309,10 @@ pub async fn admin_delete(
     if body.id.trim().is_empty() {
         return Err(ApiError::bad("缺少评论 ID"));
     }
+    let reason = body.reason.trim().to_string();
+    if !(1..=500).contains(&reason.chars().count()) {
+        return Err(ApiError::bad("请填写 1-500 字的删除原因"));
+    }
     let deleted = delete_record(&state.db, &body.id).await?;
     if deleted == 0 {
         return Err(ApiError::not_found("评论不存在"));
@@ -1317,7 +1323,7 @@ pub async fn admin_delete(
         "comment.delete",
         Some("comment"),
         Some(&body.id),
-        None,
+        Some(&reason),
     )
     .await;
     Ok(Json(json!({"ok": true, "deleted": deleted})))
@@ -1328,6 +1334,8 @@ pub async fn admin_delete(
 struct AdminClearBody {
     #[serde(default)]
     theme_id: Option<String>,
+    #[serde(default)]
+    reason: String,
 }
 
 pub async fn admin_clear(
@@ -1337,6 +1345,10 @@ pub async fn admin_clear(
 ) -> ApiResult<Json<Value>> {
     let value = json_body(body).await?;
     let body: AdminClearBody = serde_json::from_value(value).unwrap_or_default();
+    let reason = body.reason.trim().to_string();
+    if !(1..=500).contains(&reason.chars().count()) {
+        return Err(ApiError::bad("请填写 1-500 字的清空原因"));
+    }
     let theme_id = body
         .theme_id
         .as_deref()
@@ -1346,14 +1358,16 @@ pub async fn admin_clear(
         Some(theme_id) => clear_theme(&state.db, theme_id).await?,
         None => clear_all(&state.db).await?,
     };
-    let detail = theme_id.map(|value| format!("theme={value}"));
+    let detail = theme_id
+        .map(|value| format!("theme={value}; reason={reason}"))
+        .unwrap_or_else(|| format!("reason={reason}"));
     let _ = accounts::audit(
         &state.db,
         Some(&session.user_id),
         "comment.clear",
         theme_id.map(|_| "theme").or(Some("all")),
         theme_id,
-        detail.as_deref(),
+        Some(&detail),
     )
     .await;
     Ok(Json(json!({"ok": true, "deleted": deleted})))

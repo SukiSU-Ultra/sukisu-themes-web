@@ -23,6 +23,9 @@ pub fn account_router() -> Router<AppState> {
         .route("/gallery", get(gallery))
         .route("/favorites", get(favorites))
         .route("/favorites/toggle", post(toggle_favorite))
+        .route("/history", get(theme_history))
+        .route("/history/view", post(record_theme_view))
+        .route("/history/delete", post(delete_theme_history))
         .route("/updates", get(updates))
         .route("/updates/read", post(read_update))
         .route("/drafts", get(drafts).post(save_draft))
@@ -240,6 +243,7 @@ pub async fn remove_theme_activity(db: &Database, theme_id: &str) -> anyhow::Res
         transaction.execute("DELETE FROM social.theme_update_reads WHERE update_id IN (SELECT id FROM social.theme_updates WHERE theme_id = ?1)", [&theme_id])?;
         transaction.execute("DELETE FROM social.theme_updates WHERE theme_id = ?1", [&theme_id])?;
         transaction.execute("DELETE FROM social.theme_favorites WHERE theme_id = ?1", [&theme_id])?;
+        transaction.execute("DELETE FROM social.theme_history WHERE theme_id = ?1", [&theme_id])?;
         transaction.commit()?;
         Ok(())
     }).await
@@ -525,7 +529,7 @@ async fn my_reports(
     Extension(session): Extension<SessionInfo>,
 ) -> ApiResult<Json<Value>> {
     let user_id = session.user_id.clone();
-    let reports: Vec<Value> = state.db.call(move |conn| {
+    let mut reports: Vec<Value> = state.db.call(move |conn| {
         let mut statement = conn.prepare("SELECT id, theme_id, category, detail, status, resolution, created_at, updated_at
             FROM social.theme_reports WHERE reporter_id = ?1 ORDER BY created_at DESC LIMIT 100")?;
         let rows = statement.query_map([user_id], |row| Ok(json!({"id": row.get::<_, String>(0)?, "themeId": row.get::<_, String>(1)?,
@@ -533,6 +537,18 @@ async fn my_reports(
             "resolution": row.get::<_, Option<String>>(5)?, "createdAt": row.get::<_, String>(6)?, "updatedAt": row.get::<_, String>(7)?})))?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }).await.map_err(ApiError::internal)?;
+    for report in &mut reports {
+        let theme_id = report
+            .get("themeId")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        attach_theme_info(
+            &state.paths,
+            report,
+            theme_id.as_deref(),
+            "/account/api/preview",
+        );
+    }
     Ok(Json(json!({"ok": true, "reports": reports})))
 }
 
@@ -604,14 +620,52 @@ async fn my_appeals(
     Extension(session): Extension<SessionInfo>,
 ) -> ApiResult<Json<Value>> {
     let user_id = session.user_id.clone();
-    let appeals: Vec<Value> = state.db.call(move |conn| {
-        let mut statement = conn.prepare("SELECT id, target_kind, target_id, detail, status, resolution, created_at, updated_at
-            FROM social.theme_appeals WHERE appellant_id = ?1 ORDER BY created_at DESC LIMIT 100")?;
-        let rows = statement.query_map([user_id], |row| Ok(json!({"id": row.get::<_, String>(0)?, "targetKind": row.get::<_, String>(1)?,
-            "targetId": row.get::<_, String>(2)?, "detail": row.get::<_, String>(3)?, "status": row.get::<_, String>(4)?,
-            "resolution": row.get::<_, Option<String>>(5)?, "createdAt": row.get::<_, String>(6)?, "updatedAt": row.get::<_, String>(7)?})))?;
+    let mut appeals: Vec<Value> = state.db.call(move |conn| {
+        let mut statement = conn.prepare("SELECT a.id, a.target_kind, a.target_id, a.detail, a.status, a.resolution,
+            a.created_at, a.updated_at,
+            r.theme_id AS report_theme_id,
+            s.theme_id AS submission_theme_id,
+            s.name AS submission_name
+            FROM social.theme_appeals a
+            LEFT JOIN social.theme_reports r ON a.target_kind = 'report' AND r.id = a.target_id
+            LEFT JOIN authors.submissions s ON a.target_kind = 'submission' AND s.id = a.target_id
+            WHERE a.appellant_id = ?1 ORDER BY a.created_at DESC LIMIT 100")?;
+        let rows = statement.query_map([user_id], |row| {
+            let report_theme_id: Option<String> = row.get(8)?;
+            let submission_theme_id: Option<String> = row.get(9)?;
+            let submission_name: Option<String> = row.get(10)?;
+            let theme_id = report_theme_id.or(submission_theme_id);
+            Ok(json!({"id": row.get::<_, String>(0)?, "targetKind": row.get::<_, String>(1)?,
+                "targetId": row.get::<_, String>(2)?, "detail": row.get::<_, String>(3)?, "status": row.get::<_, String>(4)?,
+                "resolution": row.get::<_, Option<String>>(5)?, "createdAt": row.get::<_, String>(6)?,
+                "updatedAt": row.get::<_, String>(7)?, "themeId": theme_id,
+                "submissionName": submission_name}))
+        })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }).await.map_err(ApiError::internal)?;
+    for appeal in &mut appeals {
+        let theme_id = appeal
+            .get("themeId")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        attach_theme_info(
+            &state.paths,
+            appeal,
+            theme_id.as_deref(),
+            "/account/api/preview",
+        );
+        if appeal.get("themeName").is_none() {
+            if let Some(name) = appeal
+                .get("submissionName")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+            {
+                if let Some(object) = appeal.as_object_mut() {
+                    object.insert("themeName".to_string(), json!(name));
+                }
+            }
+        }
+    }
     Ok(Json(json!({"ok": true, "appeals": appeals})))
 }
 
@@ -720,8 +774,248 @@ async fn create_appeal(
     Ok(Json(json!({"ok": true, "id": id})))
 }
 
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HistoryQuery {
+    kind: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HistoryViewBody {
+    theme_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteHistoryBody {
+    kind: Option<String>,
+    #[serde(default)]
+    ids: Vec<i64>,
+    #[serde(default)]
+    all: bool,
+}
+
+fn history_kind(value: Option<&str>) -> &'static str {
+    if value == Some("download") {
+        "download"
+    } else {
+        "view"
+    }
+}
+
+pub async fn record_theme_history(
+    db: &Database,
+    user_id: &str,
+    theme_id: &str,
+    kind: &str,
+) -> anyhow::Result<()> {
+    if user_id.is_empty() || !valid_theme_id(theme_id) {
+        return Ok(());
+    }
+    let user_id = user_id.to_string();
+    let theme_id = theme_id.to_string();
+    let kind = history_kind(Some(kind));
+    let created_at = now_iso();
+    db.call(move |conn| {
+        conn.execute(
+            "INSERT INTO social.theme_history(user_id, theme_id, kind, created_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(user_id, theme_id, kind)
+             DO UPDATE SET created_at = excluded.created_at",
+            params![user_id, theme_id, kind, created_at],
+        )?;
+        Ok(())
+    })
+    .await
+}
+
+async fn theme_history(
+    State(state): State<AppState>,
+    Extension(session): Extension<SessionInfo>,
+    Query(query): Query<HistoryQuery>,
+) -> ApiResult<Json<Value>> {
+    let kind = history_kind(query.kind.as_deref());
+    let limit = query.limit.unwrap_or(100).clamp(1, 200);
+    let user_id = session.user_id.clone();
+    let rows = state
+        .db
+        .call(move |conn| {
+            let mut statement = conn.prepare(
+                "SELECT id, theme_id, created_at FROM social.theme_history
+                 WHERE user_id = ?1 AND kind = ?2
+                 ORDER BY created_at DESC LIMIT ?3",
+            )?;
+            let rows = statement.query_map(params![user_id, kind, limit as i64], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?;
+            Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        })
+        .await
+        .map_err(ApiError::internal)?;
+    let show_r18 = user_show_r18(&state, &session.user_id).await?;
+    let catalog = crate::catalog::read_catalog(&state.paths);
+    let mut items = Vec::new();
+    for (id, theme_id, created_at) in rows {
+        let Some(theme) = catalog
+            .as_ref()
+            .and_then(|catalog| catalog.themes.iter().find(|theme| theme.id == theme_id))
+        else {
+            continue;
+        };
+        if !show_r18 && (theme.r18 || crate::catalog::tags_mark_r18(&theme.tags)) {
+            continue;
+        }
+        let preview = if theme.preview_path.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "/account/api/preview?path={}",
+                crate::util::quote_query(&theme.preview_path)
+            )
+        };
+        items.push(json!({
+            "id": id,
+            "themeId": theme.id,
+            "kind": kind,
+            "createdAt": created_at,
+            "themeName": theme.name,
+            "themeAuthor": theme.author,
+            "themeAuthorHash": theme.author_hash,
+            "themeVersion": theme.version,
+            "themePreviewUrl": preview,
+            "r18": theme.r18,
+        }));
+    }
+    Ok(Json(json!({"ok": true, "kind": kind, "items": items})))
+}
+
+async fn record_theme_view(
+    State(state): State<AppState>,
+    Extension(session): Extension<SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
+    let value = json_body(body).await?;
+    let body: HistoryViewBody = serde_json::from_value(value)
+        .map_err(|error| ApiError::bad(format!("主题历史格式错误：{error}")))?;
+    if !valid_theme_id(&body.theme_id) {
+        return Err(ApiError::bad("无效的主题 ID"));
+    }
+    let index = state.meta_index().await;
+    let Some(meta) = index.theme_by_id(&body.theme_id) else {
+        return Err(ApiError::not_found("主题不存在"));
+    };
+    if meta.withdrawn_at.is_some() {
+        return Err(ApiError::not_found("主题不存在"));
+    }
+    record_theme_history(&state.db, &session.user_id, &meta.id, "view")
+        .await
+        .map_err(ApiError::internal)?;
+    Ok(Json(json!({"ok": true})))
+}
+
+async fn delete_theme_history(
+    State(state): State<AppState>,
+    Extension(session): Extension<SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
+    let value = json_body(body).await?;
+    let body: DeleteHistoryBody = serde_json::from_value(value)
+        .map_err(|error| ApiError::bad(format!("主题历史格式错误：{error}")))?;
+    if !body.all && body.ids.is_empty() {
+        return Err(ApiError::bad("请选择要删除的记录"));
+    }
+    let kind = history_kind(body.kind.as_deref());
+    let ids = body
+        .ids
+        .into_iter()
+        .filter(|id| *id > 0)
+        .take(500)
+        .collect::<Vec<_>>();
+    let user_id = session.user_id.clone();
+    let all = body.all;
+    let deleted = state
+        .db
+        .call(move |conn| {
+            if all {
+                return Ok(conn.execute(
+                    "DELETE FROM social.theme_history WHERE user_id = ?1 AND kind = ?2",
+                    params![user_id, kind],
+                )?);
+            }
+            let mut deleted = 0;
+            for id in ids {
+                deleted += conn.execute(
+                    "DELETE FROM social.theme_history
+                     WHERE user_id = ?1 AND kind = ?2 AND id = ?3",
+                    params![user_id, kind, id],
+                )?;
+            }
+            Ok(deleted)
+        })
+        .await
+        .map_err(ApiError::internal)?;
+    Ok(Json(json!({"ok": true, "deleted": deleted})))
+}
+
+/// Add the published theme's display metadata to a report or appeal row so the
+/// review UI can show what was reported instead of a bare theme ID.
+fn attach_theme_info(
+    paths: &crate::config::Paths,
+    item: &mut Value,
+    theme_id: Option<&str>,
+    preview_base: &str,
+) {
+    let Some(theme_id) = theme_id.filter(|id| !id.is_empty()) else {
+        return;
+    };
+    let (name, author, author_hash, version, preview_path) =
+        if let Some(theme) = crate::catalog::read_catalog(paths)
+            .and_then(|catalog| catalog.themes.iter().find(|theme| theme.id == theme_id).cloned())
+        {
+            (
+                theme.name,
+                theme.author,
+                theme.author_hash,
+                theme.version as i64,
+                theme.preview_path,
+            )
+        } else if let Some((_, meta)) = crate::catalog::find_theme_meta(paths, theme_id) {
+            (
+                meta.name,
+                meta.author,
+                meta.author_hash,
+                meta.version,
+                meta.preview,
+            )
+        } else {
+            return;
+        };
+    let preview_url = if preview_path.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "{preview_base}?path={}",
+            crate::util::quote_query(&preview_path)
+        )
+    };
+    let Some(object) = item.as_object_mut() else {
+        return;
+    };
+    object.insert("themeName".to_string(), json!(name));
+    object.insert("themeAuthor".to_string(), json!(author));
+    object.insert("themeAuthorHash".to_string(), json!(author_hash));
+    object.insert("themeVersion".to_string(), json!(version));
+    object.insert("themePreviewUrl".to_string(), json!(preview_url));
+}
+
 async fn admin_reports(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    let reports: Vec<Value> = state.db.call(|conn| {
+    let mut reports: Vec<Value> = state.db.call(|conn| {
         let mut statement = conn.prepare("SELECT r.id, r.theme_id, r.category, r.detail, r.status, r.resolution,
             r.created_at, u.username FROM social.theme_reports r LEFT JOIN users u ON u.id = r.reporter_id
             ORDER BY CASE WHEN r.status = 'pending' THEN 0 ELSE 1 END, r.created_at DESC LIMIT 200")?;
@@ -731,6 +1025,13 @@ async fn admin_reports(State(state): State<AppState>) -> ApiResult<Json<Value>> 
             "reporter": row.get::<_, Option<String>>(7)?})))?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }).await.map_err(ApiError::internal)?;
+    for report in &mut reports {
+        let theme_id = report
+            .get("themeId")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        attach_theme_info(&state.paths, report, theme_id.as_deref(), "/admin/api/preview");
+    }
     Ok(Json(json!({"ok": true, "reports": reports})))
 }
 
@@ -786,16 +1087,57 @@ async fn resolve_report(
 }
 
 async fn admin_appeals(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    let appeals: Vec<Value> = state.db.call(|conn| {
+    let mut appeals: Vec<Value> = state.db.call(|conn| {
         let mut statement = conn.prepare("SELECT a.id, a.target_kind, a.target_id, a.detail, a.status, a.resolution,
-            a.created_at, u.username FROM social.theme_appeals a LEFT JOIN users u ON u.id = a.appellant_id
+            a.created_at, u.username,
+            r.theme_id AS report_theme_id,
+            s.theme_id AS submission_theme_id,
+            s.name AS submission_name
+            FROM social.theme_appeals a LEFT JOIN users u ON u.id = a.appellant_id
+            LEFT JOIN social.theme_reports r ON a.target_kind = 'report' AND r.id = a.target_id
+            LEFT JOIN authors.submissions s ON a.target_kind = 'submission' AND s.id = a.target_id
             ORDER BY CASE WHEN a.status = 'pending' THEN 0 ELSE 1 END, a.created_at DESC LIMIT 200")?;
-        let rows = statement.query_map([], |row| Ok(json!({"id": row.get::<_, String>(0)?, "targetKind": row.get::<_, String>(1)?,
-            "targetId": row.get::<_, String>(2)?, "detail": row.get::<_, String>(3)?, "status": row.get::<_, String>(4)?,
-            "resolution": row.get::<_, Option<String>>(5)?, "createdAt": row.get::<_, String>(6)?,
-            "appellant": row.get::<_, Option<String>>(7)?})))?;
+        let rows = statement.query_map([], |row| {
+            let report_theme_id: Option<String> = row.get(8)?;
+            let submission_theme_id: Option<String> = row.get(9)?;
+            let submission_name: Option<String> = row.get(10)?;
+            let theme_id = report_theme_id.or(submission_theme_id);
+            Ok(json!({"id": row.get::<_, String>(0)?, "targetKind": row.get::<_, String>(1)?,
+                "targetId": row.get::<_, String>(2)?, "detail": row.get::<_, String>(3)?, "status": row.get::<_, String>(4)?,
+                "resolution": row.get::<_, Option<String>>(5)?, "createdAt": row.get::<_, String>(6)?,
+                "appellant": row.get::<_, Option<String>>(7)?, "themeId": theme_id,
+                "submissionName": submission_name}))
+        })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }).await.map_err(ApiError::internal)?;
+    for appeal in &mut appeals {
+        let theme_id = appeal
+            .get("themeId")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        attach_theme_info(&state.paths, appeal, theme_id.as_deref(), "/admin/api/preview");
+        let missing_name = appeal.get("themeName").is_none();
+        let submission_name = appeal
+            .get("submissionName")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let appellant = appeal
+            .get("appellant")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        if let Some(object) = appeal.as_object_mut() {
+            if missing_name {
+                if let Some(name) = submission_name {
+                    object.insert("themeName".to_string(), json!(name));
+                }
+            }
+            if object.get("themeAuthor").is_none() {
+                if let Some(appellant) = appellant {
+                    object.insert("themeAuthor".to_string(), json!(appellant));
+                }
+            }
+        }
+    }
     Ok(Json(json!({"ok": true, "appeals": appeals})))
 }
 

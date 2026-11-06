@@ -30,6 +30,8 @@ pub struct Author {
     pub last_used_at: Option<String>,
     pub created_at: String,
     pub auto_revoke_at: Option<String>,
+    pub revoke_reason: Option<String>,
+    pub restriction_reason: Option<String>,
 }
 
 fn author_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Author> {
@@ -46,10 +48,12 @@ fn author_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Author> {
         last_used_at: row.get(6)?,
         created_at: row.get(7)?,
         auto_revoke_at: row.get(11)?,
+        revoke_reason: row.get(12)?,
+        restriction_reason: row.get(13)?,
     })
 }
 
-const AUTHOR_COLUMNS: &str = "hash, fingerprint, display_name, user_id, status, approved_at, last_used_at, created_at, auto_publish, code, next_theme_seq, auto_revoke_at";
+const AUTHOR_COLUMNS: &str = "hash, fingerprint, display_name, user_id, status, approved_at, last_used_at, created_at, auto_publish, code, next_theme_seq, auto_revoke_at, revoke_reason, restriction_reason";
 
 pub async fn author_by_hash(db: &Database, hash: &str) -> Result<Option<Author>> {
     let hash = hash.to_string();
@@ -134,9 +138,20 @@ pub async fn set_author_status(
     status: &str,
     actor: Option<&str>,
 ) -> Result<()> {
+    set_author_status_with_reason(db, hash, status, actor, None).await
+}
+
+pub async fn set_author_status_with_reason(
+    db: &Database,
+    hash: &str,
+    status: &str,
+    actor: Option<&str>,
+    reason: Option<&str>,
+) -> Result<()> {
     let hash = hash.to_string();
     let status = status.to_string();
     let actor = actor.map(str::to_string);
+    let reason = reason.map(str::to_string);
     let now = now_iso();
     db.call(move |conn| {
         let approved_at = if status == "active" {
@@ -148,9 +163,13 @@ pub async fn set_author_status(
             "UPDATE authors.authors
              SET status = ?2, approved_at = COALESCE(?3, approved_at),
                  approved_by = COALESCE(?4, approved_by), updated_at = ?5,
-                 auto_revoke_at = CASE WHEN ?2 = 'active' THEN auto_revoke_at ELSE NULL END
+                 auto_revoke_at = CASE WHEN ?2 = 'active' THEN auto_revoke_at ELSE NULL END,
+                 revoke_reason = CASE
+                     WHEN ?2 IN ('revoked', 'retired') THEN COALESCE(?6, revoke_reason)
+                     ELSE NULL
+                 END
              WHERE hash = ?1",
-            params![hash, status, approved_at, actor, now],
+            params![hash, status, approved_at, actor, now, reason],
         )?;
         Ok(())
     })
@@ -452,15 +471,20 @@ pub async fn revoke_inactive_authors(db: &Database, paths: &Paths) -> Result<usi
             let _ = set_auto_revoke_at(db, &hash, None).await;
             continue;
         }
-        set_author_status(db, &hash, "revoked", Some("system")).await?;
+        let reason = "长期未发布主题，系统自动撤销";
+        set_author_status_with_reason(db, &hash, "revoked", Some("system"), Some(reason)).await?;
         let _ = set_auto_publish(db, &hash, false).await;
+        let detail = match name {
+            Some(name) => format!("{name}; {reason}"),
+            None => reason.to_string(),
+        };
         let _ = crate::accounts::audit(
             db,
             Some("system"),
             "author.auto_revoke",
             Some("author"),
             Some(&hash),
-            name.as_deref(),
+            Some(&detail),
         )
         .await;
         revoked += 1;
@@ -500,7 +524,8 @@ pub async fn list_authors(db: &Database) -> Result<Vec<serde_json::Value>> {
         let mut statement = conn.prepare(
             "SELECT a.hash, a.fingerprint, a.display_name, a.user_id, a.status,
                     a.approved_at, a.last_used_at, u.username, u.display_name,
-                    a.code, a.next_theme_seq, a.auto_revoke_at, u.role, u.is_super_admin
+                    a.code, a.next_theme_seq, a.auto_revoke_at, u.role, u.is_super_admin,
+                    a.revoke_reason, a.restriction_reason
              FROM authors.authors a LEFT JOIN users u ON u.id = a.user_id
              ORDER BY CASE a.status
                  WHEN 'pending' THEN 0 WHEN 'active' THEN 1 ELSE 2 END,
@@ -525,6 +550,8 @@ pub async fn list_authors(db: &Database) -> Result<Vec<serde_json::Value>> {
                 "autoRevokeAt": row.get::<_, Option<String>>(11)?,
                 "ownerRole": row.get::<_, Option<String>>(12)?,
                 "ownerSuperAdmin": row.get::<_, Option<i64>>(13)?.unwrap_or(0) != 0,
+                "revokeReason": row.get::<_, Option<String>>(14)?,
+                "restrictionReason": row.get::<_, Option<String>>(15)?,
             }));
         }
         Ok(items)
@@ -591,10 +618,16 @@ pub async fn set_restrictions(
     hash: &str,
     features: &HashSet<String>,
     actor: &str,
+    reason: Option<&str>,
 ) -> Result<()> {
     let hash = hash.to_string();
     let value = normalize_features(features);
     let actor = actor.to_string();
+    let reason = if value.is_empty() {
+        None
+    } else {
+        reason.map(str::to_string)
+    };
     let now = now_iso();
     db.call(move |conn| {
         conn.execute(
@@ -605,6 +638,10 @@ pub async fn set_restrictions(
                  updated_at = excluded.updated_at,
                  updated_by = excluded.updated_by",
             params![hash, value, now, actor],
+        )?;
+        conn.execute(
+            "UPDATE authors.authors SET restriction_reason = ?2, updated_at = ?3 WHERE hash = ?1",
+            params![hash, reason, now],
         )?;
         Ok(())
     })
@@ -637,7 +674,11 @@ pub async fn author_requests(
         let mut sql = String::from(
             "SELECT r.id, r.kind, r.status, r.author_hash, r.display_name,
                     r.created_at, r.reviewed_at, r.reviewed_by, r.reject_reason,
-                    u.id, u.username, u.display_name, a.status
+                    u.id, u.username, u.display_name, a.status,
+                    r.note, a.revoke_reason,
+                    (SELECT prev.revoke_reason FROM authors.authors prev
+                     WHERE prev.user_id = r.user_id AND prev.status IN ('revoked', 'retired')
+                     ORDER BY prev.updated_at DESC LIMIT 1)
              FROM authors.author_requests r
              JOIN users u ON u.id = r.user_id
              LEFT JOIN authors.authors a ON a.hash = r.author_hash
@@ -671,6 +712,9 @@ pub async fn author_requests(
                 "username": row.get::<_, String>(10)?,
                 "userDisplayName": row.get::<_, String>(11)?,
                 "authorStatus": row.get::<_, Option<String>>(12)?,
+                "note": row.get::<_, Option<String>>(13)?,
+                "revokeReason": row.get::<_, Option<String>>(14)?,
+                "lastRevokeReason": row.get::<_, Option<String>>(15)?,
             }));
         }
         Ok(items)

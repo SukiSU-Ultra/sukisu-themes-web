@@ -116,7 +116,9 @@ CREATE TABLE IF NOT EXISTS authors (
     approved_by TEXT,
     last_used_at TEXT,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    revoke_reason TEXT,
+    restriction_reason TEXT
 );
 CREATE INDEX IF NOT EXISTS authors_user_idx ON authors(user_id);
 CREATE INDEX IF NOT EXISTS authors_status_idx ON authors(status);
@@ -341,7 +343,9 @@ CREATE TABLE IF NOT EXISTS authors (
     last_used_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    auto_revoke_at TEXT
+    auto_revoke_at TEXT,
+    revoke_reason TEXT,
+    restriction_reason TEXT
 );
 CREATE INDEX IF NOT EXISTS authors_user_idx ON authors(user_id);
 CREATE INDEX IF NOT EXISTS authors_status_idx ON authors(status);
@@ -442,6 +446,16 @@ CREATE TABLE IF NOT EXISTS theme_favorites (
     PRIMARY KEY (user_id, theme_id)
 );
 CREATE INDEX IF NOT EXISTS theme_favorites_theme_idx ON theme_favorites(theme_id);
+CREATE TABLE IF NOT EXISTS theme_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    theme_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('view', 'download')),
+    created_at TEXT NOT NULL,
+    UNIQUE(user_id, theme_id, kind)
+);
+CREATE INDEX IF NOT EXISTS theme_history_user_idx
+    ON theme_history(user_id, kind, created_at DESC);
 CREATE TABLE IF NOT EXISTS theme_updates (
     id TEXT PRIMARY KEY,
     theme_id TEXT NOT NULL,
@@ -598,6 +612,18 @@ fn create_schema_file(path: &Path, kind: DbKind) -> anyhow::Result<()> {
          PRAGMA temp_store=MEMORY;
          PRAGMA cache_size=-8000;",
     )?;
+    let auto_vacuum: i64 = conn.query_row("PRAGMA auto_vacuum", [], |row| row.get(0))?;
+    if auto_vacuum != 2 {
+        // New files accept the setting directly; existing files need a one-time
+        // VACUUM before SQLite switches to incremental reclaim.
+        conn.execute_batch("PRAGMA auto_vacuum=INCREMENTAL;")?;
+        if let Err(error) = conn.execute_batch("VACUUM;") {
+            tracing::warn!(
+                path = %path.display(),
+                "database auto-vacuum migration warning: {error}"
+            );
+        }
+    }
     conn.execute_batch(kind.schema())?;
     if matches!(kind, DbKind::Audit) {
         let has_ip: i64 = conn.query_row(
@@ -621,6 +647,21 @@ fn create_schema_file(path: &Path, kind: DbKind) -> anyhow::Result<()> {
             if exists == 0 {
                 conn.execute(
                     &format!("ALTER TABLE api_request_logs ADD COLUMN {column} {ddl}"),
+                    [],
+                )?;
+            }
+        }
+    }
+    if matches!(kind, DbKind::Authors) {
+        for (column, ddl) in [("revoke_reason", "TEXT"), ("restriction_reason", "TEXT")] {
+            let exists: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('authors') WHERE name = ?1",
+                [column],
+                |row| row.get(0),
+            )?;
+            if exists == 0 {
+                conn.execute(
+                    &format!("ALTER TABLE authors ADD COLUMN {column} {ddl}"),
                     [],
                 )?;
             }
@@ -871,6 +912,7 @@ pub fn migrate_split(paths: &crate::config::Paths) -> anyhow::Result<MigrationRe
 pub struct Database {
     conns: Arc<Vec<AsyncConnection>>,
     next: Arc<AtomicUsize>,
+    schemas: Arc<Vec<String>>,
 }
 
 impl Database {
@@ -903,6 +945,7 @@ impl Database {
         let db = Self {
             conns: Arc::new(conns),
             next: Arc::new(AtomicUsize::new(0)),
+            schemas: Arc::new(vec!["main".to_string()]),
         };
         db.initialize().await?;
         db.call(|c| {
@@ -953,9 +996,13 @@ impl Database {
             .with_context(|| format!("无法挂载数据库 {}", main.display()))?;
             conns.push(conn);
         }
+        let schemas = std::iter::once("main".to_string())
+            .chain(attachments.iter().map(|(alias, _)| alias.clone()))
+            .collect::<Vec<_>>();
         let db = Self {
             conns: Arc::new(conns),
             next: Arc::new(AtomicUsize::new(0)),
+            schemas: Arc::new(schemas),
         };
         #[cfg(unix)]
         {
@@ -1200,8 +1247,27 @@ impl Database {
             .map_err(|error| anyhow::anyhow!("database error: {error}"))
     }
 
-    pub async fn optimize(&self) -> anyhow::Result<()> {
-        self.call(|conn| {
+    /// With `auto_vacuum=INCREMENTAL`, deleted pages stay on the freelist until
+    /// this runs. Reclaim them for every attached database and refresh query
+    /// planner statistics at the same time.
+    pub async fn reclaim_space(&self) -> anyhow::Result<()> {
+        let schemas = self.schemas.clone();
+        self.call(move |conn| {
+            for schema in schemas.iter() {
+                let mode: i64 = conn.query_row(
+                    &format!("PRAGMA {schema}.auto_vacuum"),
+                    [],
+                    |row| row.get(0),
+                )?;
+                if mode != 2 {
+                    continue;
+                }
+                if let Err(error) =
+                    conn.execute_batch(&format!("PRAGMA {schema}.incremental_vacuum;"))
+                {
+                    tracing::warn!(schema = %schema, "incremental vacuum warning: {error}");
+                }
+            }
             conn.execute_batch("PRAGMA optimize;")?;
             Ok(())
         })
@@ -1222,6 +1288,7 @@ impl Database {
                  WHERE follower_id NOT IN (SELECT id FROM users)
                     OR author_hash NOT IN (SELECT hash FROM authors.authors)",
                 "DELETE FROM social.theme_favorites WHERE user_id NOT IN (SELECT id FROM users)",
+                "DELETE FROM social.theme_history WHERE user_id NOT IN (SELECT id FROM users)",
                 "DELETE FROM social.theme_update_reads WHERE user_id NOT IN (SELECT id FROM users)",
                 "DELETE FROM social.theme_appeals WHERE target_kind = 'report' AND target_id IN (SELECT id FROM social.theme_reports WHERE reporter_id NOT IN (SELECT id FROM users))",
                 "DELETE FROM social.theme_reports WHERE reporter_id NOT IN (SELECT id FROM users)",

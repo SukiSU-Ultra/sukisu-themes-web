@@ -41,8 +41,7 @@
       <a href="#pending"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 5h14v14H5z"/><path d="M8 9h8M8 13h5"/></svg>待审核 <span class="nav-badge" id="pendingNavBadge">0</span></a>
       <a href="#comments"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 12a7 7 0 0 1-7 7H8l-4 3v-4.5A7 7 0 0 1 4 12a7 7 0 0 1 7-7h2a7 7 0 0 1 7 7Z"/><path d="M8.5 11h7M8.5 14h4"/></svg>评论管理 <span class="nav-badge" id="commentsNavBadge">0</span></a>
       <a href="#community"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5h16v12H9l-5 3V5Z"/><path d="M8 9h8M8 13h5"/></svg>举报与申诉</a>
-      <a href="#themes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="m4 16 4.5-4.5 3 3 3-3L20 16"/><circle cx="15.5" cy="8.5" r="1.6"/></svg>主题预览</a>
-      <a href="#upload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>上传主题</a>
+      <a href="#themes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="m4 16 4.5-4.5 3 3 3-3L20 16"/><circle cx="15.5" cy="8.5" r="1.6"/></svg>主题管理</a>
       <div class="nav-label">系统</div>
       <a href="#storage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/><path d="M4.5 11.5v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg>存储与配额</a>
       <a href="#network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.4 3.6 5.3 3.6 8.5s-1.2 6.1-3.6 8.5c-2.4-2.4-3.6-5.3-3.6-8.5S9.6 5.9 12 3.5Z"/></svg>网络</a>
@@ -330,116 +329,112 @@
     </section>
 
     <section id="themes" class="page">
-      <div class="section-head"><div><h3>主题预览</h3><p>当前 catalog.json 中的主题卡片，上传后会自动出现在这里。</p></div><span class="pill" id="themePill">0 个主题</span></div>
-      <div class="toolbar">
-        <div class="search">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
-          <input id="themeSearch" type="search" placeholder="搜索已发布主题、作者、标签…">
-        </div>
-        <select id="themeSort" class="sort-select" title="主题排序">
-          <option value="hot">热度优先</option>
-          <option value="downloads">下载量优先</option>
-          <option value="updated">最新更新</option>
-          <option value="name">名称</option>
-          <option value="size">体积</option>
-        </select>
+      <div class="section-head"><div><h3>主题管理</h3><p>查看、编辑或删除所有已发布主题；上传与更新主题包也在这里完成。</p></div><span class="pill" id="themePill">0 个主题</span></div>
+      <div class="theme-tabs" role="tablist" aria-label="主题管理分区">
+        <button type="button" class="theme-tab active" data-theme-tab="list" role="tab" aria-selected="true">主题列表</button>
+        <button type="button" class="theme-tab" data-theme-tab="upload" role="tab" aria-selected="false">上传与更新</button>
       </div>
-      <div class="theme-grid" id="themeGrid"></div>
-      <div class="empty" id="themeEmpty"><b>目录里还没有主题</b>在上方上传主题包后，这里会显示预览图。</div>
-    </section>
-
-    <section id="upload" class="page">
-      <div class="section-head"><div><h3>上传主题</h3><p>管理员上传会直接发布；管理器投稿会先进入待审核。当前存储配额 <span id="uploadLimitHint">–</span>。</p></div></div>
-      <div class="card">
-        <form id="uploadForm">
-          <div class="form-grid">
-            <div class="full">
-              <label for="upUpdate">更新已有主题</label>
-              <div class="search" style="margin-bottom:8px">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
-                <input id="upUpdateSearch" type="search" placeholder="搜索已有主题（名称 / ID / 作者）…">
-              </div>
-              <select id="upUpdate"><option value="">新建主题</option></select>
-              <div class="field-hint">新建时主题 ID 由作者编号和顺序自动生成；更新时沿用原 ID。</div>
-            </div>
-            <div><label for="upAutoId">主题 ID（自动）</label><input id="upAutoId" readonly placeholder="选择作者后自动生成"></div>
-            <div><label for="upVersion">版本号</label><input id="upVersion" name="version" type="number" min="1" value="1" required></div>
-            <input id="upId" name="id" type="hidden">
-            <div><label for="upName">名称</label><input id="upName" name="name" placeholder="粉色蝴蝶结" required></div>
-            <div><label for="upAuthorHash">作者</label><select id="upAuthorHash" name="ownerHash"><option value="">选择作者</option></select></div>
-            <div><label for="upAuthor">作者名称</label><input id="upAuthor" name="author" readonly placeholder="选择作者后自动填写"></div>
-            <div><label for="upTags">标签</label><input id="upTags" name="tags" placeholder="light, pink, cute"><div class="mention-hints" data-tag-target="upTags">
-              <button type="button" class="mention-chip" data-tag="adaptive">自适应主题</button>
-              <button type="button" class="mention-chip" data-tag="light">light</button>
-              <button type="button" class="mention-chip" data-tag="dark">dark</button>
-              <button type="button" class="mention-chip" data-tag="pink">pink</button>
-              <button type="button" class="mention-chip" data-tag="cute">cute</button>
-              <button type="button" class="mention-chip" data-tag="minimal">minimal</button>
-              <button type="button" class="mention-chip" data-tag="gradient">gradient</button>
-              <button type="button" class="mention-chip" data-tag="anime">anime</button>
-              <button type="button" class="mention-chip" data-tag="blue">blue</button>
-              <button type="button" class="mention-chip" data-tag="purple">purple</button>
-              <button type="button" class="mention-chip" data-tag="green">green</button>
-            </div><div class="field-hint">包含亮/暗两套外观的自适应主题包会自动添加「自适应主题」标签。</div></div>
-            <div><label for="upLicense">许可证</label><select id="upLicense" name="license"><option value="CC-BY-4.0">CC-BY-4.0</option><option value="CC-BY-SA-4.0">CC-BY-SA-4.0</option><option value="CC-BY-NC-4.0">CC-BY-NC-4.0</option><option value="CC-BY-NC-SA-4.0">CC-BY-NC-SA-4.0</option><option value="CC0-1.0">CC0-1.0</option><option value="MIT">MIT</option><option value="Apache-2.0">Apache-2.0</option><option value="GPL-3.0">GPL-3.0</option><option value="All Rights Reserved">All Rights Reserved</option><option value="">未指定</option></select></div>
-            <div><label for="upMin">最低管理器版本</label><input id="upMin" name="minManagerVersion" type="number" min="0" value="0"><div class="field-hint">默认从 SukiSU-Ultra GitHub 提交历史计算，也可手动修改</div></div>
-            <div><label for="upPackage">主题包 (.sukisu)</label><input id="upPackage" name="package" type="file" accept=".sukisu,application/octet-stream" required></div>
-            <div><label for="upPreview">预览图</label><input id="upPreview" name="preview" type="file" accept="image/webp,image/png,image/jpeg" required></div>
-            <div><label for="upAvatar">作者头像（可选）</label><input id="upAvatar" name="avatar" type="file" accept="image/webp,image/png,image/jpeg"></div>
-            <div><label for="upScreenshots">截图（可多选）</label><input id="upScreenshots" name="screenshots" type="file" accept="image/webp,image/png,image/jpeg" multiple></div>
-            <div class="full">
-              <label for="upDescription">描述</label>
-              <textarea id="upDescription" name="description" placeholder="主题说明，支持 Markdown"></textarea>
-              <div class="field-hint">支持 Markdown：**粗体**、*斜体*、`代码`、[链接](https://example.com)。使用「用户名@github」格式（例如 shirkneko@github）可跳转到对应用户；@github 仍可跳转网站首页。</div>
-              <div class="mention-hints" data-target="upDescription">
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@github">Github</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@gitee">Gitee</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@bilibili">Bilibili</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@coolapk">Coolapk</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@telegram">Telegram</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@weibo">Weibo</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@xiaohongshu">Xiaohongshu</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@xda">Xda</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@youtube">YouTube</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@afdian">Afdian</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@twitter">X</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@zhihu">Zhihu</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@threads">Threads</button>
-                <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@douyin">Douyin</button>
-              </div>
-            </div>
-            <div class="full">
-              <label for="upChangelog">更新说明</label>
-              <textarea id="upChangelog" name="changelog" placeholder="本次更新内容，支持 Markdown"></textarea>
-              <div class="field-hint">同样支持 Markdown 与 @ 网站提及。</div>
-            </div>
+      <div class="theme-pane" id="themeListPane">
+        <div class="toolbar">
+          <div class="search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+            <input id="themeSearch" type="search" placeholder="搜索主题、作者、标签…">
           </div>
-          <div class="upload-progress hidden" id="uploadProgress">
-            <div class="upload-progress-head">
-              <span id="uploadProgressText">准备上传…</span>
-              <span id="uploadProgressPercent">0%</span>
-            </div>
-            <div class="progress-track"><i id="uploadProgressBar"></i></div>
-            <div class="upload-progress-meta">
-              <span id="uploadProgressBytes">0 B / 0 B</span>
-              <span><span class="speed" id="uploadProgressSpeed">—</span> <span id="uploadProgressEta"></span></span>
-            </div>
-          </div>
-          <div class="row">
-            <button class="primary" type="submit" id="uploadBtn">上传并发布</button>
-            <span class="pill" id="uploadHint">主题包 ≤ 128 MB，单张图片原始 ≤ 12 MB（自动压缩，输出 ≤ 2 MB） · 支持断点续传</span>
-          </div>
-        </form>
-      </div>
-      <div class="card" style="margin-top:14px">
-        <h4>主题维护</h4>
-        <p class="hint">主题预览页是只读的；需要修改标签或删除主题时，在这里选择主题并操作。</p>
-        <div class="directory-toolbar">
-          <select id="maintainTheme" class="sort-select" style="min-width:260px"><option value="">选择主题</option></select>
-          <button id="maintainTags" type="button">编辑标签</button>
-          <button class="danger" id="maintainDelete" type="button">删除主题</button>
+          <select id="themeSort" class="sort-select" title="主题排序">
+            <option value="hot">热度优先</option>
+            <option value="downloads">下载量优先</option>
+            <option value="updated">最新更新</option>
+            <option value="name">名称</option>
+            <option value="size">体积</option>
+          </select>
         </div>
-        <p class="field-hint" id="maintainHint">预览页不会保存任何修改。</p>
+        <div class="theme-grid" id="themeGrid"></div>
+        <div class="empty" id="themeEmpty"><b>目录里还没有主题</b>在「上传与更新」中上传主题包后，这里会显示预览图。</div>
+      </div>
+      <div class="theme-pane hidden" id="themeUploadPane">
+        <div class="card">
+          <h4>上传主题</h4>
+          <p class="hint">管理员上传会直接发布；管理器投稿会先进入待审核。当前存储配额 <span id="uploadLimitHint">–</span>。</p>
+          <form id="uploadForm">
+            <div class="form-grid">
+              <div class="full">
+                <label for="upUpdate">更新已有主题</label>
+                <div class="search" style="margin-bottom:8px">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+                  <input id="upUpdateSearch" type="search" placeholder="搜索已有主题（名称 / ID / 作者）…">
+                </div>
+                <select id="upUpdate"><option value="">新建主题</option></select>
+                <div class="field-hint">新建时主题 ID 由作者编号和顺序自动生成；更新时沿用原 ID。</div>
+              </div>
+              <div><label for="upAutoId">主题 ID（自动）</label><input id="upAutoId" readonly placeholder="选择作者后自动生成"></div>
+              <div><label for="upVersion">版本号</label><input id="upVersion" name="version" type="number" min="1" value="1" required></div>
+              <input id="upId" name="id" type="hidden">
+              <div><label for="upName">名称</label><input id="upName" name="name" placeholder="粉色蝴蝶结" required></div>
+              <div><label for="upAuthorHash">作者</label><select id="upAuthorHash" name="ownerHash"><option value="">选择作者</option></select></div>
+              <div><label for="upAuthor">作者名称</label><input id="upAuthor" name="author" readonly placeholder="选择作者后自动填写"></div>
+              <div><label for="upTags">标签</label><input id="upTags" name="tags" placeholder="light, pink, cute"><div class="mention-hints" data-tag-target="upTags">
+                <button type="button" class="mention-chip" data-tag="adaptive">自适应主题</button>
+                <button type="button" class="mention-chip" data-tag="light">light</button>
+                <button type="button" class="mention-chip" data-tag="dark">dark</button>
+                <button type="button" class="mention-chip" data-tag="pink">pink</button>
+                <button type="button" class="mention-chip" data-tag="cute">cute</button>
+                <button type="button" class="mention-chip" data-tag="minimal">minimal</button>
+                <button type="button" class="mention-chip" data-tag="gradient">gradient</button>
+                <button type="button" class="mention-chip" data-tag="anime">anime</button>
+                <button type="button" class="mention-chip" data-tag="blue">blue</button>
+                <button type="button" class="mention-chip" data-tag="purple">purple</button>
+                <button type="button" class="mention-chip" data-tag="green">green</button>
+              </div><div class="field-hint">包含亮/暗两套外观的自适应主题包会自动添加「自适应主题」标签。</div></div>
+              <div><label for="upLicense">许可证</label><select id="upLicense" name="license"><option value="CC-BY-4.0">CC-BY-4.0</option><option value="CC-BY-SA-4.0">CC-BY-SA-4.0</option><option value="CC-BY-NC-4.0">CC-BY-NC-4.0</option><option value="CC-BY-NC-SA-4.0">CC-BY-NC-SA-4.0</option><option value="CC0-1.0">CC0-1.0</option><option value="MIT">MIT</option><option value="Apache-2.0">Apache-2.0</option><option value="GPL-3.0">GPL-3.0</option><option value="All Rights Reserved">All Rights Reserved</option><option value="">未指定</option></select></div>
+              <div><label for="upMin">最低管理器版本</label><input id="upMin" name="minManagerVersion" type="number" min="0" value="0"><div class="field-hint">默认从 SukiSU-Ultra GitHub 提交历史计算，也可手动修改</div></div>
+              <div><label for="upPackage">主题包 (.sukisu)</label><input id="upPackage" name="package" type="file" accept=".sukisu,application/octet-stream" required></div>
+              <div><label for="upPreview">预览图</label><input id="upPreview" name="preview" type="file" accept="image/webp,image/png,image/jpeg" required></div>
+              <div><label for="upAvatar">作者头像（可选）</label><input id="upAvatar" name="avatar" type="file" accept="image/webp,image/png,image/jpeg"></div>
+              <div><label for="upScreenshots">截图（可多选）</label><input id="upScreenshots" name="screenshots" type="file" accept="image/webp,image/png,image/jpeg" multiple></div>
+              <div class="full">
+                <label for="upDescription">描述</label>
+                <textarea id="upDescription" name="description" placeholder="主题说明，支持 Markdown"></textarea>
+                <div class="field-hint">支持 Markdown：**粗体**、*斜体*、`代码`、[链接](https://example.com)。使用「用户名@github」格式（例如 shirkneko@github）可跳转到对应用户；@github 仍可跳转网站首页。</div>
+                <div class="mention-hints" data-target="upDescription">
+                  <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@github">Github</button>
+                  <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@gitee">Gitee</button>
+                  <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@bilibili">Bilibili</button>
+                  <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@coolapk">Coolapk</button>
+                  <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@telegram">Telegram</button>
+                  <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@weibo">Weibo</button>
+                  <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@xiaohongshu">Xiaohongshu</button>
+                  <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@xda">Xda</button>
+                  <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@youtube">YouTube</button>
+                  <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@afdian">Afdian</button>
+                  <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@twitter">X</button>
+                  <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@zhihu">Zhihu</button>
+                  <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@threads">Threads</button>
+                  <button type="button" class="mention-chip" data-target="upDescription" data-mention="yourname@douyin">Douyin</button>
+                </div>
+              </div>
+              <div class="full">
+                <label for="upChangelog">更新说明</label>
+                <textarea id="upChangelog" name="changelog" placeholder="本次更新内容，支持 Markdown"></textarea>
+                <div class="field-hint">同样支持 Markdown 与 @ 网站提及。</div>
+              </div>
+            </div>
+            <div class="upload-progress hidden" id="uploadProgress">
+              <div class="upload-progress-head">
+                <span id="uploadProgressText">准备上传…</span>
+                <span id="uploadProgressPercent">0%</span>
+              </div>
+              <div class="progress-track"><i id="uploadProgressBar"></i></div>
+              <div class="upload-progress-meta">
+                <span id="uploadProgressBytes">0 B / 0 B</span>
+                <span><span class="speed" id="uploadProgressSpeed">—</span> <span id="uploadProgressEta"></span></span>
+              </div>
+            </div>
+            <div class="row">
+              <button class="primary" type="submit" id="uploadBtn">上传并发布</button>
+              <span class="pill" id="uploadHint">主题包 ≤ 128 MB，单张图片原始 ≤ 12 MB（自动压缩，输出 ≤ 2 MB） · 支持断点续传</span>
+            </div>
+          </form>
+        </div>
       </div>
     </section>
 
@@ -642,14 +637,17 @@
 
     <section id="network" class="page">
       <div class="section-head"><div><h3>网络</h3><p>配置管理服务监听地址、端口、公开域名和访问地址。</p></div><span class="pill" id="networkPill">–</span></div>
-      <div class="stats">
+      <div class="stats stats-5">
         <div class="stat"><div class="label">管理服务</div><div class="value" id="networkService">–</div><div class="sub" id="networkServiceUnit">sukisu-theme-web.service</div></div>
-        <div class="stat"><div class="label">监听</div><div class="value" id="networkListen">–</div><div class="sub">直接对外提供服务</div></div>
+        <div class="stat"><div class="label">运行模式</div><div class="value" id="networkMode">–</div><div class="sub" id="networkModeHint">–</div></div>
+        <div class="stat"><div class="label">公开入口</div><div class="value" id="networkPublicEntry">–</div><div class="sub" id="networkPublicSource">用户和管理器直接连接</div></div>
+        <div class="stat"><div class="label">内部监听</div><div class="value" id="networkListen">–</div><div class="sub" id="networkListenHint">仅本机进程或站点转发使用</div></div>
         <div class="stat"><div class="label">反代目标</div><div class="value" id="networkUpstream">–</div><div class="sub">Lucky 等反向代理指向此地址</div></div>
       </div>
       <div class="card">
-        <h4>监听地址</h4>
-        <p class="hint">服务直接监听该地址与端口。修改后会自动重启；Lucky 等反向代理需要指向同一端口。绑定 127.0.0.1 时仅本机反代可访问，绑定 0.0.0.0 可对外提供服务。</p>
+        <h4 id="networkListenTitle">监听地址</h4>
+        <p class="hint" id="networkListenCardHint">这里配置的是内部监听地址和端口，不一定是公网入口或反代目标。修改后会自动重启；独立部署时 Lucky 等反向代理指向此端口，完整站点模式下请以「反代目标」为准。绑定 127.0.0.1 时仅本机反代可访问，绑定 0.0.0.0 可对外提供服务。</p>
+        <p class="field-hint" id="networkModeHintCard"></p>
         <div class="form-grid">
           <div><label for="networkBind">监听 IP</label><input id="networkBind" placeholder="127.0.0.1" spellcheck="false"><div class="field-hint">可填 127.0.0.1、0.0.0.0、::1 或服务器具体 IP</div></div>
           <div><label for="networkPort">端口</label><input id="networkPort" type="number" min="1" max="65535" step="1" placeholder="8080"></div>
@@ -660,7 +658,7 @@
       </div>
       <div class="card" style="margin-top:14px">
         <h4>公开域名与地址</h4>
-        <p class="hint">域名每行一个，可包含端口。DNS、证书和 TLS 终止仍需在 Lucky/域名服务中配置。</p>
+        <p class="hint" id="networkPublicHint">域名每行一个，可包含端口。DNS、证书和 TLS 终止仍需在 Lucky/域名服务中配置。</p>
         <div class="form-grid">
           <div class="full"><label for="networkDomains">公开域名</label><textarea id="networkDomains" placeholder="themes.example.com&#10;themes.example.com:8443"></textarea></div>
           <div class="full"><label for="networkPublicUrl">镜像公开地址</label><input id="networkPublicUrl" placeholder="https://themes.example.com/" spellcheck="false"></div>
@@ -733,6 +731,7 @@
       </div>
       <div class="card" style="margin-top:14px">
         <h4>数据库结构</h4>
+        <p class="hint">每小时自动执行增量回收（auto_vacuum=INCREMENTAL），删除日志、留言或主题记录后释放的页会逐步归还；空闲页数量如下。</p>
         <div class="meta" id="perfDatabase"></div>
       </div>
       <div class="card" style="margin-top:14px">
@@ -887,10 +886,22 @@
           </div>
           <p class="field-hint">修改成功后需要重新登录。</p>
         </div>
-        <div class="card wide">
-          <h4>设备访问凭证</h4><p class="hint">每台管理器使用独立凭证，访问凭证 15 分钟到期并定期刷新。可单独撤销；没有共享主令牌。投稿仍需账号授权。</p>
-          <button id="reloadCredentials" type="button">刷新设备列表</button><div id="credentialRows" aria-live="polite"></div>
-        </div>
+        <details class="card wide fold-card" id="credentialFold">
+          <summary class="fold-summary">
+            <span class="fold-copy">
+              <span class="fold-title">设备访问凭证</span>
+              <span class="hint">每台管理器使用独立凭证，访问凭证 15 分钟到期并定期刷新。可单独撤销；没有共享主令牌。投稿仍需账号授权。</span>
+            </span>
+            <span class="fold-side">
+              <span class="pill" id="credentialCount">–</span>
+              <svg class="fold-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </span>
+          </summary>
+          <div class="fold-body">
+            <div class="row"><button id="reloadCredentials" type="button">刷新设备列表</button></div>
+            <div id="credentialRows" aria-live="polite"></div>
+          </div>
+        </details>
         <div class="card wide">
           <h4><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15 7a4 4 0 1 1-3.8 5.2L4 19.4V21h2.6l1.4-1.4V18h1.6l1.2-1.2v-1.4h1.4l.8-.8A4 4 0 0 1 15 7Z"/><circle cx="16.5" cy="7.5" r="1"/></svg>访问令牌</h4>
           <p class="hint">为脚本或镜像签发有明确权限的独立令牌，可随时修改名称、权限与有效期，泄露时单独停用或删除；令牌值只在创建时完整显示一次。</p>
@@ -957,8 +968,8 @@
     </section>
 
     <section id="community" class="page">
-      <div class="section-head"><div><h3>举报与申诉</h3><p>核查举报证据与作者申诉，记录可追溯的处理说明。</p></div><button class="btn" id="communityRefresh" type="button">刷新</button></div>
-      <div class="card"><h4>主题举报</h4><p class="hint">受理仅记录审核结果；如需下架，请到「上传主题 → 主题维护」执行。</p><div id="adminReportsList"></div><div class="empty hidden" id="adminReportsEmpty">暂无举报</div></div>
+      <div class="section-head"><div><h3>举报与申诉</h3><p>核查举报证据与作者申诉，直接查看被举报主题与作者，记录可追溯的处理说明。</p></div><button class="btn" id="communityRefresh" type="button">刷新</button></div>
+      <div class="card"><h4>主题举报</h4><p class="hint">受理仅记录审核结果；如需下架或修改主题，请到「主题管理」执行。</p><div id="adminReportsList"></div><div class="empty hidden" id="adminReportsEmpty">暂无举报</div></div>
       <div class="card" style="margin-top:14px"><h4>作者申诉</h4><p class="hint">申诉受理会撤销对应举报的处理状态；被驳回的投稿仍需作者重新投稿或由管理员另行处理。</p><div id="adminAppealsList"></div><div class="empty hidden" id="adminAppealsEmpty">暂无申诉</div></div>
     </section>
 
@@ -1061,17 +1072,50 @@
   </div>
   <div class="theme-detail-body" id="themeDetailBody"></div>
 </dialog>
-<dialog class="theme-detail-dialog" id="themeTagsDialog">
+<dialog class="theme-detail-dialog" id="reasonDialog">
   <div class="theme-detail-head">
-    <h3 id="themeTagsTitle">编辑主题标签</h3>
-    <button class="btn small" id="themeTagsClose" type="button">关闭</button>
+    <h3 id="reasonTitle">填写理由</h3>
+    <button class="btn small" id="reasonClose" type="button">关闭</button>
   </div>
   <div class="theme-detail-body">
-    <p class="hint">标签最多 10 个，用于管理器和网页的筛选。勾选 R18 会自动添加 r18 标签；取消会移除所有 R18 相关标签。</p>
-    <div class="field"><label for="themeTagsInput">标签（逗号分隔）</label><input id="themeTagsInput" placeholder="cute, dark, anime" spellcheck="false"></div>
-    <label class="check" style="margin-top:12px"><input id="themeTagsR18" type="checkbox"> 标记为 R18（默认在管理器主题商店隐藏）</label>
-    <div class="row" style="margin-top:14px">
-      <button class="primary" id="themeTagsSave" type="button">保存标签</button>
+    <p class="hint" id="reasonHint"></p>
+    <div class="field">
+      <label for="reasonInput">理由</label>
+      <textarea id="reasonInput" rows="5" maxlength="500" placeholder="请填写会记录到操作日志并展示给用户的原因"></textarea>
+      <div class="field-hint" id="reasonCount"></div>
+    </div>
+    <div class="row">
+      <button class="primary" id="reasonConfirm" type="button">确认</button>
+      <button id="reasonCancel" type="button">取消</button>
+    </div>
+  </div>
+</dialog>
+<dialog class="theme-detail-dialog" id="themeEditDialog">
+  <div class="theme-detail-head">
+    <h3 id="themeEditTitle">编辑主题</h3>
+    <button class="btn small" id="themeEditClose" type="button">关闭</button>
+  </div>
+  <div class="theme-detail-body">
+    <div class="form-grid">
+      <div><label for="editThemeId">主题 ID</label><input id="editThemeId" disabled></div>
+      <div><label for="editThemeName">名称</label><input id="editThemeName" maxlength="120"></div>
+      <div><label for="editThemeAuthorHash">作者账号</label><select id="editThemeAuthorHash"><option value="">保留当前作者绑定</option></select><div class="field-hint">选择其他作者会改变主题归属。</div></div>
+      <div><label for="editThemeAuthor">作者名称</label><input id="editThemeAuthor" maxlength="120"></div>
+      <div class="full"><label for="editThemeTags">标签</label><input id="editThemeTags" placeholder="cute, dark, anime"><div class="field-hint">标签最多 10 个；R18 与自适应主题由下方勾选控制。</div></div>
+      <div><label for="editThemeLicense">许可证</label><select id="editThemeLicense"><option value="CC-BY-4.0">CC-BY-4.0</option><option value="CC-BY-SA-4.0">CC-BY-SA-4.0</option><option value="CC-BY-NC-4.0">CC-BY-NC-4.0</option><option value="CC-BY-NC-SA-4.0">CC-BY-NC-SA-4.0</option><option value="CC0-1.0">CC0-1.0</option><option value="MIT">MIT</option><option value="Apache-2.0">Apache-2.0</option><option value="GPL-3.0">GPL-3.0</option><option value="All Rights Reserved">All Rights Reserved</option><option value="">未指定</option></select></div>
+      <div><label for="editThemeMin">最低管理器版本</label><input id="editThemeMin" type="number" min="0" value="0"></div>
+      <div class="full">
+        <label class="check"><input id="editThemeR18" type="checkbox"> 标记为 R18（管理器主题商店默认隐藏）</label>
+        <label class="check"><input id="editThemeAdaptive" type="checkbox"> 自适应主题（包含亮/暗两套外观）</label>
+      </div>
+      <div class="full"><label for="editThemeDescription">描述</label><textarea id="editThemeDescription" rows="6" placeholder="主题说明，支持 Markdown"></textarea></div>
+      <div class="full"><label for="editThemeChangelog">更新说明</label><textarea id="editThemeChangelog" rows="4" placeholder="本次更新内容，支持 Markdown"></textarea></div>
+    </div>
+    <p class="hint" id="editThemeMetaHint"></p>
+    <div class="row">
+      <button class="primary" id="themeEditSave" type="button">保存修改</button>
+      <button id="themeEditUpload" type="button">更新主题包或图片</button>
+      <button class="danger" id="themeEditDelete" type="button">删除主题</button>
     </div>
   </div>
 </dialog>
@@ -1154,6 +1198,85 @@ function toast(message, kind = 'ok') {
   clearTimeout(window.__toast);
   window.__toast = setTimeout(() => { el.className = 'toast'; }, 4200);
 }
+
+let reasonResolver = null;
+let reasonLimits = { min: 1, max: 500 };
+
+function updateReasonCount() {
+  const input = $('reasonInput');
+  if (!input) return;
+  $('reasonCount').textContent = `${input.value.trim().length} / ${reasonLimits.max} 字`;
+}
+
+function askReason(options = {}) {
+  const {
+    title = '填写理由',
+    hint = '理由会写入操作日志；涉及用户操作时也会展示在用户中心。',
+    placeholder = '请填写理由',
+    min = 1,
+    max = 500,
+    confirmText = '确认',
+  } = options;
+  return new Promise(resolve => {
+    if (reasonResolver) {
+      const previous = reasonResolver;
+      reasonResolver = null;
+      previous(null);
+    }
+    reasonResolver = resolve;
+    reasonLimits = { min, max };
+    $('reasonTitle').textContent = title;
+    $('reasonHint').textContent = hint;
+    $('reasonConfirm').textContent = confirmText;
+    const input = $('reasonInput');
+    input.value = '';
+    input.maxLength = max;
+    input.placeholder = placeholder;
+    updateReasonCount();
+    const dialog = $('reasonDialog');
+    if (dialog && typeof dialog.showModal === 'function') dialog.showModal();
+    setTimeout(() => input.focus(), 30);
+  });
+}
+
+function closeReason(value) {
+  const resolver = reasonResolver;
+  reasonResolver = null;
+  const dialog = $('reasonDialog');
+  if (dialog?.open) dialog.close();
+  if (resolver) resolver(value);
+}
+
+function confirmReason() {
+  const value = $('reasonInput').value.trim();
+  if (value.length < reasonLimits.min) {
+    toast(`请填写至少 ${reasonLimits.min} 个字的理由`, 'bad');
+    $('reasonInput').focus();
+    return;
+  }
+  if (value.length > reasonLimits.max) {
+    toast(`理由不能超过 ${reasonLimits.max} 个字`, 'bad');
+    return;
+  }
+  closeReason(value);
+}
+
+function confirmTwice(message, secondMessage = '该操作不可恢复，请再次确认。') {
+  if (!confirm(message)) return false;
+  return confirm(secondMessage);
+}
+
+$('reasonInput').addEventListener('input', updateReasonCount);
+$('reasonConfirm').addEventListener('click', confirmReason);
+$('reasonClose').addEventListener('click', () => closeReason(null));
+$('reasonCancel').addEventListener('click', () => closeReason(null));
+$('reasonDialog').addEventListener('click', event => {
+  if (event.target === $('reasonDialog')) closeReason(null);
+});
+$('reasonDialog').addEventListener('cancel', event => {
+  event.preventDefault();
+  closeReason(null);
+});
 
 const AUTH_REDIRECT_KEY = 'sukisu-admin-auth-redirect';
 
@@ -1813,8 +1936,25 @@ function renderThemeGrid() {
         </div>
         <div class="theme-desc">${renderInlineMarkdown(theme.description || '暂无描述')}</div>
         <div class="theme-tags">${tags}</div>
-        <div class="theme-actions"><span class="pill">只读预览</span></div>
+        <div class="theme-actions">
+          <button type="button" class="theme-tags-edit" data-theme-edit="${escapeHtml(theme.id)}">编辑</button>
+          <button type="button" class="danger" data-theme-delete="${escapeHtml(theme.id)}">删除</button>
+        </div>
       </div>`;
+    const editButton = card.querySelector('[data-theme-edit]');
+    if (editButton) {
+      editButton.addEventListener('click', event => {
+        event.stopPropagation();
+        openThemeEditor(theme);
+      });
+    }
+    const deleteButton = card.querySelector('[data-theme-delete]');
+    if (deleteButton) {
+      deleteButton.addEventListener('click', event => {
+        event.stopPropagation();
+        deleteTheme(theme.id);
+      });
+    }
     const image = card.querySelector('.theme-preview img');
     if (image) {
       image.addEventListener('error', () => {
@@ -1850,6 +1990,10 @@ function openThemeDetail(theme) {
   const verified = theme.verified !== false && sha.length === 64;
   $('themeDetailBody').innerHTML = `
     ${preview}
+    <div class="row" style="margin:12px 0">
+      <button class="primary" type="button" data-theme-detail-action="edit">编辑主题</button>
+      <button class="danger" type="button" data-theme-detail-action="delete">删除主题</button>
+    </div>
     <div class="theme-detail-meta">
       <span>ID：${escapeHtml(theme.id || '—')}</span>
       <span class="theme-stat hot">热度 ${formatCount(theme.heat)}</span>
@@ -1879,7 +2023,7 @@ function openThemeDetail(theme) {
         <h4>留言与回复</h4>
         <div class="row" style="margin:0">
           <span class="comment-retention" id="themeDetailRetention"></span>
-          <span class="pill">只读预览</span>
+          <span class="pill">管理员视图</span>
         </div>
       </div>
       <div class="comment-list" id="themeDetailCommentList"><div class="comment-empty">正在加载留言…</div></div>
@@ -1890,11 +2034,15 @@ function openThemeDetail(theme) {
 }
 
 $('themeDetailClose').addEventListener('click', () => $('themeDetailDialog').close());
-$('themeTagsClose').addEventListener('click', () => $('themeTagsDialog').close());
-$('themeTagsDialog').addEventListener('click', event => {
-  if (event.target === $('themeTagsDialog')) $('themeTagsDialog').close();
+$('themeDetailBody').addEventListener('click', event => {
+  const button = event.target.closest('[data-theme-detail-action]');
+  if (!button) return;
+  const theme = themeItems.find(item => item.id === themeDetailId);
+  if (!theme) return;
+  $('themeDetailDialog').close();
+  if (button.dataset.themeDetailAction === 'edit') openThemeEditor(theme);
+  else deleteTheme(theme.id);
 });
-$('themeTagsSave').addEventListener('click', saveThemeTags);
 $('themeDetailDialog').addEventListener('click', event => {
   if (event.target === $('themeDetailDialog')) $('themeDetailDialog').close();
 });
@@ -2094,9 +2242,16 @@ function renderCommentsAdmin() {
 }
 
 async function deleteAdminComment(id) {
-  if (!id || !confirm('确认删除这条留言？其下的回复也会一并删除。')) return;
+  if (!id) return;
+  const reason = await askReason({
+    title: '删除留言',
+    hint: '删除后其下的回复也会一并移除，原因会记录到操作日志。',
+    placeholder: '例如：包含人身攻击或广告内容',
+  });
+  if (reason === null) return;
+  if (!confirm('确认删除这条留言？其下的回复也会一并删除。')) return;
   try {
-    await api('/comments/delete', { method: 'POST', body: JSON.stringify({ id }) });
+    await api('/comments/delete', { method: 'POST', body: JSON.stringify({ id, reason }) });
     toast('已删除');
     if (themeDetailId) await loadThemeDetailComments(themeDetailId);
     if (currentPage === 'comments') await loadCommentsAdmin(adminCommentOffset);
@@ -2107,11 +2262,17 @@ async function deleteAdminComment(id) {
 
 async function clearAdminComments(themeId) {
   const scope = themeId ? '该主题下的全部留言' : '所有主题的全部留言';
-  if (!confirm('确认清空' + scope + '？此操作不可恢复。')) return;
+  const reason = await askReason({
+    title: '清空' + scope,
+    hint: '清空后无法恢复，原因会记录到操作日志。',
+    placeholder: '例如：清理广告机器人批量发布的留言',
+  });
+  if (reason === null) return;
+  if (!confirmTwice('确认清空' + scope + '？此操作不可恢复。')) return;
   try {
     const data = await api('/comments/clear', {
       method: 'POST',
-      body: JSON.stringify(themeId ? { themeId } : {}),
+      body: JSON.stringify(themeId ? { themeId, reason } : { reason }),
     });
     toast('已清空 ' + (data.deleted || 0) + ' 条留言');
     if (themeId && themeDetailId === themeId) await loadThemeDetailComments(themeId);
@@ -2305,6 +2466,12 @@ function renderAuthors(authors) {
     const revokeAt = author.autoRevokeAt
       ? `<span>自动撤销：${escapeHtml(formatTime(author.autoRevokeAt))}</span>`
       : '';
+    const revokeReason = author.revokeReason
+      ? `<span title="撤销原因">撤销原因：${escapeHtml(author.revokeReason)}</span>`
+      : '';
+    const restrictionReason = author.restrictionReason
+      ? `<span title="限制原因">限制原因：${escapeHtml(author.restrictionReason)}</span>`
+      : '';
     const restrictionHtml = (author.restrictions || [])
       .map(feature => `<span class="pill warn">${escapeHtml(restrictionLabels[feature] || feature)}</span>`)
       .join('') || '<span class="pill">无限制</span>';
@@ -2319,7 +2486,7 @@ function renderAuthors(authors) {
       </div>
       <div class="user-cell"><span class="cell-label">归属</span>${owner}</div>
       <div class="user-cell"><span class="cell-label">状态</span><span class="pill ${author.status === 'active' ? 'ok' : (author.status === 'pending' ? 'warn' : 'bad')}">${escapeHtml(statusLabels[author.status] || author.status || '未知')}</span></div>
-      <div class="author-row-extra" style="display:flex;flex-wrap:wrap;gap:5px">${restrictionHtml}${revokeAt}</div>
+      <div class="author-row-extra" style="display:flex;flex-wrap:wrap;gap:5px">${restrictionHtml}${revokeAt}${revokeReason}${restrictionReason}</div>
       <div class="author-actions">${actionHtml}</div>`;
     const checkbox = row.querySelector('.author-select');
     checkbox.addEventListener('change', () => {
@@ -2406,11 +2573,17 @@ async function runAuthorBatch(action) {
     toast('请先选择至少一个作者', 'bad');
     return;
   }
-  if (!confirm(`确定对选中的 ${hashes.length} 位作者${labels.verb}？`)) return;
+  const reason = await askReason({
+    title: `${labels.verb} · ${hashes.length} 位作者`,
+    hint: '撤销、停用或删除作者许可必须填写原因；撤销和停用原因会展示在用户中心。',
+    placeholder: '例如：多次发布侵权内容，经提醒仍未整改',
+  });
+  if (reason === null) return;
+  if (action === 'delete' && !confirmTwice(`批量删除 ${hashes.length} 份作者许可？此操作不可恢复。`)) return;
   try {
     const data = await api('/author/batch', {
       method: 'POST',
-      body: JSON.stringify({ action, hashes }),
+      body: JSON.stringify({ action, hashes, reason }),
     });
     const parts = [`${labels.done} ${data.updated ?? 0} 位`];
     if (data.skipped) parts.push(`跳过 ${data.skipped} 位`);
@@ -2443,10 +2616,16 @@ async function saveAuthorRestrictions() {
   const features = [...document.querySelectorAll('[data-author-feature]')]
     .filter(input => input.checked)
     .map(input => input.dataset.authorFeature);
+  const reason = await askReason({
+    title: '保存功能限制',
+    hint: '限制原因会展示在用户中心，并记录到操作日志。',
+    placeholder: features.length ? '例如：多次发布违规评论，暂时禁止评论' : '例如：整改完成，解除全部限制',
+  });
+  if (reason === null) return;
   try {
     await api('/author/restrictions', {
       method: 'POST',
-      body: JSON.stringify({ hash: restrictionAuthorHash, features }),
+      body: JSON.stringify({ hash: restrictionAuthorHash, features, reason }),
     });
     toast('功能限制已更新');
     $('authorRestrictionsDialog').close();
@@ -2481,11 +2660,16 @@ async function loadAuthors() {
 }
 
 async function revokeAuthor(hash, fingerprint) {
-  if (!confirm('撤销作者 ' + fingerprint + ' 的自动审批许可？')) return;
+  const reason = await askReason({
+    title: '撤销作者许可 · ' + (fingerprint || ''),
+    hint: '撤销原因会展示在用户中心，并允许作者据此重新申请。',
+    placeholder: '例如：发布违规主题，撤销自动审批许可',
+  });
+  if (reason === null) return;
   try {
     await api('/author/revoke', {
       method: 'POST',
-      body: JSON.stringify({ hash }),
+      body: JSON.stringify({ hash, reason }),
     });
     toast('已撤销作者许可');
     await refresh(true);
@@ -2495,11 +2679,17 @@ async function revokeAuthor(hash, fingerprint) {
 }
 
 async function deleteAuthor(hash, fingerprint) {
-  if (!confirm('删除作者许可 ' + fingerprint + '？已发布主题会保留，但许可记录会被永久移除。')) return;
+  const reason = await askReason({
+    title: '删除作者许可 · ' + (fingerprint || ''),
+    hint: '删除后许可记录无法恢复，已发布主题会保留。',
+    placeholder: '例如：作者申请注销许可',
+  });
+  if (reason === null) return;
+  if (!confirmTwice('删除作者许可后无法恢复，已发布主题会保留。', '再次确认永久删除这份作者许可？')) return;
   try {
     await api('/author/delete', {
       method: 'POST',
-      body: JSON.stringify({ hash }),
+      body: JSON.stringify({ hash, reason }),
     });
     toast('作者许可已删除');
     await refresh(true);
@@ -2523,7 +2713,12 @@ async function approvePending(submissionId) {
 }
 
 async function rejectPending(submissionId) {
-  const reason = prompt('拒绝原因（会发送给投稿用户，可留空）：', '');
+  const reason = await askReason({
+    title: '拒绝主题投稿',
+    hint: '拒绝原因会展示给投稿作者，并记录到操作日志。',
+    placeholder: '例如：主题包内包含未授权素材，请替换后重新投稿',
+    max: 2000,
+  });
   if (reason === null) return;
   try {
     await api('/reject', {
@@ -2538,9 +2733,16 @@ async function rejectPending(submissionId) {
 }
 
 async function deleteTheme(id) {
-  if (!confirm('确定删除主题 ' + id + '？')) return;
+  const reason = await askReason({
+    title: '删除主题 · ' + id,
+    hint: '删除原因会记录到操作日志，并用于后续申诉核查。',
+    placeholder: '例如：应版权方要求下架',
+    max: 2000,
+  });
+  if (reason === null) return;
+  if (!confirmTwice(`确定删除主题 ${id}？主题包、预览图和截图都会被移除。`, `删除后无法恢复，再次确认删除主题 ${id}？`)) return;
   try {
-    const data = await api('/delete-theme', { method: 'POST', body: JSON.stringify({ id }) });
+    const data = await api('/delete-theme', { method: 'POST', body: JSON.stringify({ id, reason }) });
     toast('已删除，剩余 ' + (data.themes ?? 0) + ' 个主题');
     await refresh(true);
   } catch (error) {
@@ -2548,47 +2750,161 @@ async function deleteTheme(id) {
   }
 }
 
-let editingThemeTags = null;
+let editingTheme = null;
+let themeTab = 'list';
 
-function openThemeTags(theme) {
-  editingThemeTags = theme;
-  $('themeTagsTitle').textContent = '编辑标签 · ' + (theme.name || theme.id);
-  $('themeTagsInput').value = (theme.tags || []).filter(tag => !isR18Tag(tag)).join(', ');
-  $('themeTagsR18').checked = isR18Theme(theme);
-  const dialog = $('themeTagsDialog');
+function switchThemeTab(tab) {
+  themeTab = tab === 'upload' ? 'upload' : 'list';
+  document.querySelectorAll('[data-theme-tab]').forEach(button => {
+    const active = button.dataset.themeTab === themeTab;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', String(active));
+  });
+  $('themeListPane')?.classList.toggle('hidden', themeTab !== 'list');
+  $('themeUploadPane')?.classList.toggle('hidden', themeTab !== 'upload');
+}
+
+document.querySelectorAll('[data-theme-tab]').forEach(button => {
+  button.addEventListener('click', () => {
+    switchThemeTab(button.dataset.themeTab);
+    if (themeTab === 'upload' && !authorItems.length) loadAuthors();
+  });
+});
+
+async function openThemeEditor(theme) {
+  if (!theme) return;
+  editingTheme = theme;
+  if (!authorItems.length) {
+    try { await loadAuthors(); } catch (_) {}
+  }
+  $('themeEditTitle').textContent = '编辑主题 · ' + (theme.name || theme.id);
+  $('editThemeId').value = theme.id || '';
+  $('editThemeName').value = theme.name || '';
+  $('editThemeAuthor').value = theme.author || '';
+  const select = $('editThemeAuthorHash');
+  select.innerHTML = '<option value="">保留当前作者绑定</option>';
+  authorItems.forEach(author => {
+    const option = document.createElement('option');
+    option.value = author.hash;
+    const name = author.name || author.userDisplayName || author.username || author.fingerprint || author.hash.slice(0, 8);
+    option.textContent = `${name}${author.code ? ' · ' + author.code : ''}`;
+    option.dataset.name = author.name || author.userDisplayName || '';
+    select.appendChild(option);
+  });
+  if (theme.authorHash && !Array.from(select.options).some(option => option.value === theme.authorHash)) {
+    const option = document.createElement('option');
+    option.value = theme.authorHash;
+    option.textContent = (theme.author || theme.authorHash.slice(0, 8)) + ' · 当前绑定';
+    select.appendChild(option);
+  }
+  select.value = theme.authorHash || '';
+  $('editThemeTags').value = (theme.tags || [])
+    .filter(tag => !isR18Tag(tag) && canonicalTag(tag) !== ADAPTIVE_TAG)
+    .join(', ');
+  const licenseSelect = $('editThemeLicense');
+  if (theme.license && !Array.from(licenseSelect.options).some(option => option.value === theme.license)) {
+    const option = document.createElement('option');
+    option.value = theme.license;
+    option.textContent = theme.license;
+    licenseSelect.appendChild(option);
+  }
+  licenseSelect.value = theme.license || '';
+  $('editThemeMin').value = String(theme.minManagerVersion ?? 0);
+  $('editThemeR18').checked = isR18Theme(theme);
+  $('editThemeAdaptive').checked = isAdaptiveTheme(theme);
+  $('editThemeDescription').value = theme.description || '';
+  $('editThemeChangelog').value = theme.changelog || '';
+  $('editThemeMetaHint').textContent = `当前 v${theme.version || 1} · 格式 v${theme.formatVersion ?? 1} · ${formatSize(theme.size)} · 更新于 ${theme.updatedAt ? formatTime(theme.updatedAt) : '未知'}`;
+  const dialog = $('themeEditDialog');
   if (dialog && typeof dialog.showModal === 'function') dialog.showModal();
 }
 
-async function saveThemeTags() {
-  if (!editingThemeTags) return;
-  const tags = $('themeTagsInput').value
+async function saveThemeEditor() {
+  if (!editingTheme) return;
+  const tags = $('editThemeTags').value
     .split(/[,，\n]/)
     .map(tag => tag.trim())
-    .filter(Boolean);
+    .filter(tag => tag && !isR18Tag(tag) && canonicalTag(tag) !== ADAPTIVE_TAG);
+  const payload = {
+    id: editingTheme.id,
+    name: $('editThemeName').value.trim(),
+    author: $('editThemeAuthor').value.trim(),
+    authorHash: $('editThemeAuthorHash').value || '',
+    description: $('editThemeDescription').value,
+    changelog: $('editThemeChangelog').value,
+    tags,
+    r18: $('editThemeR18').checked,
+    adaptive: $('editThemeAdaptive').checked,
+    license: $('editThemeLicense').value,
+    minManagerVersion: Number($('editThemeMin').value) || 0,
+  };
+  if (!payload.name) { toast('请填写主题名称', 'bad'); $('editThemeName').focus(); return; }
+  if (!payload.author) { toast('请填写作者名称', 'bad'); $('editThemeAuthor').focus(); return; }
+  const button = $('themeEditSave');
+  button.disabled = true;
   try {
-    const data = await api('/theme-tags', {
-      method: 'POST',
-      body: JSON.stringify({
-        id: editingThemeTags.id,
-        tags,
-        r18: $('themeTagsR18').checked,
-      }),
-    });
-    toast(data.r18 ? '已标记为 R18，并更新标签' : '已更新主题标签');
-    $('themeTagsDialog').close();
-    editingThemeTags = null;
+    await api('/theme-meta', { method: 'POST', body: JSON.stringify(payload) });
+    toast('已保存主题信息');
+    $('themeEditDialog').close();
+    editingTheme = null;
     await loadThemes();
   } catch (error) {
     toast('保存失败：' + error.message, 'bad');
+  } finally {
+    button.disabled = false;
   }
 }
+
+function openThemeUpload(theme) {
+  if (!theme) return;
+  $('themeEditDialog').close();
+  switchThemeTab('upload');
+  const select = $('upUpdate');
+  const option = select ? Array.from(select.options).find(item => item.value === theme.id) : null;
+  if (!option) {
+    toast('主题列表尚未加载完成，请稍后重试', 'bad');
+    return;
+  }
+  const search = $('upUpdateSearch');
+  if (search) search.value = '';
+  populateUploadThemes();
+  select.value = theme.id;
+  select.dispatchEvent(new Event('change'));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function manageThemeFromCommunity(id) {
+  if (location.hash !== '#themes') history.pushState(null, '', '#themes');
+  showPage('themes', false);
+  loadThemes().then(() => {
+    const theme = themeItems.find(item => item.id === id);
+    if (theme) openThemeEditor(theme);
+    else toast('主题不存在或已删除', 'bad');
+  }).catch(error => toast('读取主题失败：' + error.message, 'bad'));
+}
+
+$('themeEditClose').addEventListener('click', () => $('themeEditDialog').close());
+$('themeEditDialog').addEventListener('click', event => {
+  if (event.target === $('themeEditDialog')) $('themeEditDialog').close();
+});
+$('editThemeAuthorHash').addEventListener('change', () => {
+  const option = $('editThemeAuthorHash').selectedOptions[0];
+  if (option && option.value && option.dataset.name) $('editThemeAuthor').value = option.dataset.name;
+});
+$('themeEditSave').addEventListener('click', saveThemeEditor);
+$('themeEditUpload').addEventListener('click', () => openThemeUpload(editingTheme));
+$('themeEditDelete').addEventListener('click', () => {
+  if (!editingTheme) return;
+  const id = editingTheme.id;
+  $('themeEditDialog').close();
+  deleteTheme(id);
+});
 
 async function loadThemes() {
   try {
     const data = await api('/themes?sort=' + encodeURIComponent(themeSort));
     renderThemes(data.themes || []);
     populateUploadThemes(data.themes || []);
-    populateMaintainThemes(data.themes || []);
   } catch (error) {
     $('themePill').textContent = '加载失败';
     $('themeEmpty').style.display = 'block';
@@ -2868,7 +3184,11 @@ async function runUserAction(user, action) {
       return;
     }
     if (action === 'reject') {
-      const reason = prompt('拒绝原因（可留空）：', '');
+      const reason = await askReason({
+        title: '拒绝账号审核 · ' + user.username,
+        hint: '拒绝原因会展示在用户中心，并发送到用户邮箱。',
+        placeholder: '例如：注册信息不完整，请补充后重新申请',
+      });
       if (reason === null) return;
       await api(`/users/${user.id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });
       toast('已拒绝该账号');
@@ -2880,6 +3200,15 @@ async function runUserAction(user, action) {
     } else if (action === 'delete') {
       await deleteUser(user);
       return;
+    } else if (action === 'disable') {
+      const reason = await askReason({
+        title: '禁用账号 · ' + user.username,
+        hint: '禁用原因会展示在用户中心，并发送到用户邮箱。',
+        placeholder: '例如：账号存在异常登录和违规投稿行为',
+      });
+      if (reason === null) return;
+      const data = await api(`/users/${user.id}/disable`, { method: 'POST', body: JSON.stringify({ reason }) });
+      toast(data.message || '操作完成');
     } else {
       if (!confirm(`确认对 ${user.username} 执行「${action}」？`)) return;
       const data = await api(`/users/${user.id}/${action}`, { method: 'POST', body: '{}' });
@@ -2893,9 +3222,15 @@ async function runUserAction(user, action) {
 }
 
 async function deleteUser(user) {
-  if (!confirm(`确认永久删除账号 ${user.username}？账号无法恢复，绑定的作者许可会一并删除，已发布主题仍保留。`)) return;
+  const reason = await askReason({
+    title: '永久删除账号 · ' + user.username,
+    hint: '账号无法恢复，绑定的作者许可会一并删除，已发布主题仍保留。删除原因会记录到操作日志。',
+    placeholder: '例如：用户申请注销账号，且账号已处于禁用状态',
+  });
+  if (reason === null) return;
+  if (!confirmTwice(`永久删除账号 ${user.username}？账号和作者许可无法恢复。`, '这是不可逆操作，再次确认删除账号？')) return;
   try {
-    const data = await api(`/users/${user.id}/delete`, { method: 'POST', body: '{}' });
+    const data = await api(`/users/${user.id}/delete`, { method: 'POST', body: JSON.stringify({ reason }) });
     toast(data.message || '账号已删除');
     selectedUserId = null;
     if (currentPage === 'user-detail') {
@@ -2924,10 +3259,13 @@ async function loadUserDetail(id) {
       const avatar = author.avatarUrl
         ? `<img class="author-avatar" src="${escapeHtml(author.avatarUrl)}" alt="">`
         : `<span class="author-avatar fallback">${escapeHtml(initial)}</span>`;
+      const reason = author.revokeReason
+        ? `<span class="field-hint">撤销原因：${escapeHtml(author.revokeReason)}</span>`
+        : (author.restrictionReason ? `<span class="field-hint">限制原因：${escapeHtml(author.restrictionReason)}</span>` : '');
       return `
       <div class="author-card">
         ${avatar}
-        <div><b>${escapeHtml(author.displayName || '未命名作者')}</b><span class="author-fp">${escapeHtml(author.fingerprint || author.hash)}</span></div>
+        <div><b>${escapeHtml(author.displayName || '未命名作者')}</b><span class="author-fp">${escapeHtml(author.fingerprint || author.hash)}</span>${reason}</div>
         <span class="pill ${userTone(author.status)}">${escapeHtml(({ active: '已启用', pending: '待审核', retired: '已停用', revoked: '已撤销' })[author.status] || author.status)}</span>
       </div>`;
     }).join('') || '<div class="empty">未绑定作者身份</div>';
@@ -2975,9 +3313,23 @@ async function loadUserDetail(id) {
 
 async function detailAction(action) {
   if (!selectedUserId) return;
-  if (!confirm(`确认执行「${action}」？`)) return;
+  let reason = '';
+  if (action === 'disable') {
+    const value = await askReason({
+      title: '禁用账号',
+      hint: '禁用原因会展示在用户中心，并发送到用户邮箱。',
+      placeholder: '例如：账号存在异常登录和违规投稿行为',
+    });
+    if (value === null) return;
+    reason = value;
+  } else if (!confirm(`确认执行「${action}」？`)) {
+    return;
+  }
   try {
-    const data = await api(`/users/${selectedUserId}/${action}`, { method: 'POST', body: '{}' });
+    const data = await api(`/users/${selectedUserId}/${action}`, {
+      method: 'POST',
+      body: JSON.stringify(reason ? { reason } : {}),
+    });
     toast(data.message || '操作完成');
     await loadUserDetail(selectedUserId);
     await loadUsers();
@@ -2985,7 +3337,7 @@ async function detailAction(action) {
 }
 
 async function resetAuthor(id) {
-  if (!confirm('生成新的作者 ID？旧 ID 会停用，旧主题保留归属。')) return;
+  if (!confirmTwice('生成新的作者 ID？旧 ID 会停用，旧主题保留归属。', '重置后旧作者 ID 立即失效，再次确认重置？')) return;
   try {
     const data = await api(`/users/${id}/author/reset`, { method: 'POST', body: '{}' });
     const box = document.createElement('div');
@@ -3009,7 +3361,7 @@ async function bindAuthor(id) {
 }
 
 async function setRole(id, role) {
-  if (!confirm(`确认将用户角色改为 ${role}？`)) return;
+  if (!confirmTwice(`确认将用户角色改为 ${role}？`, '角色权限会立即生效，再次确认？')) return;
   try {
     await api(`/users/${id}/role`, { method: 'POST', body: JSON.stringify({ role }) });
     toast('角色已更新');
@@ -3041,6 +3393,8 @@ function renderAuthorRequests(requests) {
         <div class="kv"><span>作者名称</span><b>${escapeHtml(item.displayName || '–')}</b></div>
         <div class="kv"><span>作者 hash</span><b class="author-fp">${escapeHtml(item.authorHash || '–')}</b></div>
         <div class="kv"><span>申请时间</span><b>${escapeHtml(formatTime(item.createdAt))}</b></div>
+        ${item.note ? `<div class="kv"><span>申请说明</span><b>${escapeHtml(item.note)}</b></div>` : ''}
+        ${item.lastRevokeReason ? `<div class="kv"><span>上次撤销原因</span><b>${escapeHtml(item.lastRevokeReason)}</b></div>` : ''}
       </div>
       <div class="row" style="margin-top:12px">
         <button class="primary" data-action="approve">通过</button>
@@ -3056,7 +3410,11 @@ function renderAuthorRequests(requests) {
 async function reviewAuthorRequest(id, action) {
   let body = {};
   if (action === 'reject') {
-    const reason = prompt('拒绝原因（可留空）：', '');
+    const reason = await askReason({
+      title: '拒绝作者申请',
+      hint: '拒绝原因会展示在用户中心，并发送到用户邮箱。',
+      placeholder: '例如：作者名称不符合社区规范，请修改后重新申请',
+    });
     if (reason === null) return;
     body = { reason };
   } else if (!confirm('通过这个作者申请？')) {
@@ -3097,7 +3455,9 @@ const AUDIT_ACTIONS = {
   'author.request.reject': '拒绝作者申请',
   'theme.approve': '批准主题',
   'theme.reject': '拒绝主题',
+  'theme.delete': '删除主题',
   'theme.tags': '修改主题标签',
+  'theme.meta': '修改主题信息',
   'theme.withdraw.self': '撤回主题',
   'theme.restore.self': '恢复主题',
   'theme.delete.self': '删除主题',
@@ -3392,6 +3752,7 @@ function renderPerformance(data) {
       `<div class="kv"><span>${escapeHtml(file.name || 'database')}</span><b class="url">${escapeHtml(file.path || '–')}</b></div>`,
       `<div class="kv"><span>大小 / WAL</span><b>${formatStorage(Number(file.size) || 0)} / ${formatStorage(Number(file.walSize) || 0)}</b></div>`,
       `<div class="kv"><span>Journal / 页大小</span><b>${escapeHtml(file.details?.journalMode || '–')} / ${formatCount(file.details?.pageSize || 0)}</b></div>`,
+      `<div class="kv"><span>空闲页 / 回收</span><b>${formatCount(file.details?.freePages || 0)} 页 · ${file.details?.autoVacuum === 2 ? '增量自动回收' : '未开启'}</b></div>`,
       `<div class="kv"><span>表</span><b>${tables || '–'}</b></div>`,
     ].join('');
   }).join('') || '<div class="kv"><span>暂无数据</span><b>–</b></div>';
@@ -3480,6 +3841,7 @@ async function savePerformance() {
 $('perfSaveCompression').addEventListener('click', savePerformance);
 $('perfSaveRuntime').addEventListener('click', savePerformance);
 $('perfResetStats').addEventListener('click', async () => {
+  if (!confirmTwice('重置压缩统计会清零当前统计计数，是否继续？', '再次确认重置统计？')) return;
   try {
     await api('/performance/stats/reset', { method: 'POST', body: '{}' });
     toast('压缩统计已重置');
@@ -3489,7 +3851,7 @@ $('perfResetStats').addEventListener('click', async () => {
   }
 });
 $('perfRestart').addEventListener('click', async () => {
-  if (!confirm('重启管理服务？当前请求会在几秒内中断。')) return;
+  if (!confirmTwice('重启管理服务？当前请求会在几秒内中断。', '服务重启期间网站不可用，再次确认重启？')) return;
   try {
     const data = await api('/performance/restart', { method: 'POST', body: '{}' });
     toast(data.message || '服务即将重启');
@@ -3498,6 +3860,7 @@ $('perfRestart').addEventListener('click', async () => {
   }
 });
 
+let networkSiteMode = false;
 async function loadNetwork() {
   try {
     const data = await api('/network');
@@ -3513,14 +3876,53 @@ async function loadNetwork() {
     $('networkGithubCallback').value = settings.githubCallback || '';
     $('networkService').textContent = stateText(data.adminService);
     $('networkServiceUnit').textContent = data.serviceUnit || 'sukisu-theme-web.service';
-    $('networkListen').textContent = `${settings.bind || '–'}:${settings.port || '–'}`;
+    const mode = data.mode === 'site' ? 'site' : 'standalone';
+    const siteMode = mode === 'site';
+    networkSiteMode = siteMode;
+    if (siteMode) {
+      const target = splitHostPort(data.upstream || '');
+      $('networkBind').value = target.host;
+      $('networkPort').value = target.port;
+    }
+    $('networkApply').disabled = false;
+    $('networkTest').disabled = false;
+    $('networkHint').textContent = siteMode ? '保存后需重启站点服务' : '自动更新配置并重启';
+    $('networkListenTitle').textContent = siteMode ? '反代目标（站点监听）' : '监听地址';
+    $('networkListenCardHint').textContent = siteMode
+      ? '完整站点模式下，这里显示并修改站点进程的监听地址，也就是 Lucky 应指向的反代目标；保存后需要重启 sukisu-theme-site.service 才会绑定新端口。内部子进程端口由站点随机分配。'
+      : '这里配置的是服务监听地址和端口，修改后会自动重启；Lucky 等反向代理指向这个地址。绑定 127.0.0.1 时仅本机反代可访问，绑定 0.0.0.0 可对外提供服务。';
+    $('networkPublicHint').textContent = siteMode
+      ? '完整站点模式下，公开地址会保存到站点运行配置，重启站点服务后生效。'
+      : '域名每行一个，可包含端口。DNS、证书和 TLS 终止仍需在 Lucky/域名服务中配置。';
+    const modeLabel = mode === 'site' ? '完整站点' : '独立部署';
+    const publicSource = ({
+      site: '来自完整站点配置',
+      network: '来自镜像公开地址',
+      domain: '来自公开域名',
+      request: '来自当前访问地址',
+      none: '请在下方填写公开地址',
+    })[data.publicEntrySource] || '用户和管理器直接连接';
+    $('networkMode').textContent = modeLabel;
+    $('networkModeHint').textContent = mode === 'site' ? '由站点进程管理' : '本机进程监听';
+    $('networkPublicEntry').textContent = data.publicEntry ? urlHost(data.publicEntry) : '未配置';
+    $('networkPublicEntry').title = data.publicEntry || '';
+    $('networkPublicSource').textContent = publicSource;
+    const internalValue = data.internal || `${settings.bind || '–'}:${settings.port || '–'}`;
+    $('networkListen').textContent = internalValue;
+    $('networkListenHint').textContent = mode === 'site' ? '站点子进程实际监听' : '反向代理应指向此端口';
     $('networkUpstream').textContent = data.upstream || '–';
-    $('networkPill').textContent = data.systemctlDisabled ? '本地模式' : '已连接';
+    $('networkModeHintCard').textContent = mode === 'site'
+      ? '完整站点模式：公开入口优先取「镜像公开地址」；反代目标是站点监听地址；内部监听端口由站点进程随机分配，保存后需重启站点服务。'
+      : '独立部署：公开入口优先取「镜像公开地址」，其次取第一条公开域名；反代目标与内部监听相同，Lucky 指向下方地址即可。';
+    $('networkPill').textContent = mode === 'site' ? '完整站点' : (data.systemctlDisabled ? '本地模式' : '已连接');
     $('networkDiag').innerHTML = [
-      `<div class="kv"><span>监听地址</span><b class="url">${escapeHtml(`${settings.bind || '–'}:${settings.port || '–'}`)}</b></div>`,
+      `<div class="kv"><span>运行模式</span><b>${modeLabel}</b></div>`,
+      `<div class="kv"><span>公开入口</span><b class="url">${escapeHtml(data.publicEntry || '未配置')}</b></div>`,
+      `<div class="kv"><span>入口来源</span><b>${escapeHtml(publicSource)}</b></div>`,
+      `<div class="kv"><span>反代目标</span><b class="url">${escapeHtml(data.upstream || '–')}</b></div>`,
+      `<div class="kv"><span>内部监听</span><b class="url">${escapeHtml(internalValue)}</b></div>`,
       `<div class="kv"><span>监听协议</span><b>${escapeHtml(settings.ipFamily || 'auto')}</b></div>`,
       `<div class="kv"><span>出站协议</span><b>${escapeHtml(settings.outboundIpFamily || 'auto')}</b></div>`,
-      `<div class="kv"><span>反代目标</span><b class="url">${escapeHtml(data.upstream || '–')}</b></div>`,
       `<div class="kv"><span>systemctl</span><b>${data.systemctlDisabled ? '已禁用' : '可用'}</b></div>`,
       `<div class="kv"><span>公开域名</span><b>${escapeHtml((settings.domains || []).join(', ') || '–')}</b></div>`,
       `<div class="kv"><span>管理服务</span><b>${escapeHtml(stateText(data.adminService))}</b></div>`,
@@ -3528,6 +3930,23 @@ async function loadNetwork() {
   } catch (error) {
     toast('网络状态读取失败：' + error.message, 'bad');
   }
+}
+
+function urlHost(value) {
+  try {
+    return new URL(value).host || value;
+  } catch (_) {
+    return value;
+  }
+}
+
+function splitHostPort(value) {
+  const text = String(value || '').trim();
+  const bracketed = text.match(/^\[([^\]]+)\]:(\d+)$/);
+  if (bracketed) return { host: bracketed[1], port: bracketed[2] };
+  const index = text.lastIndexOf(':');
+  if (index > 0) return { host: text.slice(0, index), port: text.slice(index + 1) };
+  return { host: text, port: '' };
 }
 
 function networkPayload() {
@@ -3575,7 +3994,7 @@ $('networkApply').addEventListener('click', async () => {
     toast('至少填写一个公开域名', 'bad');
     return;
   }
-  if (!confirm('保存后管理服务将重启，期间后台会短暂中断。确认继续？')) return;
+  if (!confirm(networkSiteMode ? '保存后需要重启站点服务才能生效，是否继续？' : '保存后管理服务将重启，期间后台会短暂中断。确认继续？')) return;
   try {
     const data = await api('/network', { method: 'POST', body: JSON.stringify(payload) });
     toast(data.message || '网络配置已保存');
@@ -3719,40 +4138,6 @@ function populateUploadThemes(themes) {
   });
   if (current && Array.from(select.options).some(option => option.value === current)) select.value = current;
 }
-
-function populateMaintainThemes(themes) {
-  const select = $('maintainTheme');
-  if (!select) return;
-  if (themes) themeItems = themes;
-  const current = select.value;
-  select.innerHTML = '<option value="">选择主题</option>';
-  themeItems.forEach(theme => {
-    const option = document.createElement('option');
-    option.value = theme.id;
-    option.textContent = `${theme.id} · ${theme.name || ''} · v${theme.version}`;
-    select.appendChild(option);
-  });
-  if (current && Array.from(select.options).some(option => option.value === current)) select.value = current;
-}
-
-function maintainThemeSelection() {
-  const id = $('maintainTheme')?.value || '';
-  const theme = themeItems.find(item => item.id === id);
-  if (!theme) {
-    toast('请先选择一个主题', 'bad');
-    return null;
-  }
-  return theme;
-}
-
-$('maintainTags').addEventListener('click', () => {
-  const theme = maintainThemeSelection();
-  if (theme) openThemeTags(theme);
-});
-$('maintainDelete').addEventListener('click', () => {
-  const theme = maintainThemeSelection();
-  if (theme) deleteTheme(theme.id);
-});
 
 async function refreshAutoThemeId() {
   if (!($('upAuthorHash') && $('upAutoId'))) return;
@@ -4162,6 +4547,7 @@ function formSourcePayload() {
 }
 
 async function saveSource() {
+  if (editingSourceId && !confirm('保存来源修改会立即影响该存储位置的连接和写入，是否继续？')) return;
   try {
     const data = await api('/storage/sources/save', {
       method: 'POST',
@@ -4203,7 +4589,7 @@ async function testSourceForm() {
 
 async function deleteSource(source) {
   const message = '删除来源 ' + source.name + '？已导入的主题不受影响。';
-  if (!confirm(window.SukisuI18n ? SukisuI18n.t(message) : message)) return;
+  if (!confirmTwice(window.SukisuI18n ? SukisuI18n.t(message) : message)) return;
   try {
     const data = await api('/storage/sources/delete', {
       method: 'POST',
@@ -4576,8 +4962,8 @@ async function loadPerformanceStats() {
 }
 
 async function loadCurrentPageData() {
-  if (currentPage === 'themes' || currentPage === 'upload') await loadThemes();
-  if (currentPage === 'upload' || currentPage === 'authors') await loadAuthors();
+  if (currentPage === 'themes') await loadThemes();
+  if (currentPage === 'authors') await loadAuthors();
   if (currentPage === 'pending') await loadPending();
   if (currentPage === 'users') await loadUsers();
   if (currentPage === 'follows') await loadFollows();
@@ -4631,23 +5017,47 @@ async function refresh(silent = false, includePage = true) {
   }
 }
 
+const REPORT_CATEGORY_LABELS = {
+  copyright: '版权问题',
+  malware: '恶意内容',
+  inappropriate: '不适宜内容',
+  broken: '主题损坏',
+  other: '其他问题',
+};
+
 function reviewCaseHtml(item, kind) {
   const isReport = kind === 'report';
-  const target = isReport ? item.themeId : item.targetId;
+  const themeId = item.themeId || '';
+  const title = item.themeName || item.submissionName || themeId || item.targetId;
+  const author = item.themeAuthor || (!isReport ? item.appellant : '') || '';
+  const actor = (isReport ? item.reporter : item.appellant) || '未知用户';
   const statusLabels = { pending: '待处理', accepted: '已受理', dismissed: '不予受理',
     rejected: '已驳回', overturned: '申诉撤销' };
-  return '<div class="card" style="margin:12px 0"><div class="row"><b>' + escapeHtml(target) +
-    '</b><span class="pill">' + escapeHtml(statusLabels[item.status] || item.status) +
-    '</span></div><p class="hint">' + escapeHtml((isReport ? item.reporter : item.appellant) || '未知用户') +
-    ' · ' + escapeHtml(item.createdAt || '') + ' · ID：' + escapeHtml(item.id) + '</p><p>' +
-    escapeHtml(item.detail) + '</p>' + (item.resolution ? '<p class="hint">处理说明：' +
-    escapeHtml(item.resolution) + '</p>' : '') + (item.status === 'pending' ?
-    '<div class="row"><input maxlength="2000" data-review-reason aria-label="处理说明" placeholder="填写处理说明" style="min-width:min(100%,320px)">' +
+  const meta = [];
+  if (themeId) meta.push('主题 ID：' + themeId + (item.themeVersion ? ' · v' + item.themeVersion : ''));
+  if (author) meta.push('作者：' + author);
+  meta.push((isReport ? '举报人：' : '申诉人：') + actor);
+  if (isReport && item.category) meta.push('类型：' + (REPORT_CATEGORY_LABELS[item.category] || item.category));
+  if (item.createdAt) meta.push(item.createdAt);
+  meta.push('ID：' + item.id);
+  const thumbnail = item.themePreviewUrl
+    ? '<img src="' + escapeHtml(item.themePreviewUrl) + '" alt="" loading="lazy" style="width:64px;height:64px;object-fit:cover;border-radius:10px;flex:none">'
+    : '';
+  const metaHtml = meta.map(part => '<span>' + escapeHtml(part) + '</span>').join(' · ');
+  const actions = (themeId ? '<button class="btn small" type="button" data-manage-theme="' +
+    escapeHtml(themeId) + '">管理主题</button>' : '') + (item.status === 'pending' ?
+    '<input maxlength="2000" data-review-reason aria-label="处理说明" placeholder="填写处理说明" style="min-width:min(100%,320px)">' +
     '<button class="btn primary" data-review-kind="' + kind + '" data-review-id="' + escapeHtml(item.id) +
     '" data-review-status="accepted">受理</button><button class="btn" data-review-kind="' + kind +
     '" data-review-id="' + escapeHtml(item.id) + '" data-review-status="' +
     (isReport ? 'dismissed' : 'rejected') + '">' + (isReport ? '不予受理' : '驳回') +
-    '</button></div>' : '') + '</div>';
+    '</button>' : '');
+  return '<div class="card" style="margin:12px 0"><div class="row"><div style="display:flex;gap:10px;align-items:center;min-width:0">' +
+    thumbnail + '<div style="min-width:0"><b>' + escapeHtml(title) + '</b><div class="hint">' +
+    metaHtml + '</div></div></div><span class="pill">' +
+    escapeHtml(statusLabels[item.status] || item.status) + '</span></div><p>' +
+    escapeHtml(item.detail) + '</p>' + (item.resolution ? '<p class="hint">处理说明：' +
+    escapeHtml(item.resolution) + '</p>' : '') + (actions ? '<div class="row">' + actions + '</div>' : '') + '</div>';
 }
 
 async function loadCommunityAdmin() {
@@ -4681,6 +5091,12 @@ async function handleCommunityReview(event) {
 }
 $('adminReportsList').addEventListener('click', handleCommunityReview);
 $('adminAppealsList').addEventListener('click', handleCommunityReview);
+['adminReportsList', 'adminAppealsList'].forEach(id => {
+  $(id).addEventListener('click', event => {
+    const button = event.target.closest('[data-manage-theme]');
+    if (button) manageThemeFromCommunity(button.dataset.manageTheme);
+  });
+});
 $('communityRefresh').addEventListener('click', loadCommunityAdmin);
 
 async function loadMirrorHealth() {
@@ -4779,6 +5195,7 @@ $('distributionSettings').addEventListener('submit', async event => {
 $('distributionNodeCancel').addEventListener('click', resetDistributionNodeForm);
 $('distributionNodeForm').addEventListener('submit', async event => {
   event.preventDefault();
+  if ($('distributionNodeId').value && !confirm('保存节点修改会立即生效，是否继续？')) return;
   const button = $('distributionNodeSubmit'); button.disabled = true;
   try {
     const data = await api('/distribution/nodes', { method: 'POST', body: JSON.stringify({ id: $('distributionNodeId').value,
@@ -4802,8 +5219,8 @@ $('distributionNodes').addEventListener('click', async event => {
     $('distributionNodeUploads').checked = node.uploadEnabled;
     $('distributionNodeName').focus(); return;
   }
-  if (action === 'delete' && !confirm('移除节点后将停止为其签发下载凭证，是否继续？')) return;
-  if (action === 'rotate' && !confirm('重置后需要更新第二台服务器的配置并重启边缘进程，是否继续？')) return;
+  if (action === 'delete' && !confirmTwice('移除节点后将停止为其签发下载凭证，是否继续？', '再次确认移除该边缘节点？')) return;
+  if (action === 'rotate' && !confirmTwice('重置后需要更新第二台服务器的配置并重启边缘进程，是否继续？', '旧节点密钥会立即失效，再次确认重置？')) return;
   button.disabled = true;
   try {
     let data;
@@ -4826,12 +5243,14 @@ setInterval(() => {
 
 async function loadCredentials() {
   const data = await api('/client-credentials');
-  $('credentialRows').innerHTML = (data.credentials || []).map(c => '<article class="card"><b>' + escapeHtml(c.name) + '</b><p class="hint">' + escapeHtml(c.username || '匿名设备') + ' · ' + escapeHtml(c.prefix) + '… · ' + (c.revoked ? '已撤销' : '有效期至 ' + new Date(c.expiresAt * 1000).toLocaleString()) + '</p><button type="button" data-credential="' + escapeHtml(c.id) + '"' + (c.revoked ? ' disabled' : '') + '>撤销设备凭证</button></article>').join('') || '<p class="hint">暂无设备凭证</p>';
+  const credentials = data.credentials || [];
+  $('credentialCount').textContent = `${credentials.length} 个设备`;
+  $('credentialRows').innerHTML = credentials.map(c => '<article class="card"><b>' + escapeHtml(c.name) + '</b><p class="hint">' + escapeHtml(c.username || '匿名设备') + ' · ' + escapeHtml(c.prefix) + '… · ' + (c.revoked ? '已撤销' : '有效期至 ' + new Date(c.expiresAt * 1000).toLocaleString()) + '</p><button type="button" data-credential="' + escapeHtml(c.id) + '"' + (c.revoked ? ' disabled' : '') + '>撤销设备凭证</button></article>').join('') || '<p class="hint">暂无设备凭证</p>';
 }
 $('reloadCredentials').addEventListener('click', () => loadCredentials().catch(e => toast(e.message, 'bad')));
 $('credentialRows').addEventListener('click', async event => {
   const button = event.target.closest('[data-credential]'); if (!button) return;
-  if (!confirm('撤销后此设备需要重新授权，是否继续？')) return;
+  if (!confirmTwice('撤销后此设备需要重新授权，是否继续？', '再次确认撤销该设备凭证？')) return;
   button.disabled = true;
   try { await api('/client-credentials/revoke', { method: 'POST', body: JSON.stringify({ id: button.dataset.credential }) }); await loadCredentials(); } catch(e) { toast(e.message, 'bad'); button.disabled = false; }
 });
@@ -4868,7 +5287,7 @@ const PAGE_GUIDES = {
   overview: {
     title: '概览',
     what: '站点运行状态的首页，汇总主题数量、下载量、访问令牌、服务状态和存储用量。',
-    abilities: ['查看核心指标和热门主题', '检查令牌、服务与存储状态', '快速进入主题预览、待审核和设置'],
+    abilities: ['查看核心指标和热门主题', '检查令牌、服务与存储状态', '快速进入主题管理、待审核和设置'],
     steps: ['先看服务状态和存储用量', '点击卡片进入对应模块', '定期用刷新按钮更新状态'],
   },
   users: {
@@ -4903,9 +5322,9 @@ const PAGE_GUIDES = {
   },
   community: {
     title: '举报与申诉',
-    what: '审核用户举报和作者申诉，并保存处理理由。',
-    abilities: ['查看待处理与历史记录', '受理或驳回并写明理由', '受理后前往主题维护执行下架'],
-    steps: ['核对主题与说明', '填写处理理由并保存结果', '必要时到主题维护处理内容'],
+    what: '审核用户举报和作者申诉，直接查看被举报或被申诉的主题、作者和处理记录。',
+    abilities: ['查看主题名称、作者、主题 ID 和预览图', '查看待处理与历史记录', '受理或驳回并写明理由', '一键跳转主题管理执行下架或修改'],
+    steps: ['核对主题、作者与举报说明', '填写处理理由并保存结果', '需要处理内容时点击“管理主题”'],
   },
   mirrors: {
     title: '分布式分发',
@@ -4920,15 +5339,15 @@ const PAGE_GUIDES = {
     steps: ['用筛选栏定位作者', '查看归属账号和限制状态', '执行撤销、限制或批量操作'],
   },
   themes: {
-    title: '主题预览',
-    what: '只读浏览当前公开目录中的主题卡片、预览图、下载量和校验信息。',
-    abilities: ['搜索、排序和查看主题详情', '查看预览图、截图、SHA-256 和留言', '确认目录展示效果'],
-    steps: ['搜索或排序主题', '点击卡片查看只读详情', '需要修改时前往上传页的“主题维护”'],
+    title: '主题管理',
+    what: '管理所有已发布主题：查看详情、修改任意元数据、删除主题，并在二级页面上传或更新主题包。',
+    abilities: ['搜索、排序和查看主题详情', '编辑名称、作者、标签、描述、许可证等全部元数据', '删除主题或跳转上传页更新主题包与图片'],
+    steps: ['搜索或排序定位主题', '点击卡片查看详情，或直接点击“编辑”', '保存修改；需要换包时在“上传与更新”中继续'],
   },
   upload: {
-    title: '上传主题',
-    what: '管理员上传会直接发布；管理器投稿会进入待审核。也可更新已有主题或做主题维护。',
-    abilities: ['上传主题包、预览图、头像和截图', '更新已有主题版本和说明', '在“主题维护”中编辑标签或删除主题'],
+    title: '上传与更新主题',
+    what: '主题管理的二级页面：上传新主题，或为已有主题更新版本、主题包、预览图和截图。',
+    abilities: ['上传主题包、预览图、头像和截图', '更新已有主题版本和说明', '新建主题时自动生成主题 ID'],
     steps: ['选择新建或更新已有主题', '填写元数据并选择文件', '上传后检查进度和发布结果'],
   },
   storage: {
@@ -4999,7 +5418,7 @@ const PAGE_LABELS = {
   community: 'Reports & appeals',
   mirrors: 'Distributed delivery',
   authors: 'Author licenses',
-  themes: 'Theme preview',
+  themes: 'Theme management',
   upload: 'Upload theme',
   storage: 'Storage & quota',
   network: 'Network',
@@ -5020,7 +5439,7 @@ const PAGE_TITLES = {
   community: '举报与申诉',
   mirrors: '分布式分发',
   authors: '作者许可',
-  themes: '主题预览',
+  themes: '主题管理',
   upload: '上传主题',
   storage: '存储与配额',
   network: '网络配置',
@@ -5041,7 +5460,7 @@ const PAGE_LEADS = {
   community: '审核主题举报与作者申诉，保存处理理由。',
   mirrors: '自建 CDN、主题同步与节点管理。',
   authors: '维护可信作者指纹与自动发布许可。',
-  themes: '浏览已发布主题，检查预览图、截图和下载信息；预览页只读。',
+  themes: '查看、编辑或删除所有已发布主题；上传与更新主题包也在这里完成。',
   upload: '从主题包或当前设备预设创建投稿，并在发布前校验内容。',
   storage: '统一管理配额、数据目录、资源后端和 NAS / OpenList 导入来源。',
   network: '配置管理服务监听地址、端口、公开域名和访问地址。',
@@ -5059,6 +5478,8 @@ function closeAdminNav() {
 }
 
 function showPage(id, smooth = false) {
+  const requestedThemeTab = id === 'upload' ? 'upload' : null;
+  if (id === 'upload') id = 'themes';
   const page = PAGE_LABELS[id] ? id : 'overview';
   currentPage = page;
   closeAdminNav();
@@ -5080,10 +5501,9 @@ function showPage(id, smooth = false) {
   renderPageGuide(page);
   if (page === 'storage') { loadStorage(); loadLocations(); }
   if (page === 'settings') { loadLocations(); loadTokens(); }
-  if (page === 'themes') loadThemes();
+  if (page === 'themes') { switchThemeTab(requestedThemeTab || 'list'); loadThemes(); loadAuthors(); }
   if (page === 'pending') loadPending();
   if (page === 'authors') loadAuthors();
-  if (page === 'upload') { loadThemes(); loadAuthors(); populateMaintainThemes(); }
   if (page === 'users') loadUsers();
   if (page === 'user-detail' && selectedUserId) loadUserDetail(selectedUserId);
   if (page === 'follows') loadFollows();
@@ -5300,6 +5720,7 @@ $('tokenEditSave').addEventListener('click', async () => {
   }
   try {
     if (editingTokenId) {
+      if (!confirm(translatedConfirm('保存后会立即应用新的名称、权限和有效期，是否继续？'))) return;
       const data = await api('/tokens/update', {
         method: 'POST',
         body: JSON.stringify({ id: editingTokenId, name, scopes, expiresDays }),
@@ -5348,7 +5769,7 @@ $('tokenRows').addEventListener('click', async event => {
     return;
   }
   if (act === 'delete') {
-    if (!confirm(translatedConfirm('删除该令牌？使用它的客户端会立即失去访问权限。'))) return;
+    if (!confirmTwice(translatedConfirm('删除该令牌？使用它的客户端会立即失去访问权限。'), translatedConfirm('令牌删除后无法恢复，再次确认删除？'))) return;
     try {
       const data = await api('/tokens/delete', { method: 'POST', body: JSON.stringify({ id: item.id }) });
       toast(data.message || '令牌已删除');
@@ -5361,7 +5782,7 @@ $('tokenRows').addEventListener('click', async event => {
 });
 $('maintenanceToggle').addEventListener('click', async () => {
   const enabled = !(statusData && statusData.maintenance === true);
-  if (enabled && !confirm('开启维护模式后，除管理员外所有用户都无法访问网站。确定继续吗？')) {
+  if (enabled && !confirmTwice('开启维护模式后，除管理员外所有用户都无法访问网站。确定继续吗？', '再次确认开启维护模式？')) {
     return;
   }
   const button = $('maintenanceToggle');
@@ -6311,7 +6732,7 @@ if ($('monitorDeleteSelectedBtn')) {
       toast('请先选择要删除的日志', 'bad');
       return;
     }
-    if (!confirm(`删除选中的 ${monitorSelected.size} 条连接日志？此操作不可恢复。`)) return;
+    if (!confirmTwice(`删除选中的 ${monitorSelected.size} 条连接日志？此操作不可恢复。`)) return;
     try {
       await deleteMonitorLogs([...monitorSelected]);
     } catch (error) {
@@ -6321,7 +6742,7 @@ if ($('monitorDeleteSelectedBtn')) {
 }
 if ($('monitorClearBtn')) {
   $('monitorClearBtn').addEventListener('click', async () => {
-    if (!confirm('清空全部连接日志？此操作不可恢复，管理员操作日志会保留。')) return;
+    if (!confirmTwice('清空全部连接日志？此操作不可恢复，管理员操作日志会保留。')) return;
     try {
       const data = await api('/monitor/logs/clear', { method: 'POST', body: '{}' });
       monitorSelected.clear();

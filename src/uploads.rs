@@ -51,6 +51,9 @@ pub struct PreparedUpload {
     pub changelog: String,
     pub package: FilePart,
     pub package_info: PackageInfo,
+    /// SHA-256 of the package bytes, computed once beside validation so publish
+    /// and the response do not hash up to 128 MB again.
+    pub package_sha256: String,
     pub preview: FilePart,
     pub avatar: Option<FilePart>,
     pub screenshots: Vec<FilePart>,
@@ -390,9 +393,10 @@ pub async fn prepare_upload(form: UploadForm) -> Result<PreparedUpload, String> 
     // Move the package into the blocking validator and return it afterwards. Cloning a
     // package of up to 128 MB only to read theme.json doubles peak memory and copy time.
     let package = form.package;
-    let (package, package_info) = tokio::task::spawn_blocking(move || {
+    let (package, package_info, package_sha256) = tokio::task::spawn_blocking(move || {
         let info = validate_package(&package.data).map_err(|error| error.to_string())?;
-        Ok::<_, String>((package, info))
+        let sha256 = sha256_hex(&package.data);
+        Ok::<_, String>((package, info, sha256))
     })
     .await
     .map_err(|error| error.to_string())?
@@ -509,6 +513,7 @@ pub async fn prepare_upload(form: UploadForm) -> Result<PreparedUpload, String> 
         changelog,
         package,
         package_info,
+        package_sha256,
         preview,
         avatar,
         screenshots,
@@ -537,6 +542,14 @@ pub fn load_pending_upload(
     }
     let package_data = fs::read(&package_path).map_err(|error| error.to_string())?;
     let package_info = validate_package(&package_data).map_err(|error| error.to_string())?;
+    let package_sha256 = {
+        let recorded = meta.sha256.trim().to_ascii_lowercase();
+        if recorded.len() == 64 && recorded.chars().all(|ch| ch.is_ascii_hexdigit()) {
+            recorded
+        } else {
+            sha256_hex(&package_data)
+        }
+    };
     let preview_data = fs::read(&preview_path).map_err(|error| error.to_string())?;
     let preview_ext = crate::util::path_extension(&preview_path);
     images::validate_image(&preview_data, &preview_ext).map_err(|error| error.to_string())?;
@@ -607,6 +620,7 @@ pub fn load_pending_upload(
             data: package_data,
         },
         package_info,
+        package_sha256,
         preview: FilePart {
             filename: "preview".to_string(),
             ext: preview_ext,
@@ -717,7 +731,7 @@ pub async fn publish_theme(
         changelog: prepared.changelog.clone(),
         withdrawn_at: None,
         asset_size: Some(new_size),
-        sha256: Some(sha256_hex(&prepared.package.data)),
+        sha256: Some(prepared.package_sha256.clone()),
         author_hash: author_hash.clone(),
         storage_id: location.clone(),
         extra: Default::default(),
@@ -855,7 +869,7 @@ pub fn write_pending(
             "authorFingerprint": author_fingerprint,
             "submitterUserId": submitter_user_id.unwrap_or(""),
             "formatVersion": prepared.format_version,
-            "sha256": sha256_hex(&prepared.package.data),
+            "sha256": prepared.package_sha256,
             "validation": prepared.package_info.to_json(),
         });
         let mut data = serde_json::to_vec_pretty(&meta).map_err(|error| error.to_string())?;

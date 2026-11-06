@@ -263,6 +263,9 @@ async fn user_reject(
         .unwrap_or("")
         .trim()
         .to_string();
+    if !(1..=500).contains(&reason.chars().count()) {
+        return Err(ApiError::bad("请填写 1-500 字的拒绝原因"));
+    }
     let user = accounts::user_by_id(&state.db, &id)
         .await
         .map_err(ApiError::internal)?
@@ -308,12 +311,23 @@ async fn user_disable(
     State(state): State<AppState>,
     Extension(actor): Extension<SessionInfo>,
     Path(id): Path<String>,
+    body: Bytes,
 ) -> ApiResult<Json<Value>> {
+    let value = json_body(body).await?;
+    let reason = value
+        .get("reason")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if !(1..=500).contains(&reason.chars().count()) {
+        return Err(ApiError::bad("请填写 1-500 字的禁用原因"));
+    }
     if id == actor.user_id {
         return Err(ApiError::bad("不能禁用当前登录账号"));
     }
     ensure_super_admin_target_allowed(&state, &actor, &id).await?;
-    accounts::set_status(&state.db, &id, "disabled", None, Some(&actor.user_id))
+    accounts::set_status(&state.db, &id, "disabled", Some(&reason), Some(&actor.user_id))
         .await
         .map_err(ApiError::internal)?;
     state.sessions.revoke_user(&id).await;
@@ -323,7 +337,7 @@ async fn user_disable(
         "user.disable",
         Some("user"),
         Some(&id),
-        None,
+        Some(&reason),
     )
     .await
     .ok();
@@ -355,7 +369,18 @@ async fn user_delete(
     State(state): State<AppState>,
     Extension(actor): Extension<SessionInfo>,
     Path(id): Path<String>,
+    body: Bytes,
 ) -> ApiResult<Json<Value>> {
+    let value = json_body(body).await?;
+    let reason = value
+        .get("reason")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if !(1..=500).contains(&reason.chars().count()) {
+        return Err(ApiError::bad("请填写 1-500 字的删除原因"));
+    }
     if id == actor.user_id {
         return Err(ApiError::bad("不能删除当前登录账号"));
     }
@@ -385,7 +410,10 @@ async fn user_delete(
         "user.delete",
         Some("user"),
         Some(&id),
-        Some(&format!("{}; authors={removed_authors}", user.username)),
+        Some(&format!(
+            "{}; authors={removed_authors}; reason={reason}",
+            user.username
+        )),
     )
     .await
     .ok();
@@ -738,6 +766,9 @@ async fn author_request_reject(
         .unwrap_or("")
         .trim()
         .to_string();
+    if !(1..=500).contains(&reason.chars().count()) {
+        return Err(ApiError::bad("请填写 1-500 字的拒绝原因"));
+    }
     let request = authors::author_request_by_id(&state.db, &id)
         .await
         .map_err(ApiError::internal)?
@@ -757,8 +788,14 @@ async fn author_request_reject(
     .map_err(ApiError::internal)?;
     if request.kind == "new" {
         if let Some(hash) = request.author_hash.as_deref() {
-            let _ =
-                authors::set_author_status(&state.db, hash, "revoked", Some(&actor.user_id)).await;
+            let _ = authors::set_author_status_with_reason(
+                &state.db,
+                hash,
+                "revoked",
+                Some(&actor.user_id),
+                Some(&reason),
+            )
+            .await;
         }
     }
     accounts::audit(

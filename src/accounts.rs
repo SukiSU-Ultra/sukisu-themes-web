@@ -298,6 +298,7 @@ pub async fn delete_user(db: &Database, user_id: &str) -> Result<()> {
     let user_id = user_id.to_string();
     db.call(move |conn| {
         conn.execute("DELETE FROM social.theme_favorites WHERE user_id = ?1", [&user_id])?;
+        conn.execute("DELETE FROM social.theme_history WHERE user_id = ?1", [&user_id])?;
         conn.execute("DELETE FROM social.theme_update_reads WHERE user_id = ?1", [&user_id])?;
         conn.execute("DELETE FROM social.theme_appeals WHERE target_kind = 'report' AND target_id IN (SELECT id FROM social.theme_reports WHERE reporter_id = ?1)", [&user_id])?;
         conn.execute("DELETE FROM social.theme_reports WHERE reporter_id = ?1", [&user_id])?;

@@ -452,6 +452,7 @@ pub fn router(state: AppState) -> Router {
         .route("/approve", post(approve))
         .route("/reject", post(reject))
         .route("/theme-tags", post(set_theme_tags))
+        .route("/theme-meta", post(update_theme_meta))
         .route("/maintenance", get(maintenance_state).post(set_maintenance))
         .route("/author/revoke", post(author_revoke))
         .route("/author/delete", post(author_delete))
@@ -1198,6 +1199,7 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
             ("站点状态", "GET", "/sites"),
             ("上传主题", "POST", "/upload-theme"),
             ("删除主题", "POST", "/delete-theme"),
+            ("修改主题信息", "POST", "/theme-meta"),
             ("测试目录", "POST", "/test-catalog"),
             ("重建目录", "POST", "/sync"),
             ("站点维护", "POST", "/maintenance"),
@@ -2206,16 +2208,28 @@ async fn submit(
         return Err(ApiError::bad(error.to_string()));
     }
     let submission = crate::util::submission_id();
-    uploads::write_pending(
-        &state.paths,
-        &prepared,
-        &author_hash,
-        &author_fp,
-        &remote,
-        &submission,
-        None,
-    )
-    .map_err(ApiError::internal)?;
+    {
+        // Pending writes copy the whole package to disk; keep that blocking work
+        // off the async runtime so the upload response is not delayed behind it.
+        let paths = state.paths.clone();
+        let author_hash = author_hash.clone();
+        let author_fp = author_fp.clone();
+        let write_submission = submission.clone();
+        tokio::task::spawn_blocking(move || {
+            uploads::write_pending(
+                &paths,
+                &prepared,
+                &author_hash,
+                &author_fp,
+                &remote,
+                &write_submission,
+                None,
+            )
+        })
+        .await
+        .map_err(ApiError::internal)?
+        .map_err(ApiError::internal)?;
+    }
     Ok((
         StatusCode::ACCEPTED,
         Json(json!({
@@ -2490,6 +2504,9 @@ async fn reject(
         .unwrap_or("")
         .trim()
         .to_string();
+    if !(1..=2000).contains(&reason.chars().count()) {
+        return Err(ApiError::bad("请填写 1-2000 字的拒绝原因"));
+    }
     let Some(directory) = catalog::pending_dir(&state.paths, &submission) else {
         return Err(ApiError::not_found("待审核主题不存在"));
     };
@@ -2549,12 +2566,25 @@ struct DeleteBody {
     id: String,
 }
 
-async fn delete_theme(State(state): State<AppState>, body: Bytes) -> ApiResult<Response> {
+async fn delete_theme(
+    State(state): State<AppState>,
+    Extension(actor): Extension<crate::accounts::SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Response> {
     let value = json_body(body).await?;
     let id = value
         .get("id")
         .and_then(|value| value.as_str())
         .unwrap_or("");
+    let reason = value
+        .get("reason")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if !(1..=2000).contains(&reason.chars().count()) {
+        return Err(ApiError::bad("请填写 1-2000 字的删除原因"));
+    }
     if !valid_theme_id(id) {
         return Err(ApiError::bad("invalid theme id"));
     }
@@ -2575,6 +2605,15 @@ async fn delete_theme(State(state): State<AppState>, body: Bytes) -> ApiResult<R
         .await
         .map_err(ApiError::internal)?;
     state.refresh_withdrawn_assets();
+    let _ = crate::accounts::audit(
+        &state.db,
+        Some(&actor.user_id),
+        "theme.delete",
+        Some("theme"),
+        Some(id),
+        Some(&format!("{}；删除原因：{reason}", meta.name)),
+    )
+    .await;
     Ok(Json(json!({"ok": true, "themes": themes.len()})).into_response())
 }
 
@@ -2655,6 +2694,179 @@ async fn set_theme_tags(
         "id": id,
         "tags": tags,
         "r18": r18,
+        "themes": themes.len(),
+    })))
+}
+
+async fn update_theme_meta(
+    State(state): State<AppState>,
+    Extension(actor): Extension<crate::accounts::SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
+    if body.len() > 262_144 {
+        return Err(ApiError::bad("主题信息过长"));
+    }
+    let value = json_body(body).await?;
+    let id = value
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if !valid_theme_id(&id) {
+        return Err(ApiError::bad("主题 ID 无效"));
+    }
+    if state.jobs.is_running() {
+        return Err(ApiError::conflict("存储迁移进行中，请稍后再试"));
+    }
+    let field = |key: &str| {
+        value
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string()
+    };
+    let name = field("name");
+    if name.is_empty() || name.chars().count() > 120 {
+        return Err(ApiError::bad("主题名称不能为空且不超过 120 个字符"));
+    }
+    let author = field("author");
+    if author.is_empty() || author.chars().count() > 120 {
+        return Err(ApiError::bad("作者名称不能为空且不超过 120 个字符"));
+    }
+    let description = value
+        .get("description")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    if description.chars().count() > 20_000 {
+        return Err(ApiError::bad("描述不能超过 20000 个字符"));
+    }
+    let changelog = value
+        .get("changelog")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    if changelog.chars().count() > 20_000 {
+        return Err(ApiError::bad("更新说明不能超过 20000 个字符"));
+    }
+    let license = field("license");
+    if license.chars().count() > 80 {
+        return Err(ApiError::bad("许可证名称不能超过 80 个字符"));
+    }
+    let min_manager_version = value
+        .get("minManagerVersion")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    if !(0..=1_000_000).contains(&min_manager_version) {
+        return Err(ApiError::bad("最低管理器版本无效"));
+    }
+    let mut adaptive = value
+        .get("adaptive")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let r18 = value.get("r18").and_then(Value::as_bool).unwrap_or(false);
+    let author_hash = field("authorHash").to_ascii_lowercase();
+    if !author_hash.is_empty() {
+        if !valid_author_hash(&author_hash) {
+            return Err(ApiError::bad("作者 hash 无效"));
+        }
+        if crate::authors::author_by_hash(&state.db, &author_hash)
+            .await
+            .map_err(ApiError::internal)?
+            .is_none()
+        {
+            return Err(ApiError::not_found("作者不存在"));
+        }
+    }
+    let raw_tags = value
+        .get("tags")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut tags: Vec<String> = Vec::new();
+    for raw in raw_tags {
+        let Some(tag) = raw.as_str() else { continue };
+        let tag = tag.trim().to_string();
+        if tag.is_empty() {
+            continue;
+        }
+        if tag.chars().count() > 24 {
+            return Err(ApiError::bad("标签长度不能超过 24 个字符"));
+        }
+        // R18 aliases are controlled exclusively by the checkbox so the catalog flag stays
+        // consistent with what the administrator sees.
+        if catalog::is_r18_tag(&tag) {
+            continue;
+        }
+        if catalog::tags_mark_adaptive(std::slice::from_ref(&tag)) {
+            adaptive = true;
+            if !tags.iter().any(|existing| existing == "adaptive") {
+                tags.push("adaptive".to_string());
+            }
+            continue;
+        }
+        if tags
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&tag))
+        {
+            continue;
+        }
+        tags.push(tag);
+    }
+    if r18 {
+        tags.insert(0, "r18".to_string());
+    }
+    if adaptive && !tags.iter().any(|tag| tag == "adaptive") {
+        tags.insert(0, "adaptive".to_string());
+    }
+    if !adaptive {
+        tags.retain(|tag| !catalog::tags_mark_adaptive(std::slice::from_ref(tag)));
+    }
+    if tags.len() > 10 {
+        return Err(ApiError::bad("标签最多 10 个"));
+    }
+    let lock = catalog::theme_mutation_lock(&id);
+    let _guard = lock.lock().await;
+    let Some((meta_path, mut meta)) = catalog::find_theme_meta(&state.paths, &id) else {
+        return Err(ApiError::not_found("主题不存在"));
+    };
+    meta.name = name;
+    meta.author = author;
+    if !author_hash.is_empty() {
+        meta.author_hash = Some(author_hash);
+    }
+    meta.description = description;
+    meta.tags = tags.clone();
+    meta.adaptive = adaptive;
+    meta.license = license;
+    meta.min_manager_version = min_manager_version;
+    meta.changelog = changelog;
+    catalog::write_meta(&meta_path, &meta).map_err(ApiError::internal)?;
+    let themes = catalog::rebuild_catalog(&state.store, &state.paths)
+        .await
+        .map_err(ApiError::internal)?;
+    let _ = crate::accounts::audit(
+        &state.db,
+        Some(&actor.user_id),
+        "theme.meta",
+        Some("theme"),
+        Some(&id),
+        Some(&format!(
+            "name={} author={} tags={} r18={r18} adaptive={adaptive}",
+            meta.name,
+            meta.author,
+            tags.join(",")
+        )),
+    )
+    .await;
+    Ok(Json(json!({
+        "ok": true,
+        "id": id,
+        "tags": tags,
+        "r18": r18,
+        "adaptive": adaptive,
         "themes": themes.len(),
     })))
 }
@@ -2819,6 +3031,15 @@ async fn author_revoke(
     if !valid_author_hash(&hash) {
         return Err(ApiError::bad("invalid author hash"));
     }
+    let reason = value
+        .get("reason")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if !(1..=500).contains(&reason.chars().count()) {
+        return Err(ApiError::bad("请填写 1-500 字的撤销原因"));
+    }
     let Some(author) = crate::authors::author_by_hash(&state.db, &hash)
         .await
         .map_err(ApiError::internal)?
@@ -2828,16 +3049,23 @@ async fn author_revoke(
     if !actor_can_manage_author(&state, &actor, &author).await? {
         return Err(ApiError::forbidden("无权修改该作者许可"));
     }
-    crate::authors::set_author_status(&state.db, &hash, "revoked", Some(&actor.user_id))
-        .await
-        .map_err(ApiError::internal)?;
+    crate::authors::set_author_status_with_reason(
+        &state.db,
+        &hash,
+        "revoked",
+        Some(&actor.user_id),
+        Some(&reason),
+    )
+    .await
+    .map_err(ApiError::internal)?;
+    let _ = crate::authors::set_auto_publish(&state.db, &hash, false).await;
     crate::accounts::audit(
         &state.db,
-        None,
+        Some(&actor.user_id),
         "author.revoke",
         Some("author"),
         Some(&hash),
-        None,
+        Some(&reason),
     )
     .await
     .ok();
@@ -2858,6 +3086,15 @@ async fn author_delete(
         .to_ascii_lowercase();
     if !valid_author_hash(&hash) {
         return Err(ApiError::bad("invalid author hash"));
+    }
+    let reason = value
+        .get("reason")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if !(1..=500).contains(&reason.chars().count()) {
+        return Err(ApiError::bad("请填写 1-500 字的删除原因"));
     }
     let Some(author) = crate::authors::author_by_hash(&state.db, &hash)
         .await
@@ -2880,7 +3117,10 @@ async fn author_delete(
         "author.delete",
         Some("author"),
         Some(&hash),
-        author.display_name.as_deref(),
+        Some(&format!(
+            "{}；删除原因：{reason}",
+            author.display_name.as_deref().unwrap_or("")
+        )),
     )
     .await
     .ok();
@@ -2901,6 +3141,15 @@ async fn author_batch(
         .to_ascii_lowercase();
     if !matches!(action.as_str(), "revoke" | "disable" | "delete") {
         return Err(ApiError::bad("invalid batch action"));
+    }
+    let reason = value
+        .get("reason")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if !(1..=500).contains(&reason.chars().count()) {
+        return Err(ApiError::bad("请填写 1-500 字的操作原因"));
     }
     let mut seen = HashSet::new();
     let hashes: Vec<String> = value
@@ -2950,16 +3199,28 @@ async fn author_batch(
         }
         match action.as_str() {
             "revoke" => {
-                crate::authors::set_author_status(&state.db, hash, "revoked", Some(&actor.user_id))
-                    .await
-                    .map_err(ApiError::internal)?;
+                crate::authors::set_author_status_with_reason(
+                    &state.db,
+                    hash,
+                    "revoked",
+                    Some(&actor.user_id),
+                    Some(&reason),
+                )
+                .await
+                .map_err(ApiError::internal)?;
                 let _ = crate::authors::set_auto_publish(&state.db, hash, false).await;
                 updated += 1;
             }
             "disable" => {
-                crate::authors::set_author_status(&state.db, hash, "retired", Some(&actor.user_id))
-                    .await
-                    .map_err(ApiError::internal)?;
+                crate::authors::set_author_status_with_reason(
+                    &state.db,
+                    hash,
+                    "retired",
+                    Some(&actor.user_id),
+                    Some(&reason),
+                )
+                .await
+                .map_err(ApiError::internal)?;
                 let _ = crate::authors::set_auto_publish(&state.db, hash, false).await;
                 updated += 1;
             }
@@ -2976,8 +3237,9 @@ async fn author_batch(
             _ => unreachable!(),
         }
     }
-    let detail =
-        format!("action={action}; updated={updated}; skipped={skipped}; missing={missing}");
+    let detail = format!(
+        "action={action}; updated={updated}; skipped={skipped}; missing={missing}; reason={reason}"
+    );
     crate::accounts::audit(
         &state.db,
         Some(&actor.user_id),
@@ -3017,6 +3279,15 @@ async fn author_restrictions_save(
         .await
         .map_err(ApiError::internal)?
         .ok_or_else(|| ApiError::not_found("author not found"))?;
+    let reason = value
+        .get("reason")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if !(1..=500).contains(&reason.chars().count()) {
+        return Err(ApiError::bad("请填写 1-500 字的限制原因"));
+    }
     let actor_super = crate::accounts::is_super_admin(&state.db, &actor.user_id)
         .await
         .map_err(ApiError::internal)?;
@@ -3047,7 +3318,7 @@ async fn author_restrictions_save(
             }
         }
     }
-    crate::authors::set_restrictions(&state.db, &hash, &features, &actor.user_id)
+    crate::authors::set_restrictions(&state.db, &hash, &features, &actor.user_id, Some(&reason))
         .await
         .map_err(ApiError::internal)?;
     let detail = crate::authors::AUTHOR_FEATURES
@@ -3062,7 +3333,7 @@ async fn author_restrictions_save(
         "author.restrictions",
         Some("author"),
         Some(&hash),
-        Some(&detail),
+        Some(&format!("{detail}; reason={reason}")),
     )
     .await
     .ok();

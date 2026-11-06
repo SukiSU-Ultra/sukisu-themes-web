@@ -150,12 +150,18 @@ async fn database_stats(state: &AppState, pool_size: usize) -> ApiResult<Value> 
                     [],
                     |row| row.get(0),
                 )?;
+                let auto_vacuum: i64 = conn.query_row(
+                    &format!("PRAGMA {alias}.auto_vacuum"),
+                    [],
+                    |row| row.get(0),
+                )?;
                 result.push(json!({
                     "tables": tables,
                     "pageCount": page_count,
                     "pageSize": page_size,
                     "freePages": freelist,
                     "journalMode": journal_mode,
+                    "autoVacuum": auto_vacuum,
                 }));
             }
             Ok(result)

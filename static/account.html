@@ -47,8 +47,7 @@
       <button data-view="upload">上传主题</button>
       <button data-view="drafts">投稿草稿箱</button>
       <button data-view="content">我的内容 <span class="view-badge hidden" id="contentBadge">0</span></button>
-      <button data-view="discover">发现主题</button>
-      <button data-view="gallery">主题图库</button>
+      <button data-view="plaza">主题广场</button>
       <button data-view="favorites">我的收藏</button>
       <button data-view="updates">关注更新 <span class="view-badge hidden" id="updatesBadge">0</span></button>
       <button data-view="dashboard">作者数据</button>
@@ -152,6 +151,7 @@
           <p class="hint">输入之前管理器里保存的作者 ID；不存在时会自动创建新的作者申请。</p>
           <div class="field"><label for="bindAuthorId">作者 ID</label><input id="bindAuthorId" class="mono" placeholder="16-128 位字母、数字或 . _ ~ -"></div>
           <div class="field"><label for="bindName">作者名称</label><input id="bindName" placeholder="显示给用户的作者名"></div>
+          <div class="field"><label for="bindNote">申请说明</label><textarea id="bindNote" rows="3" maxlength="500" placeholder="说明申请作者身份的原因；曾被撤销时至少填写 10 字"></textarea><div class="hint" id="bindNoteHint"></div></div>
           <div class="row"><button class="btn primary" id="submitBind">提交绑定申请</button><button class="btn" data-close="bindCard">取消</button></div>
         </div>
         <div class="card hidden" id="newCard">
@@ -159,7 +159,14 @@
           <p class="hint">可以留空由服务器生成作者 ID；只显示一次。</p>
           <div class="field"><label for="newAuthorId">作者 ID（可选）</label><input id="newAuthorId" class="mono" placeholder="留空自动生成"></div>
           <div class="field"><label for="newAuthorName">作者名称</label><input id="newAuthorName" placeholder="显示给用户的作者名"></div>
+          <div class="field"><label for="newNote">申请说明</label><textarea id="newNote" rows="3" maxlength="500" placeholder="说明申请作者身份的原因；曾被撤销时至少填写 10 字"></textarea><div class="hint" id="newNoteHint"></div></div>
           <div class="row"><button class="btn primary" id="submitNew">提交申请</button><button class="btn" data-close="newCard">取消</button></div>
+        </div>
+        <div class="card hidden" id="resetCard">
+          <h3>申请重置作者 ID</h3>
+          <p class="hint">旧作者 ID 会停用，旧 ID 下的主题保留归属；管理员审核通过后可生成新的作者 ID。</p>
+          <div class="field"><label for="resetNote">重置说明</label><textarea id="resetNote" rows="3" maxlength="500" placeholder="说明需要重置作者 ID 的原因（至少 5 字）"></textarea><div class="hint" id="resetNoteHint"></div></div>
+          <div class="row"><button class="btn primary" id="submitReset">提交重置申请</button><button class="btn" data-close="resetCard">取消</button></div>
         </div>
         <div class="card">
           <h3>作者申请记录</h3>
@@ -284,47 +291,109 @@
         </div>
       </section>
 
-      <section id="view-discover" class="view hidden">
-        <div class="card" style="margin-bottom:14px">
+      <section id="view-plaza" class="view hidden">
+        <div class="card plaza-hero">
           <div class="discover-head">
             <div>
-              <h3>热门主题</h3>
-              <p class="hint">按热度排序：总下载量 + 近 7 天下载 × 10。</p>
-            </div>
-            <button class="btn" id="popularSeeAll" type="button">发现更多主题</button>
-          </div>
-          <div id="popularList"></div>
-          <div class="empty hidden" id="popularEmpty">还没有下载记录</div>
-        </div>
-        <div class="card" style="margin-bottom:14px">
-          <div class="discover-head">
-            <div>
-              <h3>作者喜爱度排行榜</h3>
-              <p class="hint">喜爱度 = 粉丝数 × 10 + 主题热度合计。</p>
+              <h3>主题广场</h3>
+              <p class="hint">热门排行、完整图库和随机推荐集中在这里；找到喜欢的主题后可直接收藏或下载。</p>
             </div>
           </div>
-          <div id="leaderboardList"></div>
-          <div class="empty hidden" id="leaderboardEmpty">暂时还没有可排名的作者。</div>
-        </div>
-        <div class="card">
-          <div class="discover-head">
-            <div>
-              <h3>发现主题</h3>
-              <p class="hint" id="discoverHint">看看其他作者分享的主题，每次展示 5 个。</p>
-            </div>
-            <button class="btn primary" id="discoverShuffle" type="button">随便看看</button>
+          <div class="theme-tabs plaza-tabs" role="tablist" aria-label="主题广场分类">
+            <button type="button" class="theme-tab active" id="plazaTabHot" role="tab" aria-selected="true" aria-controls="plazaPaneHot" data-plaza-tab="hot">热门</button>
+            <button type="button" class="theme-tab" id="plazaTabGallery" role="tab" aria-selected="false" aria-controls="plazaPaneGallery" tabindex="-1" data-plaza-tab="gallery">图库</button>
+            <button type="button" class="theme-tab" id="plazaTabViewed" role="tab" aria-selected="false" aria-controls="plazaPaneViewed" tabindex="-1" data-plaza-tab="viewed">最近查看</button>
+            <button type="button" class="theme-tab" id="plazaTabDownloaded" role="tab" aria-selected="false" aria-controls="plazaPaneDownloaded" tabindex="-1" data-plaza-tab="downloaded">最近下载</button>
+            <button type="button" class="theme-tab" id="plazaTabDiscover" role="tab" aria-selected="false" aria-controls="plazaPaneDiscover" tabindex="-1" data-plaza-tab="discover">随便看看</button>
           </div>
-          <div class="row" id="discoverFilter"></div>
-          <div class="theme-grid" id="discoverGrid"></div>
-          <div class="empty hidden" id="discoverEmpty">暂时还没有其他作者的主题，稍后再来看看。</div>
         </div>
-      </section>
-
-      <section id="view-gallery" class="view hidden">
-        <div class="card">
-          <div class="discover-head"><div><h3>主题图库</h3><p class="hint">浏览所有公开主题，支持搜索、标签和排序。</p></div><button class="btn" id="galleryRefresh" type="button">刷新</button></div>
-          <div class="toolbar"><div class="search"><input id="gallerySearch" type="search" placeholder="搜索名称、作者或主题 ID"></div><input id="galleryTag" placeholder="标签（可选）" aria-label="标签"><select id="gallerySort" aria-label="排序"><option value="updated">最近更新</option><option value="hot">热度</option><option value="downloads">下载量</option><option value="name">名称</option></select><button class="btn primary" id="galleryApply" type="button">筛选</button></div>
-          <div class="theme-grid" id="galleryGrid"></div><div class="empty hidden" id="galleryEmpty">没有找到主题</div><div class="row"><button class="btn hidden" id="galleryMore" type="button">加载更多</button><span class="muted" id="galleryCount"></span></div>
+        <div class="theme-pane" id="plazaPaneHot" role="tabpanel" aria-labelledby="plazaTabHot" data-plaza-pane="hot">
+          <div class="plaza-hot">
+            <div class="card">
+              <div class="discover-head">
+                <div>
+                  <h3>热门主题</h3>
+                  <p class="hint">按热度排序：总下载量 + 近 7 天下载 × 10。</p>
+                </div>
+                <button class="btn" id="popularSeeAll" type="button">去随便看看</button>
+              </div>
+              <div id="popularList"></div>
+              <div class="empty hidden" id="popularEmpty">还没有下载记录</div>
+            </div>
+            <div class="card">
+              <div class="discover-head">
+                <div>
+                  <h3>作者喜爱度排行榜</h3>
+                  <p class="hint">喜爱度 = 粉丝数 × 10 + 主题热度合计。</p>
+                </div>
+              </div>
+              <div id="leaderboardList"></div>
+              <div class="empty hidden" id="leaderboardEmpty">暂时还没有可排名的作者。</div>
+            </div>
+          </div>
+        </div>
+        <div class="theme-pane hidden" id="plazaPaneGallery" role="tabpanel" aria-labelledby="plazaTabGallery" data-plaza-pane="gallery">
+          <div class="card">
+            <div class="discover-head"><div><h3>主题图库</h3><p class="hint">浏览所有公开主题，支持搜索、标签和排序。</p></div><button class="btn" id="galleryRefresh" type="button">刷新</button></div>
+            <div class="toolbar"><div class="search"><input id="gallerySearch" type="search" placeholder="搜索名称、作者或主题 ID"></div><input id="galleryTag" placeholder="标签（可选）" aria-label="标签"><select id="gallerySort" aria-label="排序"><option value="updated">最近更新</option><option value="hot">热度</option><option value="downloads">下载量</option><option value="name">名称</option></select><button class="btn primary" id="galleryApply" type="button">筛选</button></div>
+            <div class="theme-grid" id="galleryGrid"></div><div class="empty hidden" id="galleryEmpty">没有找到主题</div><div class="row"><button class="btn hidden" id="galleryMore" type="button">加载更多</button><span class="muted" id="galleryCount"></span></div>
+          </div>
+        </div>
+        <div class="theme-pane hidden" id="plazaPaneViewed" role="tabpanel" aria-labelledby="plazaTabViewed" data-plaza-pane="viewed">
+          <div class="card">
+            <div class="discover-head">
+              <div>
+                <h3>最近查看</h3>
+                <p class="hint">打开过的主题会按时间排列；清除记录不会影响收藏或已下载的主题。</p>
+              </div>
+              <div class="row" style="margin:0">
+                <button class="btn" type="button" data-history-select="view">选择</button>
+                <button class="btn danger" type="button" data-history-clear="view">清空全部</button>
+              </div>
+            </div>
+            <div class="row hidden" id="historyViewActions">
+              <button class="btn small" type="button" data-history-all="view">全选</button>
+              <button class="btn small danger" type="button" data-history-delete="view">删除选中（0）</button>
+            </div>
+            <div class="history-list" id="historyViewList"></div>
+            <div class="empty hidden" id="historyViewEmpty">还没有查看记录</div>
+            <div class="row"><span class="muted" id="historyViewCount"></span></div>
+          </div>
+        </div>
+        <div class="theme-pane hidden" id="plazaPaneDownloaded" role="tabpanel" aria-labelledby="plazaTabDownloaded" data-plaza-pane="downloaded">
+          <div class="card">
+            <div class="discover-head">
+              <div>
+                <h3>最近下载</h3>
+                <p class="hint">下载过的主题会按时间排列；清除记录不会删除已经保存的主题包。</p>
+              </div>
+              <div class="row" style="margin:0">
+                <button class="btn" type="button" data-history-select="download">选择</button>
+                <button class="btn danger" type="button" data-history-clear="download">清空全部</button>
+              </div>
+            </div>
+            <div class="row hidden" id="historyDownloadActions">
+              <button class="btn small" type="button" data-history-all="download">全选</button>
+              <button class="btn small danger" type="button" data-history-delete="download">删除选中（0）</button>
+            </div>
+            <div class="history-list" id="historyDownloadList"></div>
+            <div class="empty hidden" id="historyDownloadEmpty">还没有下载记录</div>
+            <div class="row"><span class="muted" id="historyDownloadCount"></span></div>
+          </div>
+        </div>
+        <div class="theme-pane hidden" id="plazaPaneDiscover" role="tabpanel" aria-labelledby="plazaTabDiscover" data-plaza-pane="discover">
+          <div class="card">
+            <div class="discover-head">
+              <div>
+                <h3>随便看看</h3>
+                <p class="hint" id="discoverHint">看看其他作者分享的主题，每次展示 5 个。</p>
+              </div>
+              <button class="btn primary" id="discoverShuffle" type="button">换一批</button>
+            </div>
+            <div class="row" id="discoverFilter"></div>
+            <div class="theme-grid" id="discoverGrid"></div>
+            <div class="empty hidden" id="discoverEmpty">暂时还没有其他作者的主题，稍后再来看看。</div>
+          </div>
         </div>
       </section>
 
@@ -355,7 +424,7 @@
           </div>
           <p class="comment-retention" id="messagesRetention" style="margin:6px 0 14px"></p>
           <div id="messagesList"></div>
-          <div class="empty hidden" id="messagesEmpty">还没有留言。到「发现主题」里打开一个主题就能留言。</div>
+          <div class="empty hidden" id="messagesEmpty">还没有留言。到「主题广场」里打开一个主题就能留言。</div>
         </div>
       </section>
     </main>
@@ -387,6 +456,7 @@
   let authors = [];
   let authorRequests = [];
   let activeAuthor = null;
+  let revokedAuthor = null;
   let revealedAuthorId = null;
   let contentQuery = '';
   let myThemeItems = [];
@@ -408,6 +478,12 @@
   let galleryTotal = 0;
   let galleryBusy = false;
   let galleryRequestId = 0;
+  let galleryLoaded = false;
+  let plazaTab = 'hot';
+  const historyState = {
+    view: { items: [], selecting: false, selected: new Set() },
+    download: { items: [], selecting: false, selected: new Set() },
+  };
   let currentDraftId = '';
   let pendingDraft = null;
   let followsLoaded = false;
@@ -643,18 +719,39 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
       if (pendingDraft) { restoreDraftFields(pendingDraft); pendingDraft = null; }
     });
     if (name === 'preferences') loadPreferences();
-    if (name === 'discover') {
+    if (name === 'plaza') {
+      setPlazaTab(plazaTab, false);
       loadPopular();
       loadLeaderboard();
-      if (!discoverLoaded) loadDiscover();
+      if (plazaTab === 'gallery' && !galleryLoaded) loadGallery(true);
+      if (plazaTab === 'viewed') loadHistory('view');
+      if (plazaTab === 'downloaded') loadHistory('download');
+      if (plazaTab === 'discover' && !discoverLoaded) loadDiscover();
     }
     if (name === 'messages') loadMessages(true);
-    if (name === 'gallery') loadGallery(true);
     if (name === 'favorites') loadFavorites();
     if (name === 'updates') loadUpdates();
     if (name === 'drafts') loadDrafts();
     if (name === 'dashboard') loadDashboard();
     if (name === 'reports') loadReportHistory();
+  }
+
+  function setPlazaTab(name, load = true) {
+    plazaTab = ['hot', 'gallery', 'viewed', 'downloaded', 'discover'].includes(name) ? name : 'hot';
+    document.querySelectorAll('[data-plaza-tab]').forEach(button => {
+      const active = button.dataset.plazaTab === plazaTab;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+      button.tabIndex = active ? 0 : -1;
+    });
+    document.querySelectorAll('[data-plaza-pane]').forEach(pane => {
+      pane.classList.toggle('hidden', pane.dataset.plazaPane !== plazaTab);
+    });
+    if (!load) return;
+    if (plazaTab === 'gallery' && !galleryLoaded) loadGallery(true);
+    if (plazaTab === 'viewed') loadHistory('view');
+    if (plazaTab === 'downloaded') loadHistory('download');
+    if (plazaTab === 'discover' && !discoverLoaded) loadDiscover();
   }
 
   function renderProfile(data) {
@@ -747,14 +844,24 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
   function renderAuthor() {
     const current = $('authorCurrent');
     if (!activeAuthor) {
-      current.innerHTML = '<div class="notice">还没有已绑定的作者身份。可以绑定已有作者 ID，或申请新的作者身份。</div>';
+      const revoked = revokedAuthor
+        ? '<div class="notice"><b>作者身份已被撤销或停用。</b>' + (revokedAuthor.revokeReason ? ' 原因：' + escapeHtml(revokedAuthor.revokeReason) : '') + ' 如要再次投稿，请填写说明后重新申请作者身份。</div>'
+        : '';
+      current.innerHTML = revoked + '<div class="notice">还没有已绑定的作者身份。可以绑定已有作者 ID，或申请新的作者身份。</div>';
     } else {
       const authorAvatar = activeAuthor.avatarPath
         ? '<img class="avatar" src="' + escapeHtml(assetUrl(activeAuthor.avatarPath)) + '" alt="">'
         : '<div class="avatar">' + escapeHtml((activeAuthor.displayName || 'A').slice(0, 1).toUpperCase()) + '</div>';
       const grace = activeAuthor.autoRevokeAt ? ' · 自动撤销：' + escapeHtml(formatTime(activeAuthor.autoRevokeAt)) : '';
-      current.innerHTML = '<div class="author-card">' + authorAvatar + '<div><b>' + escapeHtml(activeAuthor.displayName || '未命名作者') + '</b><span>' + (activeAuthor.code ? '编号 ' + escapeHtml(activeAuthor.code) + ' · ' : '') + escapeHtml(activeAuthor.fingerprint || activeAuthor.hash || '') + grace + '</span></div><span class="pill ' + statusClass(activeAuthor.status) + '">' + statusText(activeAuthor.status) + '</span></div>';
+      const restriction = activeAuthor.restrictionReason ? '<span>限制原因：' + escapeHtml(activeAuthor.restrictionReason) + '</span>' : '';
+      current.innerHTML = '<div class="author-card">' + authorAvatar + '<div><b>' + escapeHtml(activeAuthor.displayName || '未命名作者') + '</b><span>' + (activeAuthor.code ? '编号 ' + escapeHtml(activeAuthor.code) + ' · ' : '') + escapeHtml(activeAuthor.fingerprint || activeAuthor.hash || '') + grace + '</span>' + restriction + '</div><span class="pill ' + statusClass(activeAuthor.status) + '">' + statusText(activeAuthor.status) + '</span></div>';
     }
+    const applyHint = revokedAuthor
+      ? '作者身份曾被撤销，重新申请需要填写至少 10 字的说明。'
+      : '可选；说明申请作者身份的原因，最多 500 字。';
+    if ($('bindNoteHint')) $('bindNoteHint').textContent = applyHint;
+    if ($('newNoteHint')) $('newNoteHint').textContent = applyHint;
+    if ($('resetNoteHint')) $('resetNoteHint').textContent = '至少填写 5 字，说明需要重置作者 ID 的原因。';
     if (revealedAuthorId) {
       const box = document.createElement('div');
       box.className = 'notice ok';
@@ -794,7 +901,7 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
       const el = document.createElement('div');
       el.className = 'item';
       const kind = ({ bind: '绑定已有作者', new: '新增作者', reset: '重置作者 ID' })[item.kind] || item.kind;
-      el.innerHTML = '<div class="item-head"><b>' + escapeHtml(kind) + '</b><span class="pill ' + requestTone(item.status) + '">' + requestStatusText(item.status) + '</span></div><div class="item-meta">' + escapeHtml(item.displayName || '') + ' · ' + formatTime(item.createdAt) + (item.rejectReason ? '<br>拒绝原因：' + escapeHtml(item.rejectReason) : '') + '</div>';
+      el.innerHTML = '<div class="item-head"><b>' + escapeHtml(kind) + '</b><span class="pill ' + requestTone(item.status) + '">' + requestStatusText(item.status) + '</span></div><div class="item-meta">' + escapeHtml(item.displayName || '') + ' · ' + formatTime(item.createdAt) + (item.note ? '<br>申请说明：' + escapeHtml(item.note) : '') + (item.rejectReason ? '<br>拒绝原因：' + escapeHtml(item.rejectReason) : '') + '</div>';
       if (item.kind === 'reset' && item.status === 'approved') {
         const button = document.createElement('button');
         button.className = 'btn primary small';
@@ -844,6 +951,7 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
       }
       activeAuthor = next;
       authors = data.authors || [];
+      revokedAuthor = authors.find(author => author.status === 'revoked' || author.status === 'retired') || null;
       authorRequests = data.requests || [];
       renderAuthor();
     } catch (_) {}
@@ -1272,7 +1380,7 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
       const row = document.createElement('div');
       row.className = 'popular-theme';
       const cover = theme.previewPath
-        ? '<img src="' + escapeHtml(assetUrl(theme.previewPath)) + '" alt="" loading="lazy">'
+        ? '<img class="cover" src="' + escapeHtml(assetUrl(theme.previewPath)) + '" alt="" loading="lazy">'
         : '';
       row.innerHTML = '<span class="popular-rank">' + (index + 1) + '</span>' + cover +
         '<div class="popular-body"><b>' + escapeHtml(theme.name || theme.id) + '</b>' +
@@ -1311,7 +1419,7 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
       const row = document.createElement('div');
       row.className = 'popular-theme';
       const avatar = author.avatarUrl
-        ? '<img src="' + escapeHtml(author.avatarUrl) + '" alt="" loading="lazy">'
+        ? '<img class="avatar" src="' + escapeHtml(author.avatarUrl) + '" alt="" loading="lazy">'
         : '';
       row.innerHTML = '<span class="popular-rank">' + (index + 1) + '</span>' + avatar +
         '<div class="popular-body"><b>' + escapeHtml(author.name || '未知作者') + '</b>' +
@@ -1376,9 +1484,13 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
     if (authorButton) {
       authorButton.addEventListener('click', event => {
         event.stopPropagation();
-        if (currentView === 'gallery' || currentView === 'favorites') {
+        if ((currentView === 'plaza' && plazaTab === 'gallery') || currentView === 'favorites') {
           $('gallerySearch').value = theme.author || '';
-          setView('gallery');
+          $('galleryTag').value = '';
+          setView('plaza');
+          setPlazaTab('gallery', false);
+          loadGallery(true);
+          $('view-plaza').scrollIntoView({ behavior: 'smooth', block: 'start' });
         } else filterDiscoverByAuthor(theme.author);
       });
     }
@@ -1457,12 +1569,16 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
   function filterDiscoverByAuthor(author) {
     discoverAuthor = String(author || '').trim();
     discoverSeen = new Set();
+    if (currentView !== 'plaza') setView('plaza');
+    setPlazaTab('discover', false);
     loadDiscover();
+    $('view-plaza').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   function openDiscoverTheme(theme) {
     const dialog = $('discoverDialog');
     if (!dialog || typeof dialog.showModal !== 'function') return;
+    recordThemeView(theme.id);
     $('discoverTitle').textContent = theme.name || theme.id || '主题预览';
     const images = [theme.previewPath, ...(theme.screenshotPaths || [])].filter(Boolean);
     const hero = images.length ? assetUrl(images[0]) : '';
@@ -2150,11 +2266,12 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
     loadDiscover();
   });
   $('popularSeeAll').addEventListener('click', () => {
+    discoverAuthor = '';
     discoverSeen = new Set();
     discoverLoaded = false;
+    setPlazaTab('discover', false);
     loadDiscover();
-    const grid = $('discoverGrid');
-    if (grid) grid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    $('view-plaza').scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
   $('savePreferences').addEventListener('click', async () => {
     try {
@@ -2166,8 +2283,10 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
       toast('内容偏好已保存');
       discoverSeen = new Set();
       discoverLoaded = false;
+      galleryLoaded = false;
       await loadPopular();
-      if (currentView === 'discover') await loadDiscover();
+      if (currentView === 'plaza' && plazaTab === 'discover') await loadDiscover();
+      if (currentView === 'plaza' && plazaTab === 'gallery') await loadGallery(true);
       await loadPreferences();
     } catch (error) {
       toast(error.message, true);
@@ -2318,8 +2437,9 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
     } catch (error) { toast(error.message, true); }
   });
 
-  $('showBind').addEventListener('click', () => { $('bindCard').classList.remove('hidden'); $('newCard').classList.add('hidden'); });
-  $('showNew').addEventListener('click', () => { $('newCard').classList.remove('hidden'); $('bindCard').classList.add('hidden'); });
+  $('showBind').addEventListener('click', () => { $('bindCard').classList.remove('hidden'); $('newCard').classList.add('hidden'); $('resetCard').classList.add('hidden'); });
+  $('showNew').addEventListener('click', () => { $('newCard').classList.remove('hidden'); $('bindCard').classList.add('hidden'); $('resetCard').classList.add('hidden'); });
+  $('requestReset').addEventListener('click', () => { $('resetCard').classList.remove('hidden'); $('bindCard').classList.add('hidden'); $('newCard').classList.add('hidden'); });
   document.querySelectorAll('[data-close]').forEach(button => {
     button.addEventListener('click', () => $(button.dataset.close).classList.add('hidden'));
   });
@@ -2327,8 +2447,10 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
   $('newAuthorName').value = profile ? profile.displayName : '';
 
   $('submitBind').addEventListener('click', async () => {
+    const note = $('bindNote').value.trim();
+    if (revokedAuthor && note.length < 10) { toast('作者身份曾被撤销，请填写至少 10 字的申请说明', true); $('bindNote').focus(); return; }
     try {
-      const data = await api('/author/requests', { method: 'POST', body: JSON.stringify({ kind: 'bind', authorId: $('bindAuthorId').value.trim(), displayName: $('bindName').value.trim() }) });
+      const data = await api('/author/requests', { method: 'POST', body: JSON.stringify({ kind: 'bind', authorId: $('bindAuthorId').value.trim(), displayName: $('bindName').value.trim(), note }) });
       toast(data.alreadyBound ? '该作者已经绑定' : '绑定申请已提交');
       $('bindCard').classList.add('hidden');
       loadAuthors();
@@ -2336,8 +2458,10 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
   });
 
   $('submitNew').addEventListener('click', async () => {
+    const note = $('newNote').value.trim();
+    if (revokedAuthor && note.length < 10) { toast('作者身份曾被撤销，请填写至少 10 字的申请说明', true); $('newNote').focus(); return; }
     try {
-      const data = await api('/author/requests', { method: 'POST', body: JSON.stringify({ kind: 'new', authorId: $('newAuthorId').value.trim(), displayName: $('newAuthorName').value.trim() }) });
+      const data = await api('/author/requests', { method: 'POST', body: JSON.stringify({ kind: 'new', authorId: $('newAuthorId').value.trim(), displayName: $('newAuthorName').value.trim(), note }) });
       $('newCard').classList.add('hidden');
       if (data.authorId) showNewAuthorId(data.authorId);
       toast('新作者申请已提交');
@@ -2345,15 +2469,16 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
     } catch (error) { toast(error.message, true); }
   });
 
-  $('requestReset').addEventListener('click', async () => {
-    if (!confirm('申请重置作者 ID？旧 ID 下的主题会保留归属。')) return;
+  $('submitReset').addEventListener('click', async () => {
+    const note = $('resetNote').value.trim();
+    if (note.length < 5) { toast('请填写至少 5 字的重置说明', true); $('resetNote').focus(); return; }
     try {
-      await api('/author/requests', { method: 'POST', body: JSON.stringify({ kind: 'reset' }) });
+      await api('/author/requests', { method: 'POST', body: JSON.stringify({ kind: 'reset', note }) });
+      $('resetCard').classList.add('hidden');
       toast('重置申请已提交，等待管理员批准');
       loadAuthors();
     } catch (error) { toast(error.message, true); }
   });
-
   $('logoutBtn').addEventListener('click', async () => {
     try { await api('/auth/logout', { method: 'POST', body: '{}' }); } catch (_) {}
     location.replace(basePath + 'login');
@@ -2391,6 +2516,173 @@ async function toggleFavorite(theme, button) {
   finally { button.disabled = false; }
 }
 
+function historyUi(kind) {
+  const suffix = kind === 'download' ? 'Download' : 'View';
+  return {
+    list: $('history' + suffix + 'List'),
+    empty: $('history' + suffix + 'Empty'),
+    count: $('history' + suffix + 'Count'),
+    actions: $('history' + suffix + 'Actions'),
+    select: document.querySelector('[data-history-select="' + kind + '"]'),
+    all: document.querySelector('[data-history-all="' + kind + '"]'),
+    remove: document.querySelector('[data-history-delete="' + kind + '"]'),
+  };
+}
+
+async function loadHistory(kind) {
+  const state = historyState[kind];
+  const ui = historyUi(kind);
+  ui.list.innerHTML = '<p class="hint">加载中…</p>';
+  ui.empty.classList.add('hidden');
+  try {
+    const data = await api('/history?kind=' + encodeURIComponent(kind) + '&limit=100');
+    state.items = data.items || [];
+    const validIds = new Set(state.items.map(item => String(item.id)));
+    state.selected = new Set([...state.selected].filter(id => validIds.has(id)));
+    renderHistory(kind);
+  } catch (error) {
+    ui.list.innerHTML = '';
+    ui.empty.textContent = error.message;
+    ui.empty.classList.remove('hidden');
+  }
+}
+
+function renderHistory(kind) {
+  const state = historyState[kind];
+  const ui = historyUi(kind);
+  ui.list.innerHTML = state.items.map(item => {
+    const id = String(item.id);
+    const name = item.themeName || item.themeId || '未知主题';
+    const author = item.themeAuthor || '未知作者';
+    const checked = state.selected.has(id);
+    const cover = item.themePreviewUrl
+      ? '<img src="' + escapeHtml(item.themePreviewUrl) + '" alt="" loading="lazy">'
+      : '<span class="history-cover">' + escapeHtml(name.slice(0, 1).toUpperCase()) + '</span>';
+    return '<article class="history-row' + (checked ? ' selected' : '') + '" data-history-id="' + escapeHtml(id) +
+      '" data-theme-id="' + escapeHtml(item.themeId || '') + '">' +
+      '<label class="check history-check' + (state.selecting ? '' : ' hidden') + '"><input type="checkbox" data-history-check="' +
+      escapeHtml(id) + '"' + (checked ? ' checked' : '') + '></label>' + cover +
+      '<span class="history-body"><b>' + escapeHtml(name) + '</b><span>' + escapeHtml(author) + ' · ' +
+      escapeHtml(formatTime(item.createdAt)) + (item.r18 ? ' · R18' : '') + '</span></span></article>';
+  }).join('');
+  ui.empty.classList.toggle('hidden', state.items.length > 0);
+  if (state.items.length === 0) ui.empty.textContent = kind === 'download' ? '还没有下载记录' : '还没有查看记录';
+  ui.count.textContent = '共 ' + state.items.length + ' 条记录';
+  ui.actions.classList.toggle('hidden', !state.selecting);
+  ui.select.textContent = state.selecting ? '取消' : '选择';
+  ui.all.textContent = state.items.length > 0 && state.selected.size === state.items.length ? '取消全选' : '全选';
+  ui.remove.textContent = '删除选中（' + state.selected.size + '）';
+}
+
+async function openHistoryTheme(themeId) {
+  if (!themeId) return;
+  try {
+    const data = await api('/gallery?q=' + encodeURIComponent(themeId) + '&limit=10');
+    const theme = (data.themes || []).find(item => item.id === themeId);
+    if (theme) openDiscoverTheme(theme);
+    else toast('主题已不在公开目录中', true);
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+function recordThemeView(themeId) {
+  if (!themeId) return;
+  api('/history/view', { method: 'POST', body: JSON.stringify({ themeId }) })
+    .then(() => {
+      if (currentView === 'plaza' && plazaTab === 'viewed') loadHistory('view');
+    })
+    .catch(() => {});
+}
+
+document.querySelectorAll('[data-history-select]').forEach(button => {
+  button.addEventListener('click', () => {
+    const kind = button.dataset.historySelect;
+    const state = historyState[kind];
+    state.selecting = !state.selecting;
+    if (!state.selecting) state.selected.clear();
+    renderHistory(kind);
+  });
+});
+
+document.querySelectorAll('[data-history-all]').forEach(button => {
+  button.addEventListener('click', () => {
+    const kind = button.dataset.historyAll;
+    const state = historyState[kind];
+    const allSelected = state.items.length > 0 && state.selected.size === state.items.length;
+    state.selected = allSelected ? new Set() : new Set(state.items.map(item => String(item.id)));
+    renderHistory(kind);
+  });
+});
+
+document.querySelectorAll('[data-history-clear]').forEach(button => {
+  button.addEventListener('click', async () => {
+    const kind = button.dataset.historyClear;
+    const clearText = kind === 'download'
+      ? '清空全部最近下载记录？此操作不可恢复。'
+      : '清空全部最近查看记录？此操作不可恢复。';
+    if (!confirm(clearText)) return;
+    try {
+      await api('/history/delete', { method: 'POST', body: JSON.stringify({ kind, all: true }) });
+      historyState[kind].selected.clear();
+      await loadHistory(kind);
+      toast(kind === 'download' ? '最近下载记录已清空' : '最近查看记录已清空');
+    } catch (error) {
+      toast(error.message, true);
+    }
+  });
+});
+
+document.querySelectorAll('[data-history-delete]').forEach(button => {
+  button.addEventListener('click', async () => {
+    const kind = button.dataset.historyDelete;
+    const state = historyState[kind];
+    if (!state.selected.size) {
+      toast('请选择要删除的记录', 'bad');
+      return;
+    }
+    if (!confirm('删除选中的 ' + state.selected.size + ' 条记录？此操作不可恢复。')) return;
+    try {
+      await api('/history/delete', {
+        method: 'POST',
+        body: JSON.stringify({ kind, ids: [...state.selected].map(Number) }),
+      });
+      state.selected.clear();
+      await loadHistory(kind);
+      toast('已删除选中记录');
+    } catch (error) {
+      toast(error.message, true);
+    }
+  });
+});
+
+['view', 'download'].forEach(kind => {
+  const ui = historyUi(kind);
+  ui.list.addEventListener('change', event => {
+    const box = event.target.closest('[data-history-check]');
+    if (!box) return;
+    const state = historyState[kind];
+    const id = box.dataset.historyCheck;
+    if (box.checked) state.selected.add(id);
+    else state.selected.delete(id);
+    renderHistory(kind);
+  });
+  ui.list.addEventListener('click', event => {
+    if (event.target.closest('.history-check')) return;
+    const row = event.target.closest('[data-history-id]');
+    if (!row) return;
+    const state = historyState[kind];
+    if (state.selecting) {
+      const id = row.dataset.historyId;
+      if (state.selected.has(id)) state.selected.delete(id);
+      else state.selected.add(id);
+      renderHistory(kind);
+      return;
+    }
+    openHistoryTheme(row.dataset.themeId);
+  });
+});
+
 function renderGallery() {
   const host = $('galleryGrid');
   host.replaceChildren(...galleryThemes.map(theme => discoverCard(theme)));
@@ -2404,7 +2696,7 @@ async function loadGallery(reset) {
   const requestId = ++galleryRequestId;
   galleryBusy = true;
   $('galleryMore').disabled = true;
-  if (reset) { galleryThemes = []; galleryOffset = 0; }
+  if (reset) { galleryThemes = []; galleryOffset = 0; galleryLoaded = false; }
   try {
     const params = new URLSearchParams({ q: $('gallerySearch').value.trim(), tag: $('galleryTag').value.trim(),
       sort: $('gallerySort').value, offset: String(galleryOffset), limit: '24' });
@@ -2413,6 +2705,7 @@ async function loadGallery(reset) {
     galleryThemes.push(...(data.themes || []));
     galleryOffset = galleryThemes.length;
     galleryTotal = Number(data.total || 0);
+    galleryLoaded = true;
     renderGallery();
   } catch (error) { if (requestId === galleryRequestId) toast(error.message, true); }
   finally {
@@ -2430,8 +2723,8 @@ async function loadFavorites() {
     const themes = data.themes || [];
     $('favoritesGrid').replaceChildren(...themes.map(theme => discoverCard(theme)));
     $('favoritesEmpty').classList.toggle('hidden', themes.length > 0);
-    if (currentView === 'gallery') renderGallery();
-    if (currentView === 'discover') renderDiscover();
+    if (currentView === 'plaza' && plazaTab === 'gallery' && galleryLoaded) renderGallery();
+    if (currentView === 'plaza' && plazaTab === 'discover' && discoverLoaded) renderDiscover();
   } catch (error) { if (currentView === 'favorites') toast(error.message, true); }
 }
 
@@ -2497,6 +2790,22 @@ $('favoritesRefresh').addEventListener('click', loadFavorites);
 $('updatesRefresh').addEventListener('click', loadUpdates);
 $('gallerySearch').addEventListener('keydown', event => { if (event.key === 'Enter') loadGallery(true); });
 $('galleryTag').addEventListener('keydown', event => { if (event.key === 'Enter') loadGallery(true); });
+
+document.querySelectorAll('[data-plaza-tab]').forEach(button => {
+  button.addEventListener('click', () => setPlazaTab(button.dataset.plazaTab));
+});
+document.querySelector('.plaza-tabs').addEventListener('keydown', event => {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  const tabs = Array.from(document.querySelectorAll('[data-plaza-tab]'));
+  const index = tabs.indexOf(document.activeElement);
+  if (index < 0) return;
+  event.preventDefault();
+  const next = event.key === 'Home' ? 0
+    : event.key === 'End' ? tabs.length - 1
+    : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+  tabs[next].focus();
+  setPlazaTab(tabs[next].dataset.plazaTab);
+});
 
 function draftPayload() {
   return {
@@ -2590,16 +2899,32 @@ async function loadReportHistory() {
     const appeals = appealsData.appeals || [];
     $('reportsEmpty').classList.toggle('hidden', reports.length > 0);
     $('appealsEmpty').classList.toggle('hidden', appeals.length > 0);
-    $('reportsList').innerHTML = reports.map(item => '<div class="list-item"><div class="item-head"><b>' +
-      escapeHtml(item.themeId) + '</b><span class="pill">' + escapeHtml(caseStatus(item.status)) +
-      '</span></div><div class="item-meta">举报 ID：' + escapeHtml(item.id) + ' · ' +
-      escapeHtml(formatTime(item.createdAt)) + '</div><p>' + escapeHtml(item.detail) + '</p>' +
-      (item.resolution ? '<p class="hint">处理说明：' + escapeHtml(item.resolution) + '</p>' : '') + '</div>').join('');
-    $('appealsList').innerHTML = appeals.map(item => '<div class="list-item"><div class="item-head"><b>' +
-      escapeHtml(item.targetId) + '</b><span class="pill">' + escapeHtml(caseStatus(item.status)) +
-      '</span></div><div class="item-meta">' + escapeHtml(formatTime(item.createdAt)) +
-      '</div><p>' + escapeHtml(item.detail) + '</p>' +
-      (item.resolution ? '<p class="hint">处理说明：' + escapeHtml(item.resolution) + '</p>' : '') + '</div>').join('');
+    const historyCard = (item, title, meta) => {
+      const thumb = item.themePreviewUrl
+        ? '<img src="' + escapeHtml(item.themePreviewUrl) + '" alt="" loading="lazy" style="width:52px;height:52px;object-fit:cover;border-radius:8px;flex:none">'
+        : '';
+      return '<div class="list-item"><div class="item-head">' + thumb + '<b>' + escapeHtml(title) +
+        '</b><span class="pill">' + escapeHtml(caseStatus(item.status)) + '</span></div><div class="item-meta">' +
+        escapeHtml(meta) + '</div><p>' + escapeHtml(item.detail) + '</p>' +
+        (item.resolution ? '<p class="hint">处理说明：' + escapeHtml(item.resolution) + '</p>' : '') + '</div>';
+    };
+    $('reportsList').innerHTML = reports.map(item => {
+      const meta = [
+        item.themeId ? '主题 ID：' + item.themeId : '',
+        item.themeAuthor ? '作者：' + item.themeAuthor : '',
+        '举报 ID：' + item.id,
+        formatTime(item.createdAt),
+      ].filter(Boolean).join(' · ');
+      return historyCard(item, item.themeName || item.themeId, meta);
+    }).join('');
+    $('appealsList').innerHTML = appeals.map(item => {
+      const meta = [
+        item.themeId ? '主题 ID：' + item.themeId : '',
+        item.themeAuthor ? '作者：' + item.themeAuthor : '',
+        formatTime(item.createdAt),
+      ].filter(Boolean).join(' · ');
+      return historyCard(item, item.themeName || item.submissionName || item.targetId, meta);
+    }).join('');
   } catch (error) { toast(error.message, true); }
 }
 $('reportSubmit').addEventListener('click', async () => {

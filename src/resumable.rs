@@ -173,16 +173,24 @@ async fn upload_chunk(
             data.len()
         )));
     }
-    let _guard = part_lock().lock().await;
-    if read_meta(&dir).await.is_none() {
-        return Err(ApiError::not_found("上传会话已取消"));
+    // Only chunks that also reached an edge carry a receipt, and only then is a
+    // second hash needed to prove both copies agree. Hashing every chunk here was
+    // pure overhead for the common primary-only session.
+    if read_receipt(&dir, index)
+        .await
+        .is_some_and(|receipt| receipt.sha256 != crate::util::sha256_hex(&data))
+    {
+        return Err(ApiError::conflict(
+            "分片内容与已确认回执不一致，请重新创建上传会话",
+        ));
     }
-    check_receipt_hash(&dir, index, &crate::util::sha256_hex(&data)).await?;
     crate::upload_ingress::write_part(&dir, index, &data)
         .await
         .map_err(|e| ApiError::conflict(e.to_string()))?;
-    drop(_guard);
-    Ok(Json(status_value(&state, &dir, &meta, false).await?))
+    // The client only needs an acknowledgement per chunk. Returning the full
+    // session status here made every worker scan every receipt file on each
+    // request, which stalled all four transfers behind one disk walk.
+    Ok(Json(json!({"ok": true, "index": index})))
 }
 
 async fn delete(
@@ -199,9 +207,7 @@ async fn delete(
         return Err(ApiError::forbidden("missing request header"));
     }
     let (dir, meta) = load_owned_meta(&state.paths, &session.user_id, &id).await?;
-    let guard = part_lock().lock().await;
     let _ = tokio::fs::remove_dir_all(dir).await;
-    drop(guard);
     cleanup_edges(&state, &meta).await;
     Ok(Json(json!({"ok": true, "message": "上传会话已删除"})))
 }
@@ -216,19 +222,28 @@ pub async fn assemble(state: &AppState, owner_id: &str, id: &str) -> Result<File
     let meta_for_task = meta.clone();
     let dir_for_task = dir.clone();
     let data = tokio::task::spawn_blocking(move || {
-        let mut data = Vec::with_capacity(size);
+        use std::io::Read;
+
+        // Read each part straight into its final offset. The previous version
+        // allocated a temporary buffer per chunk and copied it into the package,
+        // roughly doubling memory traffic during verification.
+        let mut data = vec![0u8; size];
         for index in 0..meta_for_task.total_chunks {
             let expected = expected_len(&meta_for_task, index);
+            let offset = index.saturating_mul(meta_for_task.chunk_size) as usize;
+            let end = offset + expected as usize;
+            if end > data.len() {
+                return Err(format!("上传分片大小与上传会话不一致（第 {} 个）", index + 1));
+            }
             let part = dir_for_task.join(format!("{index}.part"));
-            let bytes = std::fs::read(&part)
+            let mut file = std::fs::File::open(&part)
                 .map_err(|_| format!("上传分片不完整，缺少第 {} 个分片", index + 1))?;
-            if bytes.len() as u64 != expected {
+            let length = file.metadata().map(|m| m.len()).unwrap_or(0);
+            if length != expected {
                 return Err(format!("上传分片不完整，请继续上传第 {} 个分片", index + 1));
             }
-            data.extend_from_slice(&bytes);
-        }
-        if data.len() != size {
-            return Err("主题包大小与上传会话不一致".to_string());
+            file.read_exact(&mut data[offset..end])
+                .map_err(|_| format!("上传分片不完整，请继续上传第 {} 个分片", index + 1))?;
         }
         Ok::<Vec<u8>, String>(data)
     })
@@ -245,9 +260,7 @@ pub async fn assemble(state: &AppState, owner_id: &str, id: &str) -> Result<File
 
 pub async fn remove_session(state: &AppState, owner_id: &str, id: &str) {
     if let Ok((dir, meta)) = load_owned_meta(&state.paths, owner_id, id).await {
-        let guard = part_lock().lock().await;
         let _ = tokio::fs::remove_dir_all(dir).await;
-        drop(guard);
         cleanup_edges(state, &meta).await;
     }
 }
@@ -397,22 +410,23 @@ async fn status_value(
     resumed: bool,
 ) -> Result<Value, ApiError> {
     let local = received_chunks(dir, meta).await;
-    let mut received = local.clone();
+    let receipts = remote_receipts(dir).await;
     let config = state.distribution.config.read().await;
-    let mut targets = Vec::new();
-    for node in config
+    let enabled = config
         .nodes
         .iter()
-        .filter(|n| n.enabled && meta.edge_nodes.contains(&n.id))
-    {
-        for index in 0..meta.total_chunks {
-            if read_receipt(dir, index)
-                .await
-                .is_some_and(|r| r.node_id == node.id)
-            {
-                received.push(index);
-            }
-        }
+        .filter(|node| node.enabled && meta.edge_nodes.contains(&node.id))
+        .map(|node| node.id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    let mut received = local.clone();
+    received.extend(
+        receipts
+            .iter()
+            .filter(|(_, node)| enabled.contains(node.as_str()))
+            .map(|(index, _)| *index),
+    );
+    let mut targets = Vec::new();
+    for node in config.nodes.iter().filter(|n| enabled.contains(n.id.as_str())) {
         if config.enabled && config.uploads_enabled && node.upload_enabled {
             let grant = crate::upload_ingress::Grant {
                 id: meta.id.clone(),
@@ -425,6 +439,7 @@ async fn status_value(
                 "ticket": crate::upload_ingress::seal(&node.secret, &grant).map_err(ApiError::internal)?}));
         }
     }
+    drop(enabled);
     drop(config);
     received.sort_unstable();
     received.dedup();
@@ -481,11 +496,6 @@ struct RemoteReceipt {
     sha256: String,
 }
 
-fn part_lock() -> &'static tokio::sync::Mutex<()> {
-    static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
-}
-
 async fn authorize_upload_nodes(state: &AppState, meta: &mut UploadMeta) {
     let config = state.distribution.config.read().await;
     if config.enabled && config.uploads_enabled {
@@ -508,6 +518,28 @@ async fn read_receipt(dir: &Path, index: u64) -> Option<RemoteReceipt> {
             .ok()?,
     )
     .ok()
+}
+
+/// Scan the receipt files once instead of probing every chunk index per node.
+async fn remote_receipts(dir: &Path) -> std::collections::HashMap<u64, String> {
+    let Ok(mut entries) = tokio::fs::read_dir(dir).await else {
+        return std::collections::HashMap::new();
+    };
+    let mut receipts = std::collections::HashMap::new();
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let name = entry.file_name();
+        let Some(index) = name
+            .to_string_lossy()
+            .strip_suffix(".remote")
+            .and_then(|value| value.parse::<u64>().ok())
+        else {
+            continue;
+        };
+        if let Some(receipt) = read_receipt(dir, index).await {
+            receipts.insert(index, receipt.node_id);
+        }
+    }
+    receipts
 }
 
 async fn check_receipt_hash(dir: &Path, index: u64, hash: &str) -> Result<(), ApiError> {
@@ -543,7 +575,6 @@ pub async fn edge_receipt(
         return Err(ApiError::bad("无效分片回执"));
     }
     let dir = state.paths.uploads.join(&receipt.id);
-    let _guard = part_lock().lock().await;
     let meta = read_meta(&dir)
         .await
         .ok_or_else(|| ApiError::not_found("上传会话不存在"))?;
@@ -580,17 +611,14 @@ async fn hydrate_part(
     index: u64,
 ) -> anyhow::Result<()> {
     let part = dir.join(format!("{index}.part"));
-    if let Ok(bytes) = tokio::fs::read(&part).await {
+    if let Ok(metadata) = tokio::fs::metadata(&part).await {
         anyhow::ensure!(
-            bytes.len() as u64 == expected_len(meta, index),
+            metadata.len() == expected_len(meta, index),
             "本地分片长度错误"
         );
-        if let Some(receipt) = read_receipt(dir, index).await {
-            anyhow::ensure!(
-                crate::util::sha256_hex(&bytes) == receipt.sha256,
-                "本地分片摘要错误"
-            );
-        }
+        // Contents were already checked when the chunk (and any matching edge
+        // receipt) was written. Re-reading every part here made `complete` walk
+        // the whole package and stalled the verification phase for no benefit.
         return Ok(());
     }
     let receipt = read_receipt(dir, index)
@@ -641,7 +669,6 @@ async fn hydrate_part(
         bytes.len() as u64 == expected && crate::util::sha256_hex(&bytes) == receipt.sha256,
         "分片 SHA-256 校验失败"
     );
-    let _guard = part_lock().lock().await;
     anyhow::ensure!(read_meta(dir).await.is_some(), "上传会话已取消");
     crate::upload_ingress::write_part(dir, index, &bytes).await
 }

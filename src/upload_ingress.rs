@@ -97,7 +97,10 @@ pub struct Receipt {
 pub struct Inbox {
     root: PathBuf,
     quota: u64,
-    lock: Mutex<()>,
+    /// Bytes reserved or already staged. Quota checks update this atomically so
+    /// concurrent workers never wait on a directory walk.
+    used: std::sync::atomic::AtomicU64,
+    last_scan: Mutex<std::time::Instant>,
     pub permits: Semaphore,
 }
 
@@ -111,15 +114,20 @@ impl Inbox {
         let inbox = Self {
             root,
             quota,
-            lock: Mutex::new(()),
+            used: std::sync::atomic::AtomicU64::new(0),
+            last_scan: Mutex::new(std::time::Instant::now()),
             permits: Semaphore::new(4),
         };
-        inbox.usage_and_cleanup().await?;
+        let used = inbox.usage_and_cleanup().await?;
+        inbox
+            .used
+            .store(used, std::sync::atomic::Ordering::Relaxed);
         Ok(inbox)
     }
 
-    // Caller holds lock when writing. Only this inbox's exact session directories
-    // are eligible for expiry; never scan the cache objects or arbitrary paths.
+    // Only this inbox's exact session directories are eligible for expiry; never
+    // scan the cache objects or arbitrary paths. Runs on startup and at most once
+    // per scan interval, not on every uploaded chunk.
     async fn usage_and_cleanup(&self) -> Result<u64> {
         let mut usage = 0u64;
         let mut dirs = tokio::fs::read_dir(&self.root).await?;
@@ -149,8 +157,38 @@ impl Inbox {
     }
 
     pub async fn usage(&self) -> Result<u64> {
-        let _guard = self.lock.lock().await;
-        self.usage_and_cleanup().await
+        let mut last_scan = self.last_scan.lock().await;
+        if last_scan.elapsed() >= Duration::from_secs(30) {
+            let used = self.usage_and_cleanup().await?;
+            self.used
+                .store(used, std::sync::atomic::Ordering::Relaxed);
+            *last_scan = std::time::Instant::now();
+        }
+        Ok(self.used.load(std::sync::atomic::Ordering::Relaxed))
+    }
+
+    fn reserve(&self, bytes: u64) -> bool {
+        use std::sync::atomic::Ordering;
+
+        let reservation = bytes.saturating_add(4096);
+        let mut current = self.used.load(Ordering::Relaxed);
+        loop {
+            let Some(next) = current.checked_add(reservation) else {
+                return false;
+            };
+            if next > self.quota {
+                return false;
+            }
+            match self.used.compare_exchange_weak(
+                current,
+                next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return true,
+                Err(actual) => current = actual,
+            }
+        }
     }
 
     pub async fn put(&self, grant: &Grant, index: u64, bytes: &[u8]) -> Result<Receipt> {
@@ -161,7 +199,6 @@ impl Inbox {
         let expected = grant.expected_len(index).context("分片序号超出范围")?;
         anyhow::ensure!(bytes.len() as u64 == expected, "分片长度错误");
         let hash = hex::encode(Sha256::digest(bytes));
-        let _guard = self.lock.lock().await;
         let dir = self.root.join(&grant.id);
         if let Ok(existing) = tokio::fs::read(dir.join(format!("{index}.part"))).await {
             anyhow::ensure!(existing == bytes, "同一分片重试的内容发生变化");
@@ -172,45 +209,50 @@ impl Inbox {
                 sha256: hash,
             });
         }
-        let used = self.usage_and_cleanup().await?;
-        anyhow::ensure!(
-            used.saturating_add(expected).saturating_add(4096) <= self.quota,
-            "节点上传暂存配额不足"
-        );
-        let root = self.root.clone();
-        let free = tokio::task::spawn_blocking(move || fs4::available_space(root)).await??;
-        anyhow::ensure!(
-            free > expected + crate::config::DISK_RESERVE_BYTES,
-            "节点磁盘空间不足"
-        );
-        tokio::fs::create_dir_all(&dir).await?;
-        if let Ok(raw) = tokio::fs::read(dir.join("grant.json")).await {
-            let previous: Grant = serde_json::from_slice(&raw)?;
+        anyhow::ensure!(self.reserve(expected), "节点上传暂存配额不足");
+        let outcome = async {
+            let root = self.root.clone();
+            let free = tokio::task::spawn_blocking(move || fs4::available_space(root)).await??;
             anyhow::ensure!(
-                previous.id == grant.id
-                    && previous.size == grant.size
-                    && previous.chunk_size == grant.chunk_size,
-                "上传会话参数冲突"
+                free > expected + crate::config::DISK_RESERVE_BYTES,
+                "节点磁盘空间不足"
+            );
+            tokio::fs::create_dir_all(&dir).await?;
+            if let Ok(raw) = tokio::fs::read(dir.join("grant.json")).await {
+                let previous: Grant = serde_json::from_slice(&raw)?;
+                anyhow::ensure!(
+                    previous.id == grant.id
+                        && previous.size == grant.size
+                        && previous.chunk_size == grant.chunk_size,
+                    "上传会话参数冲突"
+                );
+            }
+            crate::config::write_atomic_async(
+                &dir.join("grant.json"),
+                &serde_json::to_vec(grant)?,
+                0o600,
+            )
+            .await?;
+            write_part(&dir, index, bytes).await?;
+            Ok::<Receipt, anyhow::Error>(Receipt {
+                id: grant.id.clone(),
+                index,
+                size: expected,
+                sha256: hash,
+            })
+        }
+        .await;
+        if outcome.is_err() {
+            self.used.fetch_sub(
+                expected.saturating_add(4096),
+                std::sync::atomic::Ordering::Relaxed,
             );
         }
-        crate::config::write_atomic_async(
-            &dir.join("grant.json"),
-            &serde_json::to_vec(grant)?,
-            0o600,
-        )
-        .await?;
-        write_part(&dir, index, bytes).await?;
-        Ok(Receipt {
-            id: grant.id.clone(),
-            index,
-            size: expected,
-            sha256: hash,
-        })
+        outcome
     }
 
     pub async fn read(&self, id: &str, index: u64) -> Result<Vec<u8>> {
         anyhow::ensure!(valid_id(id), "上传会话不存在");
-        let _guard = self.lock.lock().await;
         let dir = self.root.join(id);
         let grant: Grant = serde_json::from_slice(&tokio::fs::read(dir.join("grant.json")).await?)?;
         anyhow::ensure!(
@@ -225,7 +267,6 @@ impl Inbox {
 
     pub async fn remove(&self, id: &str) -> Result<()> {
         anyhow::ensure!(valid_id(id), "上传会话不存在");
-        let _guard = self.lock.lock().await;
         match tokio::fs::remove_dir_all(self.root.join(id)).await {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -234,23 +275,56 @@ impl Inbox {
     }
 }
 
-/// Caller serializes writes. A retry must never overwrite different bytes.
+/// Concurrent-safe chunk write: each index is written to a private temp file and
+/// renamed into place, so workers no longer need to serialize on a global mutex.
+/// The session directory is never created here; a chunk that arrives after the
+/// session was cancelled fails instead of resurrecting the directory.
 pub async fn write_part(dir: &Path, index: u64, bytes: &[u8]) -> Result<()> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
     let destination = dir.join(format!("{index}.part"));
-    if tokio::fs::try_exists(&destination).await? {
-        anyhow::ensure!(
-            tokio::fs::read(&destination).await? == bytes,
-            "同一分片重试的内容发生变化"
-        );
-        return Ok(());
+    match tokio::fs::metadata(&destination).await {
+        Ok(metadata) => {
+            anyhow::ensure!(
+                metadata.len() == bytes.len() as u64,
+                "同一分片重试的大小发生变化"
+            );
+            anyhow::ensure!(
+                tokio::fs::read(&destination).await? == bytes,
+                "同一分片重试的内容发生变化"
+            );
+            return Ok(());
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
     }
-    crate::config::write_atomic_async(&destination, bytes, 0o600).await?;
-    tokio::fs::OpenOptions::new()
-        .write(true)
-        .open(&destination)
-        .await?
-        .sync_all()
-        .await?;
+    let temp = dir.join(format!(
+        ".{index}.part.{}.{}.tmp",
+        std::process::id(),
+        TEMP_COUNTER.fetch_add(1, Ordering::Relaxed),
+    ));
+    tokio::fs::write(&temp, bytes)
+        .await
+        .map_err(|error| anyhow::anyhow!("写入上传分片失败：{error}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Err(error) =
+            tokio::fs::set_permissions(&temp, std::fs::Permissions::from_mode(0o600)).await
+        {
+            let _ = tokio::fs::remove_file(&temp).await;
+            return Err(error.into());
+        }
+    }
+    if let Err(error) = tokio::fs::rename(&temp, &destination).await {
+        let _ = tokio::fs::remove_file(&temp).await;
+        return Err(error.into());
+    }
+    if let Ok(file) = tokio::fs::OpenOptions::new().write(true).open(&destination).await {
+        file.sync_all().await?;
+    }
     Ok(())
 }
 
