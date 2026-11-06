@@ -2574,6 +2574,13 @@ async fn approve(
                     }
                 }
             }
+            // The license now has a published theme; clear any first-license
+            // deadline so it can never be auto-revoked for inactivity.
+            if let Err(error) =
+                crate::authors::schedule_grace_if_needed(&state.db, &state.paths, hash).await
+            {
+                tracing::warn!("author grace scheduling failed: {error:#}");
+            }
         }
     }
     crate::accounts::finish_submission(

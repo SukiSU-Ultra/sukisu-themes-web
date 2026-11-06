@@ -306,6 +306,7 @@
     "修改作者限制": "Change author restrictions",
     "自动撤销作者许可": "Auto-revoke author license",
     "批准作者申请": "Approve author request",
+    "自动清理：作者许可已生效": "Automatic cleanup: author license already active",
     "拒绝作者申请": "Reject author request",
     "批准主题": "Approve theme",
     "拒绝主题": "Reject theme",

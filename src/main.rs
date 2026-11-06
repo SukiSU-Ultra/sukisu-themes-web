@@ -115,6 +115,13 @@ async fn run(settings: config::StorageSettings) -> anyhow::Result<()> {
     if let Err(error) = authors::import_legacy_authors(&state.db, &state.paths).await {
         tracing::warn!("author import warning: {error:#}");
     }
+    match authors::reconcile_stale_author_requests(&state.db).await {
+        Ok(updated) if !updated.is_empty() => {
+            tracing::info!(count = updated.len(), "reconciled stale author requests");
+        }
+        Ok(_) => {}
+        Err(error) => tracing::warn!("author request reconcile warning: {error:#}"),
+    }
     if let Err(error) = authors::revoke_inactive_authors(&state.db, &state.paths).await {
         tracing::warn!("author auto-revoke warning: {error:#}");
     }
@@ -195,6 +202,9 @@ async fn run(settings: config::StorageSettings) -> anyhow::Result<()> {
             }
             if let Err(error) = comments::purge_expired(&cleanup_state.db).await {
                 tracing::warn!("comment cleanup warning: {error:#}");
+            }
+            if let Err(error) = authors::reconcile_stale_author_requests(&cleanup_state.db).await {
+                tracing::warn!("author request reconcile warning: {error:#}");
             }
             if let Err(error) =
                 authors::revoke_inactive_authors(&cleanup_state.db, &cleanup_state.paths).await

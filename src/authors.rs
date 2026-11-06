@@ -734,6 +734,63 @@ pub async fn approve_pending_requests_for_submission(
     Ok(approved)
 }
 
+/// Close pending author requests that are already satisfied: the license is
+/// active and bound to the same account. Older theme approvals activated the
+/// license but could leave the author application pending forever.
+pub async fn reconcile_stale_author_requests(db: &Database) -> Result<Vec<(String, String)>> {
+    let now = now_iso();
+    let updated = db
+        .call(move |conn| {
+            let transaction = conn.transaction()?;
+            let rows = {
+                let mut statement = transaction.prepare(
+                    "SELECT r.id, r.author_hash
+                     FROM authors.author_requests r
+                     JOIN authors.authors a ON a.hash = r.author_hash
+                     WHERE r.status = 'pending'
+                       AND r.kind IN ('new', 'bind')
+                       AND r.author_hash IS NOT NULL
+                       AND a.status = 'active'
+                       AND a.user_id = r.user_id",
+                )?;
+                // Bind the rows before the block ends so the prepared statement is
+                // not dropped while the mapped rows still borrow it.
+                let rows = statement
+                    .query_map([], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                rows
+            };
+            let mut updated = Vec::new();
+            for (id, hash) in rows {
+                transaction.execute(
+                    "UPDATE authors.author_requests
+                     SET status = 'approved', reviewed_at = ?2, reviewed_by = 'system',
+                         reject_reason = NULL, generated_author_hash = ?3
+                     WHERE id = ?1 AND status = 'pending'",
+                    params![&id, &now, &hash],
+                )?;
+                updated.push((id, hash));
+            }
+            transaction.commit()?;
+            Ok(updated)
+        })
+        .await?;
+    for (id, _) in &updated {
+        let _ = crate::accounts::audit(
+            db,
+            Some("system"),
+            "author.request.approve",
+            Some("author_request"),
+            Some(id),
+            Some("自动清理：作者许可已生效"),
+        )
+        .await;
+    }
+    Ok(updated)
+}
+
 pub async fn count_pending_author_requests(db: &Database, paths: &Paths) -> Result<i64> {
     let pairs = pending_submission_author_pairs(paths);
     db.call(move |conn| {
@@ -1382,6 +1439,67 @@ mod tests {
         assert_eq!(request.status, "approved");
         assert!(!has_pending_request(&db, "u1").await.unwrap());
         assert_eq!(count_pending_author_requests(&db, &paths).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn reconciles_stale_requests_for_active_licenses() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open_test(dir.path()).await.unwrap();
+        seed_user(&db, "u1", "alice").await;
+
+        let active_hash = author_key("1111111111111111");
+        create_author(
+            &db,
+            &active_hash,
+            &author_fingerprint(&active_hash),
+            "alice",
+            Some("u1"),
+            "active",
+        )
+        .await
+        .unwrap();
+        let stale_id = create_author_request(
+            &db,
+            "u1",
+            "new",
+            Some(&active_hash),
+            "alice",
+            None,
+        )
+        .await
+        .unwrap();
+
+        let pending_hash = author_key("2222222222222222");
+        create_author(
+            &db,
+            &pending_hash,
+            &author_fingerprint(&pending_hash),
+            "alice2",
+            Some("u1"),
+            "pending",
+        )
+        .await
+        .unwrap();
+        let pending_id = create_author_request(
+            &db,
+            "u1",
+            "bind",
+            Some(&pending_hash),
+            "alice2",
+            None,
+        )
+        .await
+        .unwrap();
+
+        let updated = reconcile_stale_author_requests(&db).await.unwrap();
+        assert_eq!(updated, vec![(stale_id.clone(), active_hash.clone())]);
+        let stale = author_request_by_id(&db, &stale_id).await.unwrap().unwrap();
+        assert_eq!(stale.status, "approved");
+        let pending = author_request_by_id(&db, &pending_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(pending.status, "pending");
     }
 
     #[tokio::test]
