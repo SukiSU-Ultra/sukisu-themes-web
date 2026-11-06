@@ -1084,7 +1084,7 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
     const card = document.createElement('div');
     card.className = 'theme-card';
     const img = theme.previewPath
-      ? '<div class="theme-cover"><img src="' + assetUrl(theme.previewPath) + '" alt="">' +
+      ? '<div class="theme-cover"><img src="' + assetUrl(theme.previewPath) + '" alt="" loading="lazy" decoding="async">' +
         (isAdaptiveTheme(theme) ? adaptiveBadge() : '') + '</div>'
       : '';
     const sha = String(theme.sha256 || '');
@@ -1133,7 +1133,7 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
     const hero = images.length ? assetUrl(images[0]) : '';
     const thumbs = images.length > 1
       ? '<div class="dialog-thumbs">' + images.map((path, index) =>
-        '<button type="button" class="' + (index === 0 ? 'active' : '') + '" data-src="' + escapeHtml(assetUrl(path)) + '"><img src="' + escapeHtml(assetUrl(path)) + '" alt=""></button>'
+        '<button type="button" class="' + (index === 0 ? 'active' : '') + '" data-src="' + escapeHtml(assetUrl(path)) + '"><img src="' + escapeHtml(assetUrl(path)) + '" alt="" loading="lazy" decoding="async"></button>'
       ).join('') + '</div>'
       : '';
     const sha = String(theme.sha256 || '');
@@ -1235,7 +1235,7 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
     items.forEach(item => {
       const el = document.createElement('div');
       el.className = 'item';
-      const preview = item.previewPath ? '<img src="' + assetUrl(item.previewPath) + '" style="width:88px;height:52px;object-fit:cover;border-radius:8px">' : '';
+      const preview = item.previewPath ? '<img src="' + assetUrl(item.previewPath) + '" style="width:88px;height:52px;object-fit:cover;border-radius:8px" loading="lazy" decoding="async">' : '';
       const sha = String(item.sha256 || '');
       const shaText = sha ? 'SHA-256 ' + escapeHtml(sha.slice(0, 16)) + '…' : 'SHA-256 未生成';
       const flow = item.status === 'approved'
@@ -1380,7 +1380,7 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
       const row = document.createElement('div');
       row.className = 'popular-theme';
       const cover = theme.previewPath
-        ? '<img class="cover" src="' + escapeHtml(assetUrl(theme.previewPath)) + '" alt="" loading="lazy">'
+        ? '<img class="cover" src="' + escapeHtml(assetUrl(theme.previewPath)) + '" alt="" loading="lazy" decoding="async">'
         : '';
       row.innerHTML = '<span class="popular-rank">' + (index + 1) + '</span>' + cover +
         '<div class="popular-body"><b>' + escapeHtml(theme.name || theme.id) + '</b>' +
@@ -1419,7 +1419,7 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
       const row = document.createElement('div');
       row.className = 'popular-theme';
       const avatar = author.avatarUrl
-        ? '<img class="avatar" src="' + escapeHtml(author.avatarUrl) + '" alt="" loading="lazy">'
+        ? '<img class="avatar" src="' + escapeHtml(author.avatarUrl) + '" alt="" loading="lazy" decoding="async">'
         : '';
       row.innerHTML = '<span class="popular-rank">' + (index + 1) + '</span>' + avatar +
         '<div class="popular-body"><b>' + escapeHtml(author.name || '未知作者') + '</b>' +
@@ -1456,7 +1456,7 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
     const card = document.createElement('div');
     card.className = 'theme-card';
     const cover = theme.previewPath
-      ? '<div class="theme-cover"><img src="' + escapeHtml(assetUrl(theme.previewPath)) + '" alt="" loading="lazy">' +
+      ? '<div class="theme-cover"><img src="' + escapeHtml(assetUrl(theme.previewPath)) + '" alt="" loading="lazy" decoding="async">' +
         (theme.r18 ? r18Badge() : '') +
         (isAdaptiveTheme(theme) ? adaptiveBadge() : '') + '</div>'
       : '';
@@ -1584,7 +1584,7 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
     const hero = images.length ? assetUrl(images[0]) : '';
     const thumbs = images.length > 1
       ? '<div class="dialog-thumbs">' + images.map((path, index) =>
-        '<button type="button" class="' + (index === 0 ? 'active' : '') + '" data-src="' + escapeHtml(assetUrl(path)) + '"><img src="' + escapeHtml(assetUrl(path)) + '" alt=""></button>'
+        '<button type="button" class="' + (index === 0 ? 'active' : '') + '" data-src="' + escapeHtml(assetUrl(path)) + '"><img src="' + escapeHtml(assetUrl(path)) + '" alt="" loading="lazy" decoding="async"></button>'
       ).join('') + '</div>'
       : '';
     const sha = String(theme.sha256 || '');
@@ -1707,7 +1707,7 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
         escapeHtml(comment.id) + '"' + themeAttr + '>删除</button>');
     }
     const avatar = comment.avatarUrl
-      ? '<img class="comment-avatar" src="' + escapeHtml(comment.avatarUrl) + '" alt="" loading="lazy">'
+      ? '<img class="comment-avatar" src="' + escapeHtml(comment.avatarUrl) + '" alt="" loading="lazy" decoding="async">'
       : '<span class="comment-avatar">' + escapeHtml(initial) + '</span>';
     return '<div class="comment-item">' +
       avatar +
@@ -2556,7 +2556,7 @@ function renderHistory(kind) {
     const author = item.themeAuthor || '未知作者';
     const checked = state.selected.has(id);
     const cover = item.themePreviewUrl
-      ? '<img src="' + escapeHtml(item.themePreviewUrl) + '" alt="" loading="lazy">'
+      ? '<img src="' + escapeHtml(item.themePreviewUrl) + '" alt="" loading="lazy" decoding="async">'
       : '<span class="history-cover">' + escapeHtml(name.slice(0, 1).toUpperCase()) + '</span>';
     return '<article class="history-row' + (checked ? ' selected' : '') + '" data-history-id="' + escapeHtml(id) +
       '" data-theme-id="' + escapeHtml(item.themeId || '') + '">' +
@@ -2901,7 +2901,7 @@ async function loadReportHistory() {
     $('appealsEmpty').classList.toggle('hidden', appeals.length > 0);
     const historyCard = (item, title, meta) => {
       const thumb = item.themePreviewUrl
-        ? '<img src="' + escapeHtml(item.themePreviewUrl) + '" alt="" loading="lazy" style="width:52px;height:52px;object-fit:cover;border-radius:8px;flex:none">'
+        ? '<img src="' + escapeHtml(item.themePreviewUrl) + '" alt="" loading="lazy" decoding="async" style="width:52px;height:52px;object-fit:cover;border-radius:8px;flex:none">'
         : '';
       return '<div class="list-item"><div class="item-head">' + thumb + '<b>' + escapeHtml(title) +
         '</b><span class="pill">' + escapeHtml(caseStatus(item.status)) + '</span></div><div class="item-meta">' +

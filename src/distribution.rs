@@ -57,6 +57,7 @@ impl Default for DistributionConfig {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(into = "NodeDisk", try_from = "NodeDisk")]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Node {
     pub id: String,
@@ -67,6 +68,66 @@ pub struct Node {
     #[serde(default = "default_true")]
     pub upload_enabled: bool,
     pub priority: i32,
+}
+
+/// On-disk shape of a node. Loading validates each node instead of dropping it, so a
+/// stale secret surfaces as a clear error message instead of a silently empty node list.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct NodeDisk {
+    id: String,
+    name: String,
+    base_url: String,
+    secret: String,
+    enabled: bool,
+    #[serde(default = "default_true")]
+    upload_enabled: bool,
+    priority: i32,
+}
+
+impl From<Node> for NodeDisk {
+    fn from(node: Node) -> Self {
+        Self {
+            id: node.id,
+            name: node.name,
+            base_url: node.base_url,
+            secret: node.secret,
+            enabled: node.enabled,
+            upload_enabled: node.upload_enabled,
+            priority: node.priority,
+        }
+    }
+}
+
+impl TryFrom<NodeDisk> for Node {
+    type Error = String;
+
+    fn try_from(node: NodeDisk) -> Result<Self, Self::Error> {
+        if !valid_id(&node.id) {
+            return Err("边缘节点 ID 无效".into());
+        }
+        if node.name.trim().is_empty() || node.name.chars().count() > 48 {
+            return Err(format!("边缘节点「{}」的名称无效", node.id));
+        }
+        normalize_url(&node.base_url).map_err(|error| {
+            format!("边缘节点「{}」的地址无效：{error}", node.name)
+        })?;
+        if !valid_hash(&node.secret) {
+            return Err(format!(
+                "边缘节点「{}」的密钥无效或已失效，请在分发设置中重置节点密钥，并更新该节点的 edge 配置",
+                node.name
+            ));
+        }
+        Ok(Self {
+            id: node.id,
+            name: node.name,
+            base_url: node.base_url,
+            secret: node.secret,
+            enabled: node.enabled,
+            upload_enabled: node.upload_enabled,
+            priority: node.priority,
+        })
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -879,6 +940,36 @@ async fn audit(state: &AppState, actor: &SessionInfo, action: &str, id: Option<&
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn node_config_round_trips_and_rejects_invalid_secrets() {
+        let raw = json!({
+            "enabled": true,
+            "uploadsEnabled": true,
+            "originUrl": "https://origin.example:8443",
+            "strategy": "latency",
+            "syncIntervalSecs": 5,
+            "cacheTtlSecs": 60,
+            "nodes": [{
+                "id": "site-abc123",
+                "name": "edge",
+                "baseUrl": "https://edge.example:20005",
+                "secret": "ab".repeat(32),
+                "enabled": true,
+                "uploadEnabled": true,
+                "priority": 1
+            }]
+        });
+        let config: DistributionConfig = serde_json::from_value(raw.clone()).unwrap();
+        assert_eq!(config.nodes.len(), 1);
+        assert_eq!(
+            serde_json::to_value(&config).unwrap(),
+            raw,
+            "persisted nodes must keep the exact on-disk shape"
+        );
+        let mut broken = raw;
+        broken["nodes"][0]["secret"] = json!("not-a-hash");
+        assert!(serde_json::from_value::<DistributionConfig>(broken).is_err());
+    }
     #[test]
     fn capabilities_bind_path_hash_expiry_and_key() {
         let key = "ab".repeat(32);

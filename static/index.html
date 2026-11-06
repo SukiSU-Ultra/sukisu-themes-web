@@ -1665,7 +1665,7 @@ function renderTopThemes(items) {
     const row = document.createElement('div');
     row.className = 'top-theme';
     const image = theme.previewUrl
-      ? `<img src="${escapeHtml(theme.previewUrl)}" alt="" loading="lazy">`
+      ? `<img src="${escapeHtml(theme.previewUrl)}" alt="" loading="lazy" decoding="async">`
       : '';
     row.innerHTML = `
       <span class="top-theme-rank">${index + 1}</span>
@@ -1892,6 +1892,30 @@ function renderThemes(themes) {
   renderThemeGrid();
 }
 
+// Grid cards reuse the fetched <img> elements so refreshes and filters don't
+// re-request every preview; lazy loading keeps offscreen cards off the network
+// until they scroll into view. The versioned preview URLs change when a theme is
+// updated, so a stale entry simply stops being referenced.
+const previewImages = new Map();
+function previewImage(url, name) {
+  if (!url) return '<div class="fallback">暂无预览图</div>';
+  let img = previewImages.get(url);
+  if (!img) {
+    img = document.createElement('img');
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.src = url;
+    previewImages.set(url, img);
+    if (previewImages.size > 400) {
+      // Drop the oldest half; the DOM copies keep showing their image.
+      const keys = Array.from(previewImages.keys()).slice(0, 200);
+      keys.forEach(key => previewImages.delete(key));
+    }
+  }
+  img.alt = name || '';
+  return img.outerHTML;
+}
+
 function renderThemeGrid() {
   const grid = $('themeGrid');
   const filtered = themeItems.filter(theme => matchesQuery(theme, themeQuery));
@@ -1909,14 +1933,12 @@ function renderThemeGrid() {
   filtered.forEach(theme => {
     const card = document.createElement('div');
     card.className = 'theme-card';
-    const preview = (theme.previewUrl
-      ? `<img src="${escapeHtml(theme.previewUrl)}" alt="${escapeHtml(theme.name)}" loading="lazy">`
-      : '<div class="fallback">暂无预览图</div>') +
+    const preview = previewImage(theme.previewUrl, theme.name) +
       (isR18Theme(theme) ? r18Badge() : '') +
       (isAdaptiveTheme(theme) ? adaptiveBadge() : '');
     const tags = renderTagChips(theme.tags, 5);
     const avatar = theme.avatarUrl
-      ? `<img class="author-avatar" src="${escapeHtml(theme.avatarUrl)}" alt="" loading="lazy">`
+      ? `<img class="author-avatar" src="${escapeHtml(theme.avatarUrl)}" alt="" loading="lazy" decoding="async">`
       : '';
     card.innerHTML = `
       <div class="theme-preview">${preview}</div>
@@ -1980,7 +2002,7 @@ function openThemeDetail(theme) {
   if (!dialog || typeof dialog.showModal !== 'function') return;
   $('themeDetailTitle').textContent = theme.name || theme.id || '主题详情';
   const preview = theme.previewUrl
-    ? `<div class="theme-detail-cover"><img class="theme-detail-hero" src="${escapeHtml(theme.previewUrl)}" alt="${escapeHtml(theme.name)}" loading="lazy">${isR18Theme(theme) ? r18Badge() : ''}${isAdaptiveTheme(theme) ? adaptiveBadge() : ''}</div>`
+    ? `<div class="theme-detail-cover"><img class="theme-detail-hero" src="${escapeHtml(theme.previewUrl)}" alt="${escapeHtml(theme.name)}" decoding="async" fetchpriority="high">${isR18Theme(theme) ? r18Badge() : ''}${isAdaptiveTheme(theme) ? adaptiveBadge() : ''}</div>`
     : '';
   const tags = renderTagChips(theme.tags);
   const adaptiveMeta = isAdaptiveTheme(theme)
@@ -2345,7 +2367,7 @@ function renderPendingList() {
   }
   filtered.forEach(item => {
     const preview = (item.previewUrl
-      ? `<img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.name)}" loading="lazy">`
+      ? `<img src="${escapeHtml(item.previewUrl)}" alt="${escapeHtml(item.name)}" loading="lazy" decoding="async">`
       : '<div class="fallback">暂无预览图</div>') + (isAdaptiveTheme(item) ? adaptiveBadge() : '');
     const tags = renderTagChips(item.tags, 5);
     const avatar = item.avatarUrl
@@ -5005,6 +5027,7 @@ async function refresh(silent = false, includePage = true) {
   try {
     render(await api('/status'));
     if (includePage) await loadCurrentPageData();
+    if (includePage && currentPage === 'mirrors') await loadDistribution();
   } catch (error) {
     $('topStatus').textContent = '连接失败';
     $('sideStatus').textContent = '连接失败';

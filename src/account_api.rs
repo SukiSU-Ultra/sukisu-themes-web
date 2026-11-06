@@ -2394,24 +2394,27 @@ pub(crate) fn discover_theme_json(
     stats: &HashMap<String, crate::db::ThemeStats>,
 ) -> Value {
     let theme_stats = stats.get(&theme.id).copied().unwrap_or_default();
+    // `v` makes the URL content-versioned so a replaced preview is fetched again,
+    // while unchanged assets can be cached aggressively by the browser.
+    let version = quote_query(&theme.updated_at);
     let preview_url = if theme.preview_path.is_empty() {
         String::new()
     } else {
         format!(
-            "/account/api/preview?path={}",
+            "/account/api/preview?path={}&v={version}",
             quote_query(&theme.preview_path)
         )
     };
     let screenshot_urls: Vec<String> = theme
         .screenshot_paths
         .iter()
-        .map(|path| format!("/account/api/preview?path={}", quote_query(path)))
+        .map(|path| format!("/account/api/preview?path={}&v={version}", quote_query(path)))
         .collect();
     let avatar_url = theme
         .avatar_path
         .as_deref()
         .filter(|path| !path.is_empty())
-        .map(|path| format!("/account/api/preview?path={}", quote_query(path)))
+        .map(|path| format!("/account/api/preview?path={}&v={version}", quote_query(path)))
         .unwrap_or_default();
     json!({
         "id": theme.id,
@@ -3029,6 +3032,11 @@ async fn delete_submission(
 #[derive(Deserialize)]
 struct PreviewQuery {
     path: String,
+    /// Asset version. Versioned keys may be cached for a long time; unversioned
+    /// requests (catalog URLs, rotated edge routes) must be revalidated so a
+    /// replaced preview shows up immediately.
+    #[serde(default)]
+    v: Option<String>,
 }
 
 async fn account_preview(
@@ -3040,6 +3048,12 @@ async fn account_preview(
     if path.is_empty() || path.contains("..") || path.contains('\\') {
         return Err(ApiError::bad("无效的预览路径"));
     }
+    let versioned = query.v.as_deref().is_some_and(|v| !v.trim().is_empty());
+    let published_ttl = if versioned {
+        "private, max-age=604800, immutable"
+    } else {
+        "private, no-cache"
+    };
     let mut cache_control = "private, no-store";
     let allowed = if path.starts_with("avatars/users/") {
         path.starts_with(&format!("avatars/users/{}", session.user_id)) || session.role == "admin"
@@ -3051,8 +3065,9 @@ async fn account_preview(
             .is_some()
             || session.role == "admin"
     } else if path.starts_with("avatars/authors/") {
-        // Author avatars are public store assets.
-        cache_control = "private, max-age=300";
+        // Author avatars are public store assets. They can be replaced in place,
+        // so an unversioned request is revalidated on every navigation.
+        cache_control = published_ttl;
         true
     } else {
         // Published preview/screenshot assets are public to signed-in users.
@@ -3078,7 +3093,7 @@ async fn account_preview(
             false
         };
         if published {
-            cache_control = "private, max-age=3600";
+            cache_control = published_ttl;
         }
         published || owned || session.role == "admin"
     };

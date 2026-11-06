@@ -1678,6 +1678,10 @@ async fn authors(
 #[derive(Deserialize)]
 struct PreviewQuery {
     path: String,
+    /// Asset version: present only for content-addressed keys, which can be cached
+    /// for a long time. Unversioned requests are revalidated on every load.
+    #[serde(default)]
+    v: Option<String>,
 }
 
 async fn preview(
@@ -1719,10 +1723,12 @@ async fn preview(
         .serve(&relative, None)
         .await
         .map_err(|_| ApiError::not_found("not found"))?;
-    let cache_control = if relative.starts_with("avatars/") {
-        "private, max-age=300"
+    let cache_control = if query.v.as_deref().is_some_and(|v| !v.trim().is_empty()) {
+        "private, max-age=604800, immutable"
     } else {
-        "private, max-age=3600"
+        // Avatars and previews can be replaced in place; an unversioned URL must be
+        // revalidated so the console never shows a stale image.
+        "private, no-cache"
     };
     serve_object_response(object, cache_control, state.download_buffer_bytes())
 }

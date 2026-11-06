@@ -786,8 +786,9 @@ pub fn pending_submissions(paths: &Paths) -> Vec<Value> {
         if let Some(avatar) = &meta.avatar {
             if directory.join(avatar).is_file() {
                 avatar_url = format!(
-                    "/admin/api/preview?path={}",
-                    quote_query(&format!("pending/{}/{}", name, avatar))
+                    "/admin/api/preview?path={}&v={}",
+                    quote_query(&format!("pending/{}/{}", name, avatar)),
+                    quote_query(&meta.submitted_at)
                 );
             }
         }
@@ -819,7 +820,11 @@ pub fn pending_submissions(paths: &Paths) -> Vec<Value> {
             "formatVersion": meta.format_version,
             "sha256": meta.sha256,
             "deepValidated": deep,
-            "previewUrl": format!("/admin/api/preview?path={}", quote_query(&preview_rel)),
+            "previewUrl": format!(
+                "/admin/api/preview?path={}&v={}",
+                quote_query(&preview_rel),
+                quote_query(&meta.submitted_at)
+            ),
             "avatarUrl": avatar_url,
         }));
     }
@@ -1048,7 +1053,13 @@ pub async fn admin_themes(paths: &Paths, stats: &HashMap<String, ThemeStats>) ->
                 .avatar_path
                 .as_ref()
                 .filter(|path| !path.is_empty())
-                .map(|path| format!("/admin/api/preview?path={}", quote_query(path)))
+                .map(|path| {
+                    format!(
+                        "/admin/api/preview?path={}&v={}",
+                        quote_query(path),
+                        quote_query(&theme.updated_at)
+                    )
+                })
                 .unwrap_or_default();
             json!({
                 "id": theme.id,
