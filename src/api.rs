@@ -599,8 +599,13 @@ async fn request_context(request: Request<Body>, next: Next) -> Response {
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
         .map(|info| info.0);
+    let account_base = request
+        .headers()
+        .get("x-sukisu-site-public")
+        .and_then(|value| value.to_str().ok())
+        .and_then(crate::mailer::normalize_account_base);
     let ip = client_ip(request.headers(), peer);
-    REQUEST_IP.scope(ip, next.run(request)).await
+    crate::mailer::scope_account_base(account_base, REQUEST_IP.scope(ip, next.run(request))).await
 }
 
 async fn csrf_guard(request: Request, next: Next) -> Response {

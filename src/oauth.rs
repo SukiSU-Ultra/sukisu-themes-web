@@ -36,7 +36,7 @@ impl GithubSettings {
             .unwrap_or_else(|| {
                 format!(
                     "{}api/auth/github/callback",
-                    crate::mailer::account_base_url(paths)
+                    crate::mailer::configured_account_base_url(paths)
                 )
             });
         Some(Self {

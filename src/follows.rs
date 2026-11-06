@@ -79,9 +79,10 @@ pub async fn following_authors(
     let follower_id = follower_id.to_string();
     db.call(move |conn| {
         let mut statement = conn.prepare(
-            "SELECT f.author_hash, COALESCE(a.display_name, '')
+            "SELECT f.author_hash, COALESCE(a.display_name, o.display_name, '')
              FROM social.user_follows f
              LEFT JOIN authors.authors a ON a.hash = f.author_hash
+             LEFT JOIN authors.author_owners o ON o.author_hash = f.author_hash
              WHERE f.follower_id = ?1
              ORDER BY f.created_at DESC",
         )?;
@@ -113,15 +114,22 @@ pub async fn following_count(db: &Database, user_id: &str) -> anyhow::Result<i64
     .await
 }
 
-/// Number of distinct users following any active author identity owned by `user_id`.
+/// Number of distinct users following any author identity ever owned by
+/// `user_id`. Revoked or deleted licenses still count so the follower list
+/// stays permanent.
 pub async fn follower_count(db: &Database, user_id: &str) -> anyhow::Result<i64> {
     let user_id = user_id.to_string();
     db.call(move |conn| {
         let count: i64 = conn.query_row(
             "SELECT COUNT(DISTINCT f.follower_id)
              FROM social.user_follows f
-             JOIN authors.authors a ON a.hash = f.author_hash
-             WHERE a.user_id = ?1 AND a.status = 'active'",
+             WHERE EXISTS (
+                 SELECT 1 FROM authors.authors a
+                 WHERE a.hash = f.author_hash AND a.user_id = ?1
+             ) OR EXISTS (
+                 SELECT 1 FROM authors.author_owners o
+                 WHERE o.author_hash = f.author_hash AND o.user_id = ?1
+             )",
             [user_id],
             |row| row.get(0),
         )?;

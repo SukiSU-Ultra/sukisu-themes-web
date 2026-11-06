@@ -166,6 +166,13 @@ CREATE TABLE IF NOT EXISTS submissions (
 CREATE INDEX IF NOT EXISTS submissions_user_idx ON submissions(user_id, submitted_at);
 CREATE INDEX IF NOT EXISTS submissions_status_idx ON submissions(status, submitted_at);
 CREATE INDEX IF NOT EXISTS submissions_theme_idx ON submissions(theme_id);
+CREATE TABLE IF NOT EXISTS author_owners (
+    author_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    display_name TEXT,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS author_owners_user_idx ON author_owners(user_id);
 
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -390,6 +397,13 @@ CREATE TABLE IF NOT EXISTS submissions (
 CREATE INDEX IF NOT EXISTS submissions_user_idx ON submissions(user_id, submitted_at);
 CREATE INDEX IF NOT EXISTS submissions_status_idx ON submissions(status, submitted_at);
 CREATE INDEX IF NOT EXISTS submissions_theme_idx ON submissions(theme_id);
+CREATE TABLE IF NOT EXISTS author_owners (
+    author_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    display_name TEXT,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS author_owners_user_idx ON author_owners(user_id);
 CREATE TABLE IF NOT EXISTS submission_drafts (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -1306,6 +1320,8 @@ impl Database {
                 "UPDATE authors.submissions SET user_id = NULL
                  WHERE user_id IS NOT NULL
                    AND user_id NOT IN (SELECT id FROM users)",
+                "DELETE FROM authors.author_owners
+                 WHERE user_id NOT IN (SELECT id FROM users)",
             ] {
                 changed += conn.execute(sql, [])?;
             }

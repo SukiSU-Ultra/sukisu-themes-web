@@ -2394,12 +2394,10 @@ async fn owned_theme_ids(state: &AppState, session: &SessionInfo) -> ApiResult<H
     if session.role == "admin" {
         return Ok(HashSet::new());
     }
-    let profile_authors = authors::authors_for_user(&state.db, &session.user_id)
+    let hashes: HashSet<String> = authors::author_hashes_for_user(&state.db, &session.user_id)
         .await
-        .map_err(ApiError::internal)?;
-    let hashes: HashSet<String> = profile_authors
+        .map_err(ApiError::internal)?
         .into_iter()
-        .map(|author| author.hash)
         .collect();
     let index = state.meta_index().await;
     Ok(index.owned_ids(&hashes, &session.username))
@@ -2627,13 +2625,16 @@ async fn my_themes(
     State(state): State<AppState>,
     Extension(session): Extension<SessionInfo>,
 ) -> ApiResult<Json<Value>> {
-    let profile_authors = authors::authors_for_user(&state.db, &session.user_id)
+    let hashes: HashSet<String> = authors::author_hashes_for_user(&state.db, &session.user_id)
         .await
-        .map_err(ApiError::internal)?;
-    let hashes: HashSet<String> = profile_authors
+        .map_err(ApiError::internal)?
         .into_iter()
-        .map(|author| author.hash)
         .collect();
+    let editable = session.role == "admin"
+        || authors::active_author_for_user(&state.db, &session.user_id)
+            .await
+            .map_err(ApiError::internal)?
+            .is_some();
     let username = session.username.trim().to_string();
     let stats = state.theme_stats();
     let index = state.meta_index().await;
@@ -2667,6 +2668,7 @@ async fn my_themes(
             "status": if withdrawn_at.is_some() { "withdrawn" } else { "published" },
             "withdrawnAt": withdrawn_at,
             "expiresAt": expires_at,
+            "editable": editable,
             "downloads": theme_stats.downloads,
             "heat": theme_stats.heat,
         }));
@@ -2693,16 +2695,34 @@ pub(crate) async fn theme_owned_by_user(
         .as_deref()
         .filter(|value| !value.is_empty())
     {
-        let profile_authors = authors::authors_for_user(&state.db, &session.user_id)
+        let hashes = authors::author_hashes_for_user(&state.db, &session.user_id)
             .await
             .map_err(ApiError::internal)?;
-        return Ok(profile_authors.iter().any(|author| author.hash == hash));
+        return Ok(hashes.iter().any(|owned| owned.as_str() == hash));
     }
     Ok(!session.username.trim().is_empty()
         && meta
             .author
             .trim()
             .eq_ignore_ascii_case(session.username.trim()))
+}
+
+/// Mutating a published theme needs a current author license. Revoked authors
+/// keep read/download access to their old themes but cannot manage them until
+/// a license is approved again.
+async fn require_active_author(state: &AppState, session: &SessionInfo) -> ApiResult<()> {
+    if session.role == "admin" {
+        return Ok(());
+    }
+    let active = authors::active_author_for_user(&state.db, &session.user_id)
+        .await
+        .map_err(ApiError::internal)?;
+    if active.is_none() {
+        return Err(ApiError::forbidden(
+            "作者身份已被撤销，现有主题只能下载；重新获得作者身份后才能继续管理",
+        ));
+    }
+    Ok(())
 }
 
 async fn download_my_theme(
@@ -2791,6 +2811,7 @@ async fn withdraw_my_theme(
     if !theme_owned_by_user(&state, &session, &meta).await? {
         return Err(ApiError::forbidden("无权撤回该主题"));
     }
+    require_active_author(&state, &session).await?;
     if let Some(withdrawn_at) = meta.withdrawn_at.as_deref() {
         return Ok(Json(json!({
             "ok": true,
@@ -2854,6 +2875,7 @@ async fn restore_my_theme(
     if !theme_owned_by_user(&state, &session, &meta).await? {
         return Err(ApiError::forbidden("无权恢复该主题"));
     }
+    require_active_author(&state, &session).await?;
     let Some(withdrawn_at) = meta.withdrawn_at.as_deref() else {
         return Err(ApiError::bad("该主题未撤回"));
     };
@@ -2918,6 +2940,7 @@ async fn delete_my_theme(
     if !theme_owned_by_user(&state, &session, &meta).await? {
         return Err(ApiError::forbidden("无权删除该主题"));
     }
+    require_active_author(&state, &session).await?;
     if meta.withdrawn_at.is_none() {
         return Err(ApiError::bad("只有已撤回主题可以永久删除"));
     }
@@ -3114,13 +3137,12 @@ async fn account_preview(
         let owned = if published {
             false
         } else if let Some(meta) = index.theme_for_asset(&path) {
-            let profile_authors = authors::authors_for_user(&state.db, &session.user_id)
-                .await
-                .map_err(ApiError::internal)?;
-            let hashes: HashSet<String> = profile_authors
-                .into_iter()
-                .map(|author| author.hash)
-                .collect();
+            let hashes: HashSet<String> =
+                authors::author_hashes_for_user(&state.db, &session.user_id)
+                    .await
+                    .map_err(ApiError::internal)?
+                    .into_iter()
+                    .collect();
             index
                 .owned_ids(&hashes, &session.username)
                 .contains(&meta.id)

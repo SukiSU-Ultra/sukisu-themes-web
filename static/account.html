@@ -1138,13 +1138,16 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
       : '';
     const sha = String(theme.sha256 || '');
     const withdrawn = theme.status === 'withdrawn';
+    const editable = theme.editable !== false;
     const tags = renderTagChips(theme.tags);
     const adaptiveMeta = isAdaptiveTheme(theme)
       ? '<span class="adaptive-chip">' + escapeHtml(adaptiveTagLabel()) + '</span>'
       : '';
-    const withdrawAction = withdrawn
-      ? '<button class="btn" id="myThemeRestore" type="button">重新发布</button><button class="btn danger" id="myThemeDelete" type="button">永久删除</button>'
-      : '<button class="btn danger" id="myThemeWithdraw" type="button">撤回并下架</button>';
+    const withdrawAction = !editable
+      ? '<span class="hint">作者身份已撤销，现有主题只能下载；重新获得作者身份后才能继续管理。</span>'
+      : withdrawn
+        ? '<button class="btn" id="myThemeRestore" type="button">重新发布</button><button class="btn danger" id="myThemeDelete" type="button">永久删除</button>'
+        : '<button class="btn danger" id="myThemeWithdraw" type="button">撤回并下架</button>';
     $('myThemeBody').innerHTML = `
       ${hero ? '<div class="dialog-cover"><img class="dialog-hero" id="myThemeHero" src="' + escapeHtml(hero) + '" alt="">' + (isAdaptiveTheme(theme) ? adaptiveBadge() : '') + '</div>' : ''}
       ${thumbs}

@@ -479,10 +479,12 @@ async fn author_dashboard(
     State(state): State<AppState>,
     Extension(session): Extension<SessionInfo>,
 ) -> ApiResult<Json<Value>> {
-    let author_rows = crate::authors::authors_for_user(&state.db, &session.user_id)
-        .await
-        .map_err(ApiError::internal)?;
-    let hashes: HashSet<String> = author_rows.into_iter().map(|author| author.hash).collect();
+    let hashes: HashSet<String> =
+        crate::authors::author_hashes_for_user(&state.db, &session.user_id)
+            .await
+            .map_err(ApiError::internal)?
+            .into_iter()
+            .collect();
     let index = state.meta_index().await;
     let owned = index.owned_ids(&hashes, &session.username);
     let stats = state.theme_stats();

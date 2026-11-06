@@ -84,6 +84,99 @@ pub async fn authors_for_user(db: &Database, user_id: &str) -> Result<Vec<Author
     .await
 }
 
+/// Every author hash ever tied to the account, including licenses that were
+/// revoked or deleted. Theme ownership uses this so published work stays with
+/// the account after a license is taken away.
+pub async fn author_hashes_for_user(db: &Database, user_id: &str) -> Result<Vec<String>> {
+    let user_id = user_id.to_string();
+    db.call(move |conn| {
+        let mut statement = conn.prepare(
+            "SELECT hash FROM authors.authors WHERE user_id = ?1
+             UNION
+             SELECT author_hash FROM authors.author_owners WHERE user_id = ?1",
+        )?;
+        let rows = statement.query_map([user_id], |row| row.get::<_, String>(0))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    })
+    .await
+}
+
+/// Fills the ownership table from current license rows. Runs at startup so
+/// authors created before the table existed keep their theme list.
+pub async fn backfill_author_owners(db: &Database) -> Result<usize> {
+    db.call(|conn| {
+        Ok(conn.execute(
+            "INSERT INTO authors.author_owners(author_hash, user_id, display_name, updated_at)
+             SELECT hash, user_id, display_name, updated_at FROM authors.authors
+             WHERE user_id IS NOT NULL AND TRIM(user_id) <> ''
+             ON CONFLICT(author_hash) DO UPDATE SET
+                 user_id = excluded.user_id,
+                 display_name = COALESCE(excluded.display_name, author_owners.display_name),
+                 updated_at = excluded.updated_at",
+            [],
+        )?)
+    })
+    .await
+}
+
+/// Recovers ownership for licenses that were already deleted: a theme that
+/// still exists and was submitted by an account belongs to that account.
+pub async fn backfill_author_owners_from_submissions(
+    db: &Database,
+    index: &catalog::MetaIndex,
+) -> Result<usize> {
+    let rows: Vec<(String, String)> = db
+        .call(|conn| {
+            let mut statement = conn.prepare(
+                "SELECT DISTINCT theme_id, user_id FROM authors.submissions
+                 WHERE user_id IS NOT NULL AND TRIM(user_id) <> ''",
+            )?;
+            let mut rows = statement.query([])?;
+            let mut items = Vec::new();
+            while let Some(row) = rows.next()? {
+                items.push((row.get::<_, String>(0)?, row.get::<_, String>(1)?));
+            }
+            Ok(items)
+        })
+        .await?;
+    let mut owners: HashMap<String, (String, Option<String>)> = HashMap::new();
+    for (theme_id, user_id) in rows {
+        let Some(meta) = index.theme_by_id(&theme_id) else {
+            continue;
+        };
+        let Some(hash) = meta
+            .author_hash
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        owners
+            .entry(hash.to_string())
+            .or_insert((user_id, Some(meta.author.clone())));
+    }
+    if owners.is_empty() {
+        return Ok(0);
+    }
+    let now = now_iso();
+    db.call(move |conn| {
+        let transaction = conn.transaction()?;
+        let mut inserted = 0usize;
+        for (hash, (user_id, name)) in owners {
+            inserted += transaction.execute(
+                "INSERT OR IGNORE INTO authors.author_owners
+                    (author_hash, user_id, display_name, updated_at)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![hash, user_id, name, now],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(inserted)
+    })
+    .await
+}
+
 pub async fn active_author_for_user(db: &Database, user_id: &str) -> Result<Option<Author>> {
     let user_id = user_id.to_string();
     db.call(move |conn| {
@@ -123,6 +216,17 @@ pub async fn create_author(
                  updated_at = excluded.updated_at",
             params![insert_hash, fingerprint, display_name, user_id, status, now],
         )?;
+        if let Some(owner) = user_id.as_deref() {
+            conn.execute(
+                "INSERT INTO authors.author_owners(author_hash, user_id, display_name, updated_at)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(author_hash) DO UPDATE SET
+                     user_id = excluded.user_id,
+                     display_name = COALESCE(excluded.display_name, author_owners.display_name),
+                     updated_at = excluded.updated_at",
+                params![insert_hash, owner, display_name, now],
+            )?;
+        }
         Ok(())
     })
     .await?;
@@ -171,6 +275,18 @@ pub async fn set_author_status_with_reason(
              WHERE hash = ?1",
             params![hash, status, approved_at, actor, now, reason],
         )?;
+        if status == "active" {
+            conn.execute(
+                "INSERT INTO authors.author_owners(author_hash, user_id, display_name, updated_at)
+                 SELECT hash, user_id, display_name, ?2 FROM authors.authors
+                 WHERE hash = ?1 AND user_id IS NOT NULL AND TRIM(user_id) <> ''
+                 ON CONFLICT(author_hash) DO UPDATE SET
+                     user_id = excluded.user_id,
+                     display_name = COALESCE(excluded.display_name, author_owners.display_name),
+                     updated_at = excluded.updated_at",
+                params![hash, now],
+            )?;
+        }
         Ok(())
     })
     .await
@@ -179,10 +295,9 @@ pub async fn set_author_status_with_reason(
 pub async fn delete_author(db: &Database, hash: &str) -> Result<usize> {
     let hash = hash.to_string();
     db.call(move |conn| {
-        conn.execute(
-            "DELETE FROM social.user_follows WHERE author_hash = ?1",
-            [&hash],
-        )?;
+        // Follow relationships, comments and favorites belong to the account
+        // and to the theme, not to the license record. Keep them when the
+        // license is removed so they survive a later re-licensing.
         conn.execute(
             "DELETE FROM authors.author_restrictions WHERE author_hash = ?1",
             [&hash],
@@ -234,6 +349,10 @@ pub async fn delete_authors_for_user(db: &Database, user_id: &str) -> Result<usi
             "DELETE FROM authors.submissions WHERE user_id = ?1",
             [&user_id],
         )?;
+        conn.execute(
+            "DELETE FROM authors.author_owners WHERE user_id = ?1",
+            [&user_id],
+        )?;
         Ok(conn.execute(
             "DELETE FROM authors.authors WHERE user_id = ?1",
             [&user_id],
@@ -259,6 +378,15 @@ pub async fn bind_author_to_user(
                  display_name = COALESCE(?3, display_name),
                  updated_at = ?4
              WHERE hash = ?1",
+            params![hash, user_id, display_name, now],
+        )?;
+        conn.execute(
+            "INSERT INTO authors.author_owners(author_hash, user_id, display_name, updated_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(author_hash) DO UPDATE SET
+                 user_id = excluded.user_id,
+                 display_name = COALESCE(excluded.display_name, author_owners.display_name),
+                 updated_at = excluded.updated_at",
             params![hash, user_id, display_name, now],
         )?;
         Ok(())
@@ -1670,5 +1798,77 @@ mod tests {
         let active = author_by_hash(&db, &active_hash).await.unwrap().unwrap();
         assert_eq!(active.status, "active");
         assert_eq!(active.auto_revoke_at, None);
+    }
+
+    #[tokio::test]
+    async fn keeps_theme_ownership_after_license_delete() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open_test(dir.path()).await.unwrap();
+        seed_user(&db, "u1", "alice").await;
+        let hash = author_key("cccccccccccccccc");
+        create_author(
+            &db,
+            &hash,
+            &author_fingerprint(&hash),
+            "Alice",
+            Some("u1"),
+            "active",
+        )
+        .await
+        .unwrap();
+        assert!(author_hashes_for_user(&db, "u1")
+            .await
+            .unwrap()
+            .contains(&hash));
+
+        // Deleting the license record must not detach already published work.
+        delete_author(&db, &hash).await.unwrap();
+        assert!(author_hashes_for_user(&db, "u1")
+            .await
+            .unwrap()
+            .contains(&hash));
+
+        // Re-approving an author license makes the account editable again.
+        create_author(
+            &db,
+            &hash,
+            &author_fingerprint(&hash),
+            "Alice",
+            Some("u1"),
+            "active",
+        )
+        .await
+        .unwrap();
+        assert!(active_author_for_user(&db, "u1")
+            .await
+            .unwrap()
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn backfills_owner_rows_from_existing_licenses() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open_test(dir.path()).await.unwrap();
+        seed_user(&db, "u1", "alice").await;
+        let hash = author_key("dddddddddddddddd");
+        let fingerprint = author_fingerprint(&hash);
+        let insert_hash = hash.clone();
+        db.call(move |conn| {
+            let now = now_iso();
+            conn.execute(
+                "INSERT INTO authors.authors(hash, fingerprint, display_name, user_id, status,
+                                             created_at, updated_at)
+                 VALUES (?1, ?2, 'Alice', 'u1', 'revoked', ?3, ?3)",
+                params![insert_hash, fingerprint, now],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert_eq!(backfill_author_owners(&db).await.unwrap(), 1);
+        assert!(author_hashes_for_user(&db, "u1")
+            .await
+            .unwrap()
+            .contains(&hash));
     }
 }

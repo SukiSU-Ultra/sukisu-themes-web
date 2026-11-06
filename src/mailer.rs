@@ -6,6 +6,34 @@ use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 
 use crate::config::{read_env, Paths};
 
+tokio::task_local! {
+    static REQUEST_ACCOUNT_BASE: String;
+}
+
+/// Accepts the public root URL forwarded by a site peer and turns it into the
+/// account base used in verification/reset links. Only http(s) roots are valid.
+pub(crate) fn normalize_account_base(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
+        return None;
+    }
+    let base = trimmed.trim_end_matches('/');
+    if base.len() < 8 || base.chars().any(char::is_whitespace) {
+        return None;
+    }
+    Some(format!("{base}/account/"))
+}
+
+pub(crate) async fn scope_account_base<F>(base: Option<String>, future: F) -> F::Output
+where
+    F: std::future::Future,
+{
+    match base.filter(|value| !value.is_empty()) {
+        Some(base) => REQUEST_ACCOUNT_BASE.scope(base, future).await,
+        None => future.await,
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct MailSettings {
     pub host: String,
@@ -97,6 +125,17 @@ fn dev_mode() -> bool {
 }
 
 pub fn account_base_url(paths: &Paths) -> String {
+    if let Ok(base) = REQUEST_ACCOUNT_BASE.try_with(|value| value.clone()) {
+        if !base.is_empty() {
+            return base;
+        }
+    }
+    configured_account_base_url(paths)
+}
+
+/// Configured account base, ignoring any request-scoped site override. Used
+/// where the URL must match a fixed registration (e.g. GitHub OAuth callback).
+pub(crate) fn configured_account_base_url(paths: &Paths) -> String {
     let account_env = read_env(&paths.account_env);
     if let Some(url) = account_env
         .get("ACCOUNT_URL")

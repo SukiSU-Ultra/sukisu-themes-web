@@ -962,6 +962,15 @@ impl Host {
         }
         if peer {
             headers.insert(HOP, "1".parse()?);
+            let public = {
+                let config = self.config.read().await;
+                config.url().ok().map(str::to_string)
+            };
+            if let Some(public) = public {
+                if let Ok(value) = public.parse() {
+                    headers.insert("x-sukisu-forwarded-site", value);
+                }
+            }
         }
         let upstream = self
             .client
@@ -1782,14 +1791,37 @@ fn local_static(path: &str) -> Option<Response> {
     Some(response)
 }
 
-async fn proxy(State(host): State<Arc<Host>>, request: Request) -> Response {
+async fn proxy(State(host): State<Arc<Host>>, mut request: Request) -> Response {
     let guard = host.gate.clone().read_owned().await;
     let c = host.config.read().await.clone();
-    let path = request.uri().path();
+    let path = request.uri().path().to_string();
+    // A peer tells us which public site the browser used so verification and
+    // password-reset emails can link back to that node instead of the writer.
+    let forwarded_site = request
+        .headers()
+        .get("x-sukisu-forwarded-site")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string);
+    request.headers_mut().remove("x-sukisu-site-public");
+    request.headers_mut().remove("x-sukisu-forwarded-site");
+    if c.mode == "writer" && request.headers().contains_key(HOP) {
+        if let Some(public) = forwarded_site {
+            if c.peers
+                .iter()
+                .any(|peer| peer.base_url.trim_end_matches('/') == public.trim_end_matches('/'))
+            {
+                if let Ok(value) = public.parse() {
+                    request
+                        .headers_mut()
+                        .insert("x-sukisu-site-public", value);
+                }
+            }
+        }
+    }
     if path.starts_with("/_site/") {
         return StatusCode::NOT_FOUND.into_response();
     }
-    if let Some(response) = local_static(path) {
+    if let Some(response) = local_static(&path) {
         return response;
     }
     if request.method() != axum::http::Method::GET

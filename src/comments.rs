@@ -385,8 +385,8 @@ async fn theme_role(state: &AppState, session: &SessionInfo, theme: &ThemeInfo) 
     let is_admin = session.role == "admin";
     let mut is_author = is_admin;
     if !is_author && !theme.author_hash.is_empty() {
-        if let Ok(list) = authors::authors_for_user(&state.db, &session.user_id).await {
-            is_author = list.iter().any(|author| author.hash == theme.author_hash);
+        if let Ok(hashes) = authors::author_hashes_for_user(&state.db, &session.user_id).await {
+            is_author = hashes.iter().any(|hash| hash == &theme.author_hash);
         }
     }
     // The username fallback only applies to legacy themes without an author hash.
@@ -408,10 +408,10 @@ async fn owned_theme_ids(state: &AppState, session: &SessionInfo) -> HashSet<Str
     if session.role == "admin" {
         return HashSet::new();
     }
-    let Ok(list) = authors::authors_for_user(&state.db, &session.user_id).await else {
+    let Ok(hashes) = authors::author_hashes_for_user(&state.db, &session.user_id).await else {
         return HashSet::new();
     };
-    let hashes: HashSet<String> = list.into_iter().map(|author| author.hash).collect();
+    let hashes: HashSet<String> = hashes.into_iter().collect();
     let index = state.meta_index().await;
     index.owned_ids(&hashes, &session.username)
 }
@@ -422,8 +422,11 @@ async fn theme_author_user_ids(db: &Database, hash: &str) -> HashSet<String> {
     }
     let hash = hash.to_string();
     db.call(move |conn| {
-        let mut statement =
-            conn.prepare("SELECT user_id FROM authors.authors WHERE hash = ?1 AND user_id IS NOT NULL")?;
+        let mut statement = conn.prepare(
+            "SELECT user_id FROM authors.authors WHERE hash = ?1 AND user_id IS NOT NULL
+             UNION
+             SELECT user_id FROM authors.author_owners WHERE author_hash = ?1",
+        )?;
         let mut rows = statement.query(params![hash])?;
         let mut ids = HashSet::new();
         while let Some(row) = rows.next()? {

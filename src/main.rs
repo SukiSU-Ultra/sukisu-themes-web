@@ -122,6 +122,18 @@ async fn run(settings: config::StorageSettings) -> anyhow::Result<()> {
         Ok(_) => {}
         Err(error) => tracing::warn!("author request reconcile warning: {error:#}"),
     }
+    if let Err(error) = authors::backfill_author_owners(&state.db).await {
+        tracing::warn!("author ownership backfill warning: {error:#}");
+    }
+    // Recover ownership for licenses that were deleted before the ownership
+    // table existed: a published theme still remembers the submitting account.
+    let meta_index = state.meta_index().await;
+    if let Err(error) =
+        authors::backfill_author_owners_from_submissions(&state.db, &meta_index).await
+    {
+        tracing::warn!("author ownership recovery warning: {error:#}");
+    }
+    drop(meta_index);
     if let Err(error) = authors::revoke_inactive_authors(&state.db, &state.paths).await {
         tracing::warn!("author auto-revoke warning: {error:#}");
     }

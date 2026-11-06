@@ -67,7 +67,7 @@ fn state_value(state: &AppState) -> Value {
     let callback = env.get("GITHUB_CALLBACK_URL").cloned().unwrap_or_else(|| {
         format!(
             "{}api/auth/github/callback",
-            mailer::account_base_url(&state.paths)
+            mailer::configured_account_base_url(&state.paths)
         )
     });
     let session_ttl_secs = crate::config::web_session_ttl_secs(&state.paths);
