@@ -101,12 +101,17 @@ impl SessionStore {
     }
 
     pub async fn remove(&self, token: &str) {
+        let hash = accounts::hash_token(token);
         if let Ok(mut cache) = self.cache.lock() {
-            let hash = accounts::hash_token(token);
             cache.retain(|(cached_hash, _), _| cached_hash != &hash);
         }
         if let Err(error) = accounts::delete_session(&self.db, token).await {
             tracing::warn!("session removal failed: {error:#}");
+            return;
+        }
+        // A validate that raced with the delete may have re-cached the row.
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.retain(|(cached_hash, _), _| cached_hash != &hash);
         }
     }
 
@@ -126,6 +131,11 @@ impl SessionStore {
         }
         if let Err(error) = accounts::revoke_user_sessions(&self.db, user_id).await {
             tracing::warn!("session revocation failed: {error:#}");
+            return;
+        }
+        // A validate that raced with the delete may have re-cached a row.
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.retain(|_, cached| cached.info.user_id != user_id);
         }
     }
 }

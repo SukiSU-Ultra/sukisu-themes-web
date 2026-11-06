@@ -280,6 +280,7 @@ async fn user_reject(
     )
     .await
     .map_err(ApiError::internal)?;
+    state.sessions.revoke_user(&id).await;
     accounts::audit(
         &state.db,
         Some(&actor.user_id),
@@ -499,6 +500,9 @@ async fn user_role(
     accounts::set_role(&state.db, &id, &role)
         .await
         .map_err(ApiError::internal)?;
+    // Role changes must take effect immediately; a cached admin session must
+    // not outlive a demotion (or keep an old role after promotion).
+    state.sessions.revoke_user(&id).await;
     accounts::audit(
         &state.db,
         Some(&actor.user_id),

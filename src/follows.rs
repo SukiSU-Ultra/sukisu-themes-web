@@ -283,7 +283,20 @@ async fn admin_list(
             for row in rows {
                 values.push(row?);
             }
-            let total: i64 = conn.query_row("SELECT COUNT(*) FROM social.user_follows", [], |row| row.get(0))?;
+            let total: i64 = conn.query_row(
+                "SELECT COUNT(*)
+                 FROM social.user_follows f
+                 JOIN users u ON u.id = f.follower_id
+                 LEFT JOIN authors.authors a ON a.hash = f.author_hash
+                 LEFT JOIN users ou ON ou.id = a.user_id
+                 WHERE ?1 = 0
+                    OR lower(u.username) LIKE ?2
+                    OR lower(u.display_name) LIKE ?2
+                    OR lower(COALESCE(a.display_name, '')) LIKE ?2
+                    OR lower(COALESCE(ou.username, '')) LIKE ?2",
+                params![filter, pattern],
+                |row| row.get(0),
+            )?;
             Ok((values, total))
         })
         .await

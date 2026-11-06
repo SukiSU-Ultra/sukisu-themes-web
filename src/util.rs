@@ -98,7 +98,20 @@ pub fn normalize_asset_key(key: &str) -> Option<String> {
     if key.is_empty() || key.contains("..") || key.contains('\\') {
         return None;
     }
-    let normalized = key.to_string();
+    // Collapse `.` components so equivalent paths cannot bypass exact-match
+    // checks such as the withdrawn-asset set.
+    let mut parts = Vec::new();
+    for component in Path::new(key).components() {
+        match component {
+            Component::Normal(part) => parts.push(part.to_str()?),
+            Component::CurDir => {}
+            _ => return None,
+        }
+    }
+    let normalized = parts.join("/");
+    if normalized.is_empty() {
+        return None;
+    }
     if !ASSET_PREFIXES
         .iter()
         .any(|prefix| normalized.starts_with(prefix))
@@ -328,6 +341,11 @@ mod tests {
             normalize_asset_key("/avatars/a.webp"),
             Some("avatars/a.webp".to_string())
         );
+        assert_eq!(
+            normalize_asset_key("themes/./1-v1.sukisu"),
+            Some("themes/1-v1.sukisu".to_string())
+        );
+        assert_eq!(normalize_asset_key("themes/../themes/1-v1.sukisu"), None);
         assert_eq!(normalize_asset_key("pending/a/b"), None);
     }
 }

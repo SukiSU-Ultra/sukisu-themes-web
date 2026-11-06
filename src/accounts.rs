@@ -685,7 +685,7 @@ pub async fn validate_session(
         };
         let status: String = row.get(4)?;
         let role: String = row.get(3)?;
-        if status == "disabled" || (expected_scope == "admin" && role != "admin") {
+        if status == "disabled" || status == "rejected" || (expected_scope == "admin" && role != "admin") {
             return Ok(None);
         }
         Ok(Some(SessionInfo {

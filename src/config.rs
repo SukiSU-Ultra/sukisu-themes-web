@@ -707,6 +707,16 @@ pub fn validate_storage_root(value: &str, current_root: Option<&Path>) -> Result
     if !path.is_absolute() {
         bail!("存储目录必须是绝对路径");
     }
+    // `std::path::absolute` does not collapse `..` on all platforms. Rejecting
+    // parent components up front prevents a path such as
+    // `/tmp/x/../../etc` from passing the deny list and then being resolved by
+    // `create_dir_all`.
+    if path
+        .components()
+        .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        bail!("存储目录不能包含 ..");
+    }
     let absolute =
         std::path::absolute(&path).with_context(|| format!("无法解析目录 {}", path.display()))?;
     let resolved = absolute.canonicalize().unwrap_or(absolute);

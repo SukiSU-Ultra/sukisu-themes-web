@@ -677,7 +677,15 @@ async fn download_file(
             let root = Path::new(&source.local.path);
             let root_canon = tokio::fs::canonicalize(root).await?;
             let target = safe_join(&root_canon, &relative).context("路径无效")?;
-            let bytes = tokio::fs::read(&target)
+            // Re-check after canonicalization: the entry could have been
+            // swapped for a symlink between prepare and download.
+            let target_canon = tokio::fs::canonicalize(&target)
+                .await
+                .with_context(|| format!("无法读取文件：{}", file.path))?;
+            if !target_canon.starts_with(&root_canon) {
+                bail!("路径越界");
+            }
+            let bytes = tokio::fs::read(&target_canon)
                 .await
                 .with_context(|| format!("无法读取文件：{}", file.path))?;
             if bytes.len() as u64 > max_bytes {

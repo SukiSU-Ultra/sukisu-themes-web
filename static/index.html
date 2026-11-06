@@ -1185,7 +1185,7 @@
 <script>
 const BASE_PATH = location.pathname.startsWith('/admin') ? '/admin/' : '/';
 const API = BASE_PATH + 'api';
-const LOGIN_URL = '/account/login';
+const LOGIN_URL = '/account/login?admin=1';
 const SETUP_URL = '/admin/setup';
 const $ = id => document.getElementById(id);
 
@@ -4030,6 +4030,8 @@ $('networkApply').addEventListener('click', async () => {
   }
 });
 
+let authSettingsLoaded = false;
+
 async function loadAuthSettings() {
   try {
     const data = await api('/auth-settings');
@@ -4053,7 +4055,9 @@ async function loadAuthSettings() {
     $('authAccountUrl').textContent = data.accountUrl || '–';
     $('authPill').textContent = data.smtpConfigured && data.githubConfigured ? '全部已配置' : '部分配置';
     $('authPill').className = 'pill ' + (data.smtpConfigured && data.githubConfigured ? 'ok' : 'warn');
+    authSettingsLoaded = true;
   } catch (error) {
+    authSettingsLoaded = false;
     toast('认证配置读取失败：' + error.message, 'bad');
   }
 }
@@ -4076,6 +4080,12 @@ function authPayload(clearSmtp, clearGithub) {
 }
 
 async function saveAuthSettings(clearSmtp, clearGithub) {
+  // Every save submits the whole form. Refuse before the GET populated it:
+  // blank SMTP/GitHub fields would otherwise clear the stored configuration.
+  if (!authSettingsLoaded) {
+    toast('认证配置尚未加载完成，请稍后再试', 'bad');
+    return;
+  }
   try {
     const data = await api('/auth-settings', {
       method: 'POST',
@@ -4205,6 +4215,12 @@ $('upUpdate').addEventListener('change', () => {
     $('upAutoId').value = '';
     $('upVersion').value = '1';
     $('upAuthor').value = '';
+    $('upName').value = '';
+    $('upDescription').value = '';
+    $('upTags').value = '';
+    $('upLicense').value = '';
+    $('upMin').value = '0';
+    $('upChangelog').value = '';
     refreshAutoThemeId();
     return;
   }
@@ -4213,6 +4229,17 @@ $('upUpdate').addEventListener('change', () => {
   $('upVersion').value = String((Number(option.dataset.version) || 1) + 1);
   $('upAuthorHash').value = '';
   $('upAuthor').value = option.dataset.author || '';
+  // Prefill the existing metadata; otherwise the required name field blocks
+  // publishing and a partial re-entry would overwrite the other fields.
+  const theme = uploadThemeItems.find(item => item.id === option.value);
+  if (theme) {
+    $('upName').value = theme.name || '';
+    $('upDescription').value = theme.description || '';
+    $('upTags').value = Array.isArray(theme.tags) ? theme.tags.join(', ') : '';
+    $('upLicense').value = theme.license || '';
+    $('upMin').value = String(theme.minManagerVersion ?? 0);
+    $('upChangelog').value = theme.changelog || '';
+  }
 });
 
 let storageJobTimer = null;
@@ -4989,7 +5016,7 @@ async function loadCurrentPageData() {
   if (currentPage === 'pending') await loadPending();
   if (currentPage === 'users') await loadUsers();
   if (currentPage === 'follows') await loadFollows();
-  if (currentPage === 'comments') await loadCommentsAdmin(0);
+  if (currentPage === 'comments') await loadCommentsAdmin(adminCommentOffset);
   if (currentPage === 'community') await loadCommunityAdmin();
   if (currentPage === 'mirrors') await loadMirrorHealth();
   if (currentPage === 'performance') await loadPerformanceStats();

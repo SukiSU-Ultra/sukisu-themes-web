@@ -625,10 +625,15 @@ const MAINTENANCE_AUTH_API_PATHS: &[&str] = &[
     "/auth/login",
     "/auth/logout",
     "/session",
+    "/auth/verify-email",
+    "/auth/resend-verification",
     "/auth/forgot-password",
     "/auth/reset-password",
     "/auth/github/start",
     "/auth/github/callback",
+    "/auth/device/start",
+    "/auth/device/poll",
+    "/auth/device/info",
 ];
 
 /// Routes that stay reachable while the site is in maintenance. The admin console must remain
@@ -658,6 +663,10 @@ fn maintenance_path_exempt(path: &str) -> bool {
             | "/account/reset"
     ) || path.starts_with("/admin")
         || path.starts_with("/distribution/")
+        // Managers need a read credential before they can fetch catalog.json and
+        // learn that the site is in maintenance. Blocking credential bootstrap or
+        // refresh here makes them fall back to a cached, non-maintenance catalog.
+        || path.starts_with("/client/")
         || path.starts_with("/api")
         || path.starts_with("/locales/")
 }
@@ -803,7 +812,21 @@ async fn auth_guard(State(state): State<AppState>, mut request: Request, next: N
         return next.run(request).await;
     }
     let Some(token) = auth::session_token(request.headers(), auth::ADMIN_SESSION_COOKIE) else {
-        return ApiError::unauthorized("未登录").into_response();
+        // Admins who signed in through GitHub/device login hold a user-scoped
+        // session. The role check still decides access; without this fallback
+        // the console would redirect them to a login page that immediately
+        // sends them back to /admin/.
+        let Some(token) = auth::session_token(request.headers(), auth::USER_SESSION_COOKIE) else {
+            return ApiError::unauthorized("未登录").into_response();
+        };
+        let Some(session) = state.sessions.validate(&token, "user").await else {
+            return ApiError::unauthorized("登录已过期，请重新登录").into_response();
+        };
+        if session.role != "admin" {
+            return ApiError::unauthorized("未登录").into_response();
+        }
+        request.extensions_mut().insert(session);
+        return next.run(request).await;
     };
     let Some(session) = state.sessions.validate(&token, "admin").await else {
         return ApiError::unauthorized("登录已过期，请重新登录").into_response();
@@ -1028,10 +1051,19 @@ async fn setup(
 
 async fn session_info(State(state): State<AppState>, headers: HeaderMap) -> Json<Value> {
     let token = auth::session_token(&headers, auth::ADMIN_SESSION_COOKIE);
-    let session = match token.as_deref() {
+    let mut session = match token.as_deref() {
         Some(token) => state.sessions.validate(token, "admin").await,
         None => None,
     };
+    if session.is_none() {
+        if let Some(token) = auth::session_token(&headers, auth::USER_SESSION_COOKIE) {
+            session = state
+                .sessions
+                .validate(&token, "user")
+                .await
+                .filter(|session| session.role == "admin");
+        }
+    }
     let admin_username = crate::accounts::admin_username_hint(&state.db)
         .await
         .ok()
@@ -1550,6 +1582,7 @@ async fn health(State(state): State<AppState>) -> Response {
     let body = json!({
         "ok": status != "down",
         "status": status,
+        "maintenance": state.maintenance.load(Ordering::Relaxed),
         "version": env!("CARGO_PKG_VERSION"),
         "time": crate::util::now_iso(),
         "uptimeSeconds": state.started.elapsed().as_secs(),
@@ -1715,6 +1748,9 @@ async fn preview(
             .body(Body::from(body))
             .map_err(ApiError::internal);
     }
+    let Some(relative) = crate::util::normalize_asset_key(&relative) else {
+        return Err(ApiError::not_found("not found"));
+    };
     if let Some(response) = crate::distribution::redirect_asset(&state, &relative, false).await? {
         return Ok(response);
     }
@@ -1739,7 +1775,11 @@ async fn asset(
     method: Method,
     headers: HeaderMap,
 ) -> ApiResult<Response> {
-    let path = uri.path().trim_start_matches('/').to_string();
+    // Normalize before any exact-match checks (withdrawn assets, mirrors,
+    // download counting) and before resolving the object key.
+    let Some(path) = crate::util::normalize_asset_key(uri.path()) else {
+        return Err(ApiError::not_found("not found"));
+    };
     tracing::debug!("asset request: {path}");
     if state.is_withdrawn_asset(&path) {
         return Err(ApiError::not_found("not found"));
@@ -1797,7 +1837,7 @@ async fn asset(
         let counts = method == Method::GET
             && !mirrored
             && range
-                .map(|value| value.trim_start().starts_with("bytes=0-"))
+                .map(|value| value.trim() == "bytes=0-")
                 .unwrap_or(true);
         if counts {
             state.record_theme_download(&theme_id);
@@ -2155,11 +2195,23 @@ async fn submit(
         return Err(ApiError::conflict("该主题已在审核队列中"));
     }
 
+    if crate::authors::has_restriction(&state.db, &author_hash, "upload")
+        .await
+        .map_err(ApiError::internal)?
+    {
+        return Err(ApiError::forbidden("该作者身份已被限制投稿"));
+    }
     let licensed = crate::authors::author_by_hash(&state.db, &author_hash)
         .await
         .map_err(ApiError::internal)?
-        .map(|author| author.status == "active" && author.auto_publish)
-        .unwrap_or(false);
+        .map(|author| {
+            author.status == "active"
+                && author.auto_publish
+        })
+        .unwrap_or(false)
+        && !crate::authors::has_restriction(&state.db, &author_hash, "auto_publish")
+            .await
+            .map_err(ApiError::internal)?;
     let owner_matches = old_meta
         .as_ref()
         .map(|(_, old)| old.author_hash.as_deref() == Some(author_hash.as_str()))
@@ -2208,7 +2260,7 @@ async fn submit(
     let new_size = prepared.new_size();
     if let Err(error) = state
         .store
-        .choose_location(new_size, &state.paths, limit_bytes)
+        .choose_location(new_size, 0, &state.paths, limit_bytes)
         .await
     {
         return Err(ApiError::bad(error.to_string()));

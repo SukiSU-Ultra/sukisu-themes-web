@@ -164,9 +164,11 @@ pub fn withdrawal_expires_at(withdrawn_at: &str) -> Option<String> {
 }
 
 pub fn withdrawal_expired(withdrawn_at: &str) -> bool {
+    // A malformed/legacy timestamp must not be treated as expired: that would
+    // permanently delete the theme immediately instead of after 14 days.
     chrono::DateTime::parse_from_rfc3339(withdrawn_at)
         .map(|time| time + chrono::Duration::days(WITHDRAW_RETENTION_DAYS) <= chrono::Utc::now())
-        .unwrap_or(true)
+        .unwrap_or(false)
 }
 
 pub fn read_meta_file(path: &Path) -> Option<Meta> {
@@ -518,7 +520,7 @@ pub async fn rebuild_catalog(store: &AssetStore, paths: &Paths) -> Result<Vec<Ca
     });
     let _guard = catalog_write_guard();
     // A stats flush may have completed while this rebuild scanned assets.
-    let latest_stats = crate::db::load_theme_stats(&paths.db);
+    let latest_stats = crate::db::load_theme_stats(&paths.stats_db);
     for theme in &mut themes {
         if let Some(current) = latest_stats.get(&theme.id).copied() {
             theme.downloads = current.downloads;
@@ -595,7 +597,11 @@ pub fn refresh_catalog_stats(paths: &Paths) -> Result<bool> {
     let stats = crate::db::load_theme_stats(&paths.stats_db);
     let mut changed = false;
     for theme in &mut catalog.themes {
-        let current = stats.get(&theme.id).copied().unwrap_or_default();
+        // A missing row can mean a transient stats read failure. Leaving the
+        // published counters untouched is safer than resetting them to zero.
+        let Some(current) = stats.get(&theme.id).copied() else {
+            continue;
+        };
         if theme.downloads != current.downloads || theme.heat != current.heat {
             theme.downloads = current.downloads;
             theme.heat = current.heat;
@@ -614,6 +620,9 @@ pub fn refresh_catalog_stats(paths: &Paths) -> Result<bool> {
 /// `themes/11010-01-v3.sukisu`.
 pub fn theme_id_from_package_path(path: &str) -> Option<String> {
     let file = path.strip_prefix("themes/")?;
+    // Overflow locations prefix the key with `_loc/<location>/`; the actual
+    // package name is always the last path segment.
+    let file = file.rsplit('/').next().unwrap_or(file);
     let stem = file.strip_suffix(".sukisu")?;
     let (id, version) = stem.rsplit_once("-v")?;
     if version.parse::<i64>().is_err() || !crate::util::valid_theme_id(id) {
@@ -705,8 +714,14 @@ pub async fn purge_expired_withdrawn(store: &AssetStore, paths: &Paths) -> Resul
         if !withdrawal_expired(withdrawn_at) {
             continue;
         }
-        remove_theme_files(store, paths, Some(&path), &meta).await?;
-        removed.push(meta.id);
+        // One unreadable/partially deleted theme must not stop the rest of the
+        // purge (and its catalog rebuild).
+        match remove_theme_files(store, paths, Some(&path), &meta).await {
+            Ok(()) => removed.push(meta.id),
+            Err(error) => {
+                tracing::warn!(theme_id = %meta.id, "withdrawn theme purge failed: {error:#}");
+            }
+        }
     }
     if !removed.is_empty() {
         rebuild_catalog(store, paths).await?;
@@ -1204,8 +1219,19 @@ mod tests {
             theme_id_from_package_path("themes/foo-v1.sukisu"),
             Some("foo".to_string())
         );
+        assert_eq!(
+            theme_id_from_package_path("themes/_loc/nas/11010-01-v3.sukisu"),
+            Some("11010-01".to_string())
+        );
         assert_eq!(theme_id_from_package_path("previews/1-v1.jpg"), None);
         assert_eq!(theme_id_from_package_path("themes/abc.sukisu"), None);
+    }
+
+    #[test]
+    fn malformed_withdrawal_timestamp_is_not_expired() {
+        assert!(!withdrawal_expired(""));
+        assert!(!withdrawal_expired("not-a-date"));
+        assert!(withdrawal_expired("2000-01-01T00:00:00Z"));
     }
 
     #[test]

@@ -849,13 +849,14 @@ pub struct AuthorRequestRecord {
     pub author_hash: Option<String>,
     pub display_name: Option<String>,
     pub status: String,
+    pub generated_author_hash: Option<String>,
 }
 
 pub async fn author_request_by_id(db: &Database, id: &str) -> Result<Option<AuthorRequestRecord>> {
     let id = id.to_string();
     db.call(move |conn| {
         let mut statement = conn.prepare(
-            "SELECT id, user_id, kind, author_hash, display_name, status
+            "SELECT id, user_id, kind, author_hash, display_name, status, generated_author_hash
              FROM authors.author_requests WHERE id = ?1",
         )?;
         let mut rows = statement.query([id])?;
@@ -866,6 +867,7 @@ pub async fn author_request_by_id(db: &Database, id: &str) -> Result<Option<Auth
             author_hash: row.get(3).unwrap_or_default(),
             display_name: row.get(4).unwrap_or_default(),
             status: row.get(5).unwrap_or_default(),
+            generated_author_hash: row.get(6).unwrap_or_default(),
         }))
     })
     .await

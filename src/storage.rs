@@ -653,6 +653,7 @@ impl AssetStore {
     pub async fn choose_location(
         &self,
         new_size: u64,
+        reclaim_bytes: u64,
         paths: &Paths,
         primary_limit: u64,
     ) -> Result<Option<String>> {
@@ -661,7 +662,12 @@ impl AssetStore {
             crate::catalog::storage_usage(primary, paths, primary.backend(), primary_limit).await;
         let disk_ok = primary.backend() != "local"
             || usage.disk_free >= new_size.saturating_add(DISK_RESERVE_BYTES);
-        if usage.used.saturating_add(new_size) <= primary_limit && disk_ok {
+        // `reclaim_bytes` is data that will be removed as part of this publish
+        // (for example the pending copy of an approved submission). It still
+        // occupies disk until the publish completes, so it only discounts the
+        // quota calculation.
+        let quota_used = usage.used.saturating_sub(reclaim_bytes);
+        if quota_used.saturating_add(new_size) <= primary_limit && disk_ok {
             return Ok(None);
         }
         if let AssetStore::Multi(multi) = self {
@@ -1201,7 +1207,7 @@ mod tests {
             }],
             reqwest::Client::new(),
         );
-        let selected = store.choose_location(10, &paths, 1000).await.unwrap();
+        let selected = store.choose_location(10, 0, &paths, 1000).await.unwrap();
         assert_eq!(selected.as_deref(), Some("loc1"));
         store
             .put_at(

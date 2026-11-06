@@ -3133,6 +3133,7 @@ $('userUpSubmit').addEventListener('click', async () => {
     $('userUpScreenshots').value = '';
     $('userUpUpdate').value = '';
     $('userUpVersion').value = '1';
+    $('userUpMin').value = '0';
     if ($('userUpThemeSearch')) $('userUpThemeSearch').value = '';
     await loadUploadView();
     await loadProfile();
@@ -3200,13 +3201,30 @@ document.querySelectorAll('[data-tag-target]').forEach(group => {
   sync();
 });
 
-  const pendingDeviceCode = sessionStorage.getItem('sukisu_device_code');
-  if (pendingDeviceCode) {
-    sessionStorage.removeItem('sukisu_device_code');
-    location.replace(basePath + 'device?code=' + encodeURIComponent(pendingDeviceCode));
-  } else {
-    loadProfile();
+  const githubResult = new URLSearchParams(location.search).get('github');
+  if (githubResult) {
+    const messages = {
+      '1': 'GitHub 登录成功',
+      linked: 'GitHub 已绑定',
+      conflict: '该 GitHub 账号已绑定到其他用户',
+      error: 'GitHub 绑定失败，请重试',
+    };
+    toast(messages[githubResult] || 'GitHub 操作失败', githubResult !== 'linked' && githubResult !== '1');
+    try { history.replaceState(null, '', location.pathname + location.hash); } catch (_) {}
   }
+
+  let pendingDeviceCode = sessionStorage.getItem('sukisu_device_code');
+  if (pendingDeviceCode) {
+    const pendingAt = Number(sessionStorage.getItem('sukisu_device_code_at') || 0);
+    const expired = pendingAt > 0 && Date.now() - pendingAt > 10 * 60 * 1000;
+    sessionStorage.removeItem('sukisu_device_code');
+    sessionStorage.removeItem('sukisu_device_code_at');
+    if (!expired) {
+      location.replace(basePath + 'device?code=' + encodeURIComponent(pendingDeviceCode));
+      return;
+    }
+  }
+  loadProfile();
   setInterval(() => {
     if (document.hidden || !profile) return;
     loadSubmissions();

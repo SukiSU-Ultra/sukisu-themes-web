@@ -564,7 +564,7 @@ impl Connection {
     fn set_response(&self, status: StatusCode, headers: &HeaderMap) {
         self.response_status.store(status.as_u16(), Ordering::Relaxed);
         if let Ok(mut value) = self.response_headers.lock() {
-            *value = headers_to_json(headers);
+            *value = headers_to_json(headers, !is_credential_capture_path(&self.path));
         }
         let content_type = header_text(headers, "content-type");
         if let Ok(mut capture) = self.response_capture.lock() {
@@ -1061,13 +1061,56 @@ fn plausible_session_token(token: &str) -> bool {
     token.len() == 64 && token.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-fn headers_to_json(headers: &HeaderMap) -> String {
+/// Routes whose bodies/credentials carry passwords, one-time tokens or
+/// mail/storage secrets. They stay monitored, but their bodies and auth headers
+/// must never be persisted to the audit database.
+fn is_credential_capture_path(path: &str) -> bool {
+    matches!(
+        path,
+        "/api/login"
+            | "/admin/api/login"
+            | "/api/setup"
+            | "/admin/api/setup"
+            | "/api/password"
+            | "/admin/api/password"
+            | "/account/api/password"
+            | "/account/api/email"
+            | "/account/api/auth/login"
+            | "/account/api/auth/register"
+            | "/account/api/auth/forgot-password"
+            | "/account/api/auth/reset-password"
+            | "/account/api/auth/verify-email"
+            | "/account/api/auth/resend-verification"
+            | "/account/api/auth/github/callback"
+            | "/account/api/auth/device/start"
+            | "/account/api/auth/device/poll"
+            | "/account/api/auth/device/info"
+            | "/account/api/auth/device/approve"
+            | "/api/auth-settings"
+            | "/admin/api/auth-settings"
+            | "/api/auth-settings/test-email"
+            | "/admin/api/auth-settings/test-email"
+            | "/api/auth-settings/test-github"
+            | "/admin/api/auth-settings/test-github"
+            | "/api/tokens/create"
+            | "/admin/api/tokens/create"
+            | "/api/storage"
+            | "/api/storage/backend"
+    )
+}
+
+fn headers_to_json(headers: &HeaderMap, redact_credentials: bool) -> String {
     let mut map = Map::new();
     for (name, value) in headers.iter() {
         let key = name.as_str().to_string();
-        if value
-            .to_str()
-            .is_ok_and(|s| s.starts_with("sa_") || s.starts_with("sr_"))
+        let sensitive_header = matches!(
+            key.as_str(),
+            "cookie" | "set-cookie" | "authorization" | "x-sukisu-theme-token"
+        );
+        if (redact_credentials && sensitive_header)
+            || value
+                .to_str()
+                .is_ok_and(|s| s.starts_with("sa_") || s.starts_with("sr_"))
             || matches!(key.as_str(), "x-sukisu-site-key" | "x-sukisu-site-internal")
         {
             map.insert(key, Value::String("[redacted]".into()));
@@ -1191,8 +1234,12 @@ async fn identify(state: &AppState, headers: &HeaderMap) -> Identity {
     if !provided.is_empty() {
         let display_name = if provided.starts_with("sa_") {
             Some("设备只读凭证".to_string())
-        } else {
+        } else if plausible_session_token(&provided) {
+            // Theme tokens are 32 random bytes as hex; reject arbitrary values
+            // before they can trigger a database miss on every asset request.
             state.monitor.theme_token_name(&provided).await
+        } else {
+            None
         };
         return Identity {
             user_id: None,
@@ -1250,12 +1297,20 @@ pub async fn monitor(
         return next.run(request).await;
     }
     let method = request.method().as_str().to_string();
-    let query = request.uri().query().unwrap_or("").to_string();
+    let raw_query = request.uri().query().unwrap_or("").to_string();
+    let credential_path = is_credential_capture_path(&path);
+    // Query strings on these routes carry reset/verification/device codes.
+    let query = if credential_path && !raw_query.is_empty() {
+        "[redacted]".to_string()
+    } else {
+        raw_query
+    };
     let headers = request.headers().clone();
     let (parts, body) = request.into_parts();
 
     let identity = identify(&state, &headers).await;
-    let body_limit = monitor.body_limit;
+    let capture_bodies = !credential_path;
+    let body_limit = if capture_bodies { monitor.body_limit } else { 0 };
     let capture_budget = Arc::clone(&monitor.capture_budget);
     let request_content_type = header_text(&headers, "content-type");
     let connection = Arc::new(Connection {
@@ -1274,7 +1329,7 @@ pub async fn monitor(
         auth_kind: identity.auth_kind.to_string(),
         tokens: identity.tokens,
         user_agent: header_text(&headers, "user-agent"),
-        request_headers: headers_to_json(&headers),
+        request_headers: headers_to_json(&headers, !capture_bodies),
         request_content_type: request_content_type.clone(),
         request_capture: Mutex::new(BodyCapture::new(
             body_limit,
@@ -1291,7 +1346,12 @@ pub async fn monitor(
     });
     monitor.register(Arc::clone(&connection));
 
-    let request = Request::from_parts(parts, capture_request_body(body, Arc::clone(&connection)));
+    let body = if capture_bodies {
+        capture_request_body(body, Arc::clone(&connection))
+    } else {
+        body
+    };
+    let request = Request::from_parts(parts, body);
     let handler = next.run(request);
     tokio::pin!(handler);
     let mut abort_rx = connection.abort_tx.subscribe();
@@ -2310,7 +2370,7 @@ mod tests {
         headers.append("set-cookie", "a=1".parse().unwrap());
         headers.append("set-cookie", "b=2".parse().unwrap());
         headers.append("cookie", "sukisu_user_session=token".parse().unwrap());
-        let value = parse_json_text(Some(headers_to_json(&headers)));
+        let value = parse_json_text(Some(headers_to_json(&headers, false)));
         assert_eq!(value["cookie"], "sukisu_user_session=token");
         assert_eq!(value["set-cookie"][0], "a=1");
         assert_eq!(value["set-cookie"][1], "b=2");

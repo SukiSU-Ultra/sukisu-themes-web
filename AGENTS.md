@@ -38,7 +38,7 @@
 ## Maintenance mode
 
 - `MAINTENANCE=1` in `config.env` is the source of truth; `AppState.maintenance` mirrors it and `api/maintenance` toggles it, rebuilds `catalog.json` and writes an audit entry.
-- The maintenance middleware allows the admin console (`/api*`, `/admin*`), health, setup, the login/recovery pages and their auth API paths, plus valid admin cookies/user sessions. Everything else gets a 503 maintenance page or JSON.
+- The maintenance middleware allows the admin console (`/api*`, `/admin*`), health, setup, the login/recovery pages and their auth API paths, manager credential bootstrap/refresh (`/client/*`), plus valid admin cookies/user sessions. Everything else gets a 503 maintenance page or JSON.
 - `catalog.json` stays reachable and carries `"maintenance": true`, so managers can stop pulling themes. Theme package assets are served by the app and follow the same maintenance rules.
 
 ## Product notes

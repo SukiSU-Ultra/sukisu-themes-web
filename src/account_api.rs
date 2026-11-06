@@ -599,6 +599,7 @@ async fn session_info(State(state): State<AppState>, headers: HeaderMap) -> Json
     Json(json!({
         "ok": true,
         "authenticated": user.is_some(),
+        "scope": session.as_ref().map(|session| session.scope.clone()),
         "user": user.as_ref().map(user_json),
         "author": author,
         "email": mailer::configured(&state.paths),
@@ -929,6 +930,13 @@ async fn github_callback(
     if user.is_none() {
         if let Some(email) = &profile.email {
             if let Ok(Some(existing)) = accounts::user_by_email(&state.db, email).await {
+                // Never take over an account that has merely claimed this email.
+                // The password owner has not proven control of the address, so
+                // logging the GitHub user in here would hand them the account.
+                if !existing.email_verified {
+                    return Redirect::to("/account/login?github=email_unverified")
+                        .into_response();
+                }
                 user = Some(existing);
             }
         }
@@ -1932,6 +1940,14 @@ async fn change_email(
             "邮件服务尚未配置",
         ));
     }
+    if !rate_allowed(
+        &state,
+        &format!("change-email:{}", session.user_id),
+        3,
+        600,
+    ) {
+        return Err(ApiError::too_many("验证邮件发送过于频繁，请稍后再试"));
+    }
     let value = json_body(body).await?;
     let email = normalize_email(
         value
@@ -2241,7 +2257,10 @@ async fn create_author_request(
         &hash,
         &author_fingerprint(&hash),
         &display_name,
-        Some(&session.user_id),
+        // Bind the identity only after an administrator approves the request.
+        // Binding an existing, still-unbound author hash here would let anyone
+        // who knows that public hash claim its themes before review.
+        None,
         "pending",
     )
     .await
@@ -2280,6 +2299,13 @@ async fn generate_reset_author(
     }
     if request.kind != "reset" || request.status != "approved" {
         return Err(ApiError::bad("该申请尚未批准或不是重置申请"));
+    }
+    if request
+        .generated_author_hash
+        .as_deref()
+        .is_some_and(|hash| !hash.trim().is_empty())
+    {
+        return Err(ApiError::bad("该申请已生成过新作者 ID，请勿重复操作"));
     }
     let (raw_id, author) = authors::reset_author(&state.db, &session.user_id, &session.user_id)
         .await
@@ -3427,7 +3453,7 @@ async fn submit_theme(
     let limit = state.limit_bytes.load(std::sync::atomic::Ordering::Relaxed);
     if let Err(error) = state
         .store
-        .choose_location(new_size, &state.paths, limit)
+        .choose_location(new_size, 0, &state.paths, limit)
         .await
     {
         return Err(ApiError::bad(error.to_string()));

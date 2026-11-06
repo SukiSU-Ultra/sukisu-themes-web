@@ -174,6 +174,9 @@ async fn run(settings: config::StorageSettings) -> anyhow::Result<()> {
                         if let Err(error) = community::remove_theme_activity(&cleanup_state.db, &id).await {
                             tracing::warn!(theme_id = %id, "withdrawn community cleanup warning: {error:#}");
                         }
+                        if let Err(error) = comments::clear_theme(&cleanup_state.db, &id).await {
+                            tracing::warn!(theme_id = %id, "withdrawn comment cleanup warning: {error:?}");
+                        }
                     }
                 }
                 Err(error) => tracing::warn!("withdrawn cleanup warning: {error:#}"),

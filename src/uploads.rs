@@ -638,7 +638,7 @@ pub async fn publish_theme(
     limit_bytes: u64,
     prepared: PreparedUpload,
     author_hash: Option<String>,
-    _reclaim_bytes: u64,
+    reclaim_bytes: u64,
     old_meta: Option<(PathBuf, Meta)>,
 ) -> Result<Vec<crate::models::CatalogEntry>, PublishError> {
     let lock = catalog::theme_mutation_lock(&prepared.id);
@@ -665,7 +665,7 @@ pub async fn publish_theme(
     let stem = format!("{}-v{}", prepared.id, prepared.version);
     let new_size = prepared.new_size();
     let location = store
-        .choose_location(new_size, paths, limit_bytes)
+        .choose_location(new_size, reclaim_bytes, paths, limit_bytes)
         .await
         .map_err(|error| PublishError::Bad(error.to_string()))?;
     let keys = AssetKeys::new_at(&stem, &prepared, location.as_deref());

@@ -22,6 +22,11 @@ const CHUNK_SIZE: u64 = 4 * 1024 * 1024;
 const MIN_CHUNK_SIZE: u64 = 1024 * 1024;
 const MAX_CHUNK_SIZE: u64 = 8 * 1024 * 1024;
 const SESSION_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+/// Staged uploads are not part of the published-storage quota, so bound them
+/// per account: otherwise a signed-in user can fill the data disk with many
+/// declared-size sessions that never complete.
+const MAX_SESSIONS_PER_USER: usize = 32;
+const MAX_STAGED_BYTES_PER_USER: u64 = 512 * 1024 * 1024;
 
 #[derive(Clone, Serialize, Deserialize)]
 struct UploadMeta {
@@ -64,6 +69,7 @@ async fn init(
     Extension(session): Extension<SessionInfo>,
     Json(body): Json<InitBody>,
 ) -> Result<Json<Value>, ApiError> {
+    crate::account_api::require_active(&session)?;
     let filename = body.filename.trim().to_string();
     if filename.is_empty()
         || filename.chars().count() > 200
@@ -115,6 +121,15 @@ async fn init(
         authorize_upload_nodes(&state, &mut meta).await;
         write_meta(&dir, &meta).await?;
         return Ok(Json(status_value(&state, &dir, &meta, true).await?));
+    }
+
+    let (staged_sessions, staged_bytes) = user_staging(&state.paths, &session.user_id).await;
+    if staged_sessions >= MAX_SESSIONS_PER_USER
+        || staged_bytes.saturating_add(body.size) > MAX_STAGED_BYTES_PER_USER
+    {
+        return Err(ApiError::too_many(
+            "上传暂存空间已满，请等待现有上传完成（最长 24 小时自动清理）",
+        ));
     }
 
     let id = random_hex(16);
@@ -329,6 +344,30 @@ pub fn cleanup_stale(paths: &Paths) {
             let _ = std::fs::remove_dir_all(path);
         }
     }
+}
+
+/// Count the declared size of a user's unfinished staging sessions. Reading
+/// meta.json avoids hashing or walking every chunk on the hot init path.
+async fn user_staging(paths: &Paths, owner_id: &str) -> (usize, u64) {
+    let Ok(mut entries) = tokio::fs::read_dir(&paths.uploads).await else {
+        return (0, 0);
+    };
+    let mut count = 0usize;
+    let mut bytes = 0u64;
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let Some(meta) = read_meta(&dir).await else {
+            continue;
+        };
+        if meta.owner_id == owner_id {
+            count += 1;
+            bytes = bytes.saturating_add(meta.size);
+        }
+    }
+    (count, bytes)
 }
 
 async fn find_existing(

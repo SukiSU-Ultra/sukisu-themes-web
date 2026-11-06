@@ -389,7 +389,10 @@ async fn theme_role(state: &AppState, session: &SessionInfo, theme: &ThemeInfo) 
             is_author = list.iter().any(|author| author.hash == theme.author_hash);
         }
     }
-    if !is_author && !theme.author.is_empty() {
+    // The username fallback only applies to legacy themes without an author hash.
+    // Once a theme has a hash, matching the display name must never grant the
+    // author role: usernames are user-chosen and can collide with author names.
+    if !is_author && theme.author_hash.is_empty() && !theme.author.is_empty() {
         is_author = theme
             .author
             .trim()
@@ -451,12 +454,16 @@ fn record_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CommentRecord> {
 async fn theme_records(db: &Database, theme_id: &str, limit: i64) -> ApiResult<Vec<CommentRecord>> {
     let theme_id = theme_id.to_string();
     db.call(move |conn| {
+        // Keep the newest comments when a theme exceeds the cap, then present
+        // them oldest-first so threads still render in chronological order.
         let sql = format!(
-            "SELECT {COMMENT_COLUMNS} FROM social.theme_comments c
-             JOIN users u ON u.id = c.user_id
-             WHERE c.theme_id = ?1
-             ORDER BY c.created_at ASC, c.id ASC
-             LIMIT ?2"
+            "SELECT * FROM (
+                 SELECT {COMMENT_COLUMNS} FROM social.theme_comments c
+                 JOIN users u ON u.id = c.user_id
+                 WHERE c.theme_id = ?1
+                 ORDER BY c.created_at DESC, c.id DESC
+                 LIMIT ?2
+             ) ORDER BY created_at ASC, id ASC"
         );
         let mut statement = conn.prepare(&sql)?;
         let rows = statement.query_map(params![theme_id, limit], record_from_row)?;

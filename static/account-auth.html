@@ -124,7 +124,12 @@
   const basePath = location.pathname.replace(/\/(?:login|register|reset|forgot)(?:\.html)?\/?$/, '/');
   const API = basePath.endsWith('/account/') ? basePath + 'api' : '/account/api';
   function homeFor(data) {
-    return data && data.user && data.user.role === 'admin' ? '/admin/' : '/account/';
+    // A user-scoped session for an admin account cannot access /admin: the
+    // console requires an admin-scoped cookie. Sending it to /admin would bounce
+    // straight back to this login page.
+    if (data && data.admin === true) return '/admin/';
+    if (data && data.scope === 'admin') return '/admin/';
+    return '/account/';
   }
   const errorBox = document.getElementById('authError');
   const messageBox = document.getElementById('authMessage');
@@ -223,8 +228,11 @@
     try {
       const data = await post('/auth/login', { login, password });
       const pendingDevice = sessionStorage.getItem('sukisu_device_code');
-      if (pendingDevice) {
-        sessionStorage.removeItem('sukisu_device_code');
+      const pendingAt = Number(sessionStorage.getItem('sukisu_device_code_at') || 0);
+      const deviceExpired = pendingAt > 0 && Date.now() - pendingAt > 10 * 60 * 1000;
+      sessionStorage.removeItem('sukisu_device_code');
+      sessionStorage.removeItem('sukisu_device_code_at');
+      if (pendingDevice && !deviceExpired) {
         location.replace(basePath + 'device?code=' + encodeURIComponent(pendingDevice));
       } else {
         location.replace(homeFor(data));
@@ -370,6 +378,8 @@
     showMessage(params.get('verified') === '1' ? '邮箱验证成功，请登录。' : '新邮箱验证成功。', 'ok');
   } else if (params.get('verify') === 'invalid') {
     showError('验证链接无效或已过期');
+  } else if (params.get('github') === 'email_unverified') {
+    showError('该邮箱已被未验证的账号占用，请先登录原账号完成邮箱验证后再绑定 GitHub');
   } else if (params.get('github')) {
     const github = params.get('github');
     if (github === '1') showMessage('GitHub 登录成功。', 'ok');
@@ -396,7 +406,13 @@
   fetch(API + '/session', { cache: 'no-store', credentials: 'same-origin' })
     .then(response => response.ok ? response.json() : {})
     .then(data => {
-      if (data && data.authenticated) location.replace(homeFor(data));
+      if (!(data && data.authenticated)) return;
+      // A password-reset link must remain usable even while signed in.
+      if (params.get('token')) return;
+      // Opened from /admin with only a user-scoped admin session: stay on the
+      // form so the user can sign in and obtain an admin-scoped cookie.
+      if (params.get('admin') === '1' && data.user && data.user.role === 'admin' && data.scope !== 'admin') return;
+      location.replace(homeFor(data));
     })
     .catch(() => {});
 })();

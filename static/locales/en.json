@@ -1668,6 +1668,7 @@
     "至少选择一种访问权限": "Pick at least one access right",
     "有效期需在 1-3650 天之间": "Validity must be between 1 and 3650 days",
     "删除该令牌？使用它的客户端会立即失去访问权限。": "Delete this token? Clients using it lose access immediately.",
+    "令牌删除后无法恢复，再次确认删除？": "Token deletion cannot be undone. Delete it again to confirm?",
     "令牌已停用": "Token disabled",
     "令牌已启用": "Token enabled",
     "令牌已删除": "Token deleted",

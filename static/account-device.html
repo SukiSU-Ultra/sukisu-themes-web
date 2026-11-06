@@ -65,6 +65,7 @@
 
   // Keep the code across the web login redirect.
   sessionStorage.setItem('sukisu_device_code', code);
+  sessionStorage.setItem('sukisu_device_code_at', String(Date.now()));
 
   (async () => {
     let session;
@@ -79,6 +80,7 @@
     }
 
     sessionStorage.removeItem('sukisu_device_code');
+    sessionStorage.removeItem('sukisu_device_code_at');
     userCodeEl.textContent = code.trim().toUpperCase();
 
     let info;
