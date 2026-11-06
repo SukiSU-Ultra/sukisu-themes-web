@@ -307,6 +307,7 @@
     "自动撤销作者许可": "Auto-revoke author license",
     "批准作者申请": "Approve author request",
     "自动清理：作者许可已生效": "Automatic cleanup: author license already active",
+    "自动撤销仅针对从未发布主题的新许可，发布后自动清除期限": "Auto-revocation only applies to new licenses that never published a theme; publishing clears the deadline",
     "拒绝作者申请": "Reject author request",
     "批准主题": "Approve theme",
     "拒绝主题": "Reject theme",

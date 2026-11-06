@@ -3492,6 +3492,7 @@ async fn submit_theme(
             tracing::warn!(?error, "failed to record theme update");
         }
         let _ = authors::touch_author(&state.db, &author_hash).await;
+        let _ = authors::clear_auto_revoke_for_published(&state.db, &author_hash).await;
         let submission_id = crate::util::submission_id();
         accounts::record_submission(
             &state.db,

@@ -425,6 +425,17 @@ pub async fn schedule_grace_if_needed(db: &Database, paths: &Paths, hash: &str) 
     }
 }
 
+/// A theme was just published under this license, so the first-license grace
+/// period no longer applies. Clear the deadline immediately instead of waiting
+/// for the hourly cleanup; otherwise the author page keeps showing a bogus
+/// "auto revoke at" date for up to 10 days.
+pub async fn clear_auto_revoke_for_published(db: &Database, hash: &str) -> Result<()> {
+    if hash.trim().is_empty() {
+        return Ok(());
+    }
+    set_auto_revoke_at(db, hash, None).await
+}
+
 /// Any published theme under this license counts as an approved work.
 pub fn has_published_theme(paths: &Paths, hash: &str) -> bool {
     let Ok(entries) = fs::read_dir(&paths.meta) else {
@@ -446,29 +457,37 @@ pub fn has_published_theme(paths: &Paths, hash: &str) -> bool {
 }
 
 /// Revoke active licenses whose 10-day grace period expired without an
-/// approved theme. Authors with any published theme keep their license.
+/// approved theme. Authors with any published theme keep their license, and any
+/// not-yet-expired deadline is cleared as soon as a theme exists.
 pub async fn revoke_inactive_authors(db: &Database, paths: &Paths) -> Result<usize> {
-    let now = now_iso();
-    let candidates: Vec<(String, Option<String>)> = db
-        .call(move |conn| {
+    let candidates: Vec<(String, Option<String>, Option<String>)> = db
+        .call(|conn| {
             let mut statement = conn.prepare(
-                "SELECT hash, display_name FROM authors.authors
+                "SELECT hash, display_name, auto_revoke_at FROM authors.authors
                  WHERE status = 'active' AND auto_revoke_at IS NOT NULL
-                   AND auto_revoke_at <= ?1
+                 ORDER BY auto_revoke_at ASC
                  LIMIT 500",
             )?;
-            let mut rows = statement.query(params![now])?;
+            let mut rows = statement.query([])?;
             let mut items = Vec::new();
             while let Some(row) = rows.next()? {
-                items.push((row.get(0)?, row.get(1)?));
+                items.push((row.get(0)?, row.get(1)?, row.get(2)?));
             }
             Ok(items)
         })
         .await?;
+    let now = now_iso();
     let mut revoked = 0;
-    for (hash, name) in candidates {
+    for (hash, name, deadline) in candidates {
         if has_published_theme(paths, &hash) {
             let _ = set_auto_revoke_at(db, &hash, None).await;
+            continue;
+        }
+        if deadline
+            .as_deref()
+            .map(|value| value > now.as_str())
+            .unwrap_or(false)
+        {
             continue;
         }
         let reason = "长期未发布主题，系统自动撤销";
@@ -1500,6 +1519,43 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(pending.status, "pending");
+    }
+
+    #[tokio::test]
+    async fn clears_future_deadline_for_published_author() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open_test(dir.path()).await.unwrap();
+        seed_user(&db, "u1", "alice").await;
+        let paths = test_paths(dir.path());
+        std::fs::create_dir_all(&paths.meta).unwrap();
+
+        let hash = author_key("9999999999999999");
+        create_author(
+            &db,
+            &hash,
+            &author_fingerprint(&hash),
+            "alice",
+            Some("u1"),
+            "active",
+        )
+        .await
+        .unwrap();
+        set_auto_revoke_at(&db, &hash, Some("2999-01-01T00:00:00Z"))
+            .await
+            .unwrap();
+        write_test_meta(
+            &paths,
+            "11010-09.json",
+            "11010-09",
+            &hash,
+            "2026-01-01T00:00:00Z",
+            None,
+        );
+
+        assert_eq!(revoke_inactive_authors(&db, &paths).await.unwrap(), 0);
+        let author = author_by_hash(&db, &hash).await.unwrap().unwrap();
+        assert_eq!(author.status, "active");
+        assert_eq!(author.auto_revoke_at, None);
     }
 
     #[tokio::test]

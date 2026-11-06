@@ -2283,6 +2283,7 @@ async fn submit(
             tracing::warn!(?error, "failed to record theme update");
         }
         let _ = crate::authors::touch_author(&state.db, &author_hash).await;
+        let _ = crate::authors::clear_auto_revoke_for_published(&state.db, &author_hash).await;
         return Ok(Json(json!({
             "ok": true,
             "pending": false,
@@ -2441,6 +2442,7 @@ async fn upload_theme(
         {
             tracing::warn!(?error, "failed to record theme update");
         }
+        let _ = crate::authors::clear_auto_revoke_for_published(&state.db, hash).await;
     }
     for id in &upload_ids {
         crate::resumable::remove_session(&state, &actor.user_id, id).await;
@@ -2575,11 +2577,11 @@ async fn approve(
                 }
             }
             // The license now has a published theme; clear any first-license
-            // deadline so it can never be auto-revoked for inactivity.
+            // deadline so the author page cannot show a stale auto-revoke date.
             if let Err(error) =
-                crate::authors::schedule_grace_if_needed(&state.db, &state.paths, hash).await
+                crate::authors::clear_auto_revoke_for_published(&state.db, hash).await
             {
-                tracing::warn!("author grace scheduling failed: {error:#}");
+                tracing::warn!("author grace clearing failed: {error:#}");
             }
         }
     }
@@ -2993,6 +2995,9 @@ async fn update_theme_meta(
     meta.min_manager_version = min_manager_version;
     meta.changelog = changelog;
     catalog::write_meta(&meta_path, &meta).map_err(ApiError::internal)?;
+    if let Some(hash) = meta.author_hash.as_deref() {
+        let _ = crate::authors::clear_auto_revoke_for_published(&state.db, hash).await;
+    }
     let themes = catalog::rebuild_catalog(&state.store, &state.paths)
         .await
         .map_err(ApiError::internal)?;

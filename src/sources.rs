@@ -991,6 +991,7 @@ pub async fn import_theme(
         if let Err(error) = crate::community::record_release(&state.db, hash, &theme_id, &release_name, release_version).await {
             tracing::warn!(?error, "failed to record imported theme update");
         }
+        let _ = crate::authors::clear_auto_revoke_for_published(&state.db, hash).await;
     }
     if let (Some(author), Some(avatar)) = (author.as_ref(), author_avatar.as_ref()) {
         let _ = uploads::persist_author_avatar(&state.store, &author.hash, avatar).await;
