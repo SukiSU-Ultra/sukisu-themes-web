@@ -2338,6 +2338,15 @@ async fn generate_reset_author(
     {
         tracing::warn!("author grace scheduling failed: {error:#}");
     }
+    let _ = crate::uploads::inherit_author_avatar(
+        &state.store,
+        &state.paths,
+        &state.db,
+        &session.user_id,
+        &author.hash,
+        author.display_name.as_deref(),
+    )
+    .await;
     authors::review_author_request(
         &state.db,
         &id,

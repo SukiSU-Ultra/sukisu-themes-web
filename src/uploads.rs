@@ -124,6 +124,91 @@ pub async fn persist_author_avatar(
     Ok(())
 }
 
+/// Copy one avatar key onto an author hash, replacing older formats.
+async fn copy_author_avatar(store: &AssetStore, source: &str, new_hash: &str) -> Option<String> {
+    let extension = IMAGE_EXTENSIONS
+        .iter()
+        .copied()
+        .find(|extension| source.ends_with(*extension))?;
+    let data = store.read(source).await.ok()?;
+    let target = format!("avatars/authors/{new_hash}{extension}");
+    store
+        .put(&target, &data, &content_type_for(&target))
+        .await
+        .ok()?;
+    for other in IMAGE_EXTENSIONS {
+        if other != extension {
+            let _ = store
+                .delete(&format!("avatars/authors/{new_hash}{other}"))
+                .await;
+        }
+    }
+    Some(target)
+}
+
+/// Copy an avatar from another license owned by the same account onto a newly
+/// created license. Author avatars are keyed by author hash, so revoking and
+/// re-adding (or resetting) an author otherwise loses the avatar even though the
+/// account still has the old file.
+pub async fn inherit_author_avatar(
+    store: &AssetStore,
+    paths: &Paths,
+    db: &crate::db::Database,
+    user_id: &str,
+    new_hash: &str,
+    new_name: Option<&str>,
+) -> Option<String> {
+    if user_id.trim().is_empty() || new_hash.trim().is_empty() {
+        return None;
+    }
+    // Never overwrite an avatar the new license already has (usually the newest
+    // published theme's avatar).
+    if catalog::author_avatar_key(store, paths, new_hash, new_name)
+        .await
+        .is_some()
+    {
+        return None;
+    }
+    if let Ok(authors) = crate::authors::authors_for_user(db, user_id).await {
+        for author in authors {
+            if author.hash == new_hash {
+                continue;
+            }
+            if let Some(source) = catalog::author_avatar_key(
+                store,
+                paths,
+                &author.hash,
+                author.display_name.as_deref(),
+            )
+            .await
+            {
+                if let Some(target) = copy_author_avatar(store, &source, new_hash).await {
+                    return Some(target);
+                }
+            }
+        }
+    }
+    // The old license record may already be deleted; the account's submissions
+    // still point at themes that carry the avatar that was uploaded with them.
+    if let Ok(submissions) = crate::accounts::user_submissions(db, user_id).await {
+        for submission in submissions {
+            let Some(theme_id) = submission.get("id").and_then(|value| value.as_str()) else {
+                continue;
+            };
+            let Some((_, meta)) = catalog::find_theme_meta(paths, theme_id) else {
+                continue;
+            };
+            let Some(source) = meta.avatar.as_deref().filter(|value| !value.is_empty()) else {
+                continue;
+            };
+            if let Some(target) = copy_author_avatar(store, source, new_hash).await {
+                return Some(target);
+            }
+        }
+    }
+    None
+}
+
 async fn read_field_bytes(field: axum::extract::multipart::Field<'_>) -> Result<Vec<u8>> {
     let bytes = field.bytes().await.context("读取上传文件失败")?;
     Ok(bytes.to_vec())

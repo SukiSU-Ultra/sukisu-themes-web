@@ -1692,6 +1692,24 @@ async fn authors(
     });
     let mut locked_by_user: std::collections::HashMap<String, HashSet<String>> =
         std::collections::HashMap::new();
+    let mut authors_by_user: std::collections::HashMap<String, Vec<(String, Option<String>)>> =
+        std::collections::HashMap::new();
+    for author in &authors {
+        let Some(user_id) = author.get("userId").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(hash) = author.get("hash").and_then(Value::as_str) else {
+            continue;
+        };
+        let name = author
+            .get("name")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        authors_by_user
+            .entry(user_id.to_string())
+            .or_default()
+            .push((hash.to_string(), name));
+    }
     for author in &mut authors {
         let Some(hash) = author.get("hash").and_then(Value::as_str) else {
             continue;
@@ -1722,9 +1740,33 @@ async fn authors(
             .get(hash)
             .map(|items| json!(items))
             .unwrap_or_else(|| json!([]));
-        if let Some(key) =
-            crate::catalog::author_avatar_key(&state.store, &state.paths, hash, name).await
-        {
+        let mut avatar_key =
+            crate::catalog::author_avatar_key(&state.store, &state.paths, hash, name).await;
+        if avatar_key.is_none() {
+            // Re-created licenses get a new author hash. Fall back to another
+            // license owned by the same account so the old avatar still shows.
+            if let Some(owner_id) = author.get("userId").and_then(Value::as_str) {
+                if let Some(candidates) = authors_by_user.get(owner_id) {
+                    for (other_hash, other_name) in candidates {
+                        if other_hash.as_str() == hash {
+                            continue;
+                        }
+                        if let Some(key) = crate::catalog::author_avatar_key(
+                            &state.store,
+                            &state.paths,
+                            other_hash,
+                            other_name.as_deref(),
+                        )
+                        .await
+                        {
+                            avatar_key = Some(key);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(key) = avatar_key {
             if let Some(object) = author.as_object_mut() {
                 object.insert(
                     "avatarUrl".to_string(),
@@ -2583,6 +2625,15 @@ async fn approve(
             {
                 tracing::warn!("author grace clearing failed: {error:#}");
             }
+            let _ = crate::uploads::inherit_author_avatar(
+                &state.store,
+                &state.paths,
+                &state.db,
+                &meta.submitter_user_id,
+                hash,
+                Some(meta.author.as_str()),
+            )
+            .await;
         }
     }
     crate::accounts::finish_submission(

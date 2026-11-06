@@ -608,6 +608,15 @@ async fn user_author_reset(
     {
         tracing::warn!("author grace scheduling failed: {error:#}");
     }
+    let _ = crate::uploads::inherit_author_avatar(
+        &state.store,
+        &state.paths,
+        &state.db,
+        &id,
+        &author.hash,
+        author.display_name.as_deref(),
+    )
+    .await;
     accounts::audit(
         &state.db,
         Some(&actor.user_id),
@@ -739,6 +748,15 @@ async fn author_request_approve(
         if let Err(error) = authors::schedule_grace_if_needed(&state.db, &state.paths, hash).await {
             tracing::warn!("author grace scheduling failed: {error:#}");
         }
+        let _ = crate::uploads::inherit_author_avatar(
+            &state.store,
+            &state.paths,
+            &state.db,
+            &request.user_id,
+            hash,
+            request.display_name.as_deref(),
+        )
+        .await;
     }
     authors::review_author_request(&state.db, &id, "approved", &actor.user_id, None, None)
         .await
