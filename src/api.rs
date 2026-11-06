@@ -1272,9 +1272,10 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
     let users_pending = crate::accounts::count_pending_users(&state.db)
         .await
         .unwrap_or(0);
-    let author_requests_pending = crate::authors::count_pending_author_requests(&state.db)
-        .await
-        .unwrap_or(0);
+    let author_requests_pending =
+        crate::authors::count_pending_author_requests(&state.db, &state.paths)
+            .await
+            .unwrap_or(0);
     let usage = state.storage_usage_cached().await;
     let storage_value = serde_json::to_value(&usage).unwrap_or_else(|_| json!({}));
     let sync_timer = system::service_state("sukisu-themes-sync.timer").await;
@@ -1622,13 +1623,42 @@ async fn pending(State(state): State<AppState>) -> Json<Value> {
             .and_then(|value| value.as_str())
             .unwrap_or("")
             .to_string();
-        if !user_id.is_empty() {
-            if let Ok(Some(user)) = crate::accounts::user_by_id(&state.db, &user_id).await {
-                if let Some(object) = item.as_object_mut() {
-                    object.insert("submitterUsername".to_string(), json!(user.username));
-                    object.insert("submitterDisplayName".to_string(), json!(user.display_name));
-                    object.insert("submitterEmail".to_string(), json!(user.email));
-                }
+        if user_id.is_empty() {
+            continue;
+        }
+        if let Ok(Some(user)) = crate::accounts::user_by_id(&state.db, &user_id).await {
+            if let Some(object) = item.as_object_mut() {
+                object.insert("submitterUsername".to_string(), json!(user.username));
+                object.insert("submitterDisplayName".to_string(), json!(user.display_name));
+                object.insert("submitterEmail".to_string(), json!(user.email));
+            }
+        }
+        let author_hash = item
+            .get("authorHash")
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .to_string();
+        if author_hash.is_empty() {
+            continue;
+        }
+        // A first-time author's license request is reviewed together with this
+        // submission, so attach it to the card instead of listing it twice.
+        let request = crate::authors::author_requests(&state.db, Some("pending"), Some(&user_id))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .find(|request| {
+                let kind = request.get("kind").and_then(Value::as_str).unwrap_or("");
+                matches!(kind, "new" | "bind")
+                    && request
+                        .get("authorHash")
+                        .and_then(Value::as_str)
+                        .map(|hash| hash.eq_ignore_ascii_case(&author_hash))
+                        .unwrap_or(false)
+            });
+        if let Some(request) = request {
+            if let Some(object) = item.as_object_mut() {
+                object.insert("authorRequest".to_string(), request);
             }
         }
     }
@@ -1649,6 +1679,17 @@ async fn authors(
     let mut authors = crate::authors::list_authors(&state.db)
         .await
         .unwrap_or_default();
+    // First-time authors are reviewed through their pending submission; their
+    // not-yet-approved license should not appear as a separate list entry.
+    let pending_pairs = crate::authors::pending_submission_author_pairs(&state.paths);
+    authors.retain(|author| {
+        if author.get("status").and_then(Value::as_str) != Some("pending") {
+            return true;
+        }
+        let hash = author.get("hash").and_then(Value::as_str).unwrap_or("");
+        let user_id = author.get("userId").and_then(Value::as_str).unwrap_or("");
+        !pending_pairs.contains(&(user_id.to_string(), hash.to_ascii_lowercase()))
+    });
     let mut locked_by_user: std::collections::HashMap<String, HashSet<String>> =
         std::collections::HashMap::new();
     for author in &mut authors {
@@ -2452,6 +2493,7 @@ async fn approve(
     } else {
         Some(meta.author_hash.clone())
     };
+    let mut approved_author_requests: Vec<String> = Vec::new();
     let _ = uploads::publish_theme(
         &state.store,
         &state.settings,
@@ -2504,6 +2546,34 @@ async fn approve(
                 .await;
             }
             let _ = crate::authors::touch_author(&state.db, hash).await;
+            if !meta.submitter_user_id.is_empty() {
+                match crate::authors::approve_pending_requests_for_submission(
+                    &state.db,
+                    &meta.submitter_user_id,
+                    hash,
+                    &actor.user_id,
+                )
+                .await
+                {
+                    Ok(requests) => {
+                        for id in &requests {
+                            let _ = crate::accounts::audit(
+                                &state.db,
+                                Some(&actor.user_id),
+                                "author.request.approve",
+                                Some("author_request"),
+                                Some(id),
+                                Some("theme.approve"),
+                            )
+                            .await;
+                        }
+                        approved_author_requests = requests;
+                    }
+                    Err(error) => {
+                        tracing::warn!("automatic author request approval failed: {error:#}");
+                    }
+                }
+            }
         }
     }
     crate::accounts::finish_submission(
@@ -2530,11 +2600,19 @@ async fn approve(
             crate::accounts::user_by_id(&state.db, &meta.submitter_user_id).await
         {
             if let Some(email) = user.email {
+                let message = if approved_author_requests.is_empty() {
+                    format!("你的主题「{}」已通过审核并发布。", meta.name)
+                } else {
+                    format!(
+                        "你的主题「{}」已通过审核并发布，作者申请也已同时通过，现在可以使用账号继续投稿。",
+                        meta.name
+                    )
+                };
                 let _ = crate::mailer::send_notice(
                     &state.paths,
                     &email,
                     "主题投稿已通过审核",
-                    &format!("你的主题「{}」已通过审核并发布。", meta.name),
+                    &message,
                 )
                 .await;
             }
@@ -2542,7 +2620,13 @@ async fn approve(
     }
     let _ = tokio::fs::remove_dir_all(&directory).await;
     let themes = catalog::catalog_themes_count(&state.paths);
-    Ok(Json(json!({"ok": true, "id": theme_id, "themes": themes})).into_response())
+    Ok(Json(json!({
+        "ok": true,
+        "id": theme_id,
+        "themes": themes,
+        "authorRequestsApproved": approved_author_requests.len(),
+    }))
+    .into_response())
 }
 
 async fn reject(

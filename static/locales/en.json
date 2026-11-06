@@ -708,6 +708,13 @@
     "已撤销作者许可": "Author license revoked",
     "作者许可已删除": "Author license deleted",
     "批准并发布这个主题？": "Approve and publish this theme?",
+    "批准并发布这个主题？该作者申请也会同时通过。": "Approve and publish this theme? The author request will be approved too.",
+    "批准并授权作者": "Approve & license author",
+    "批准该主题后将同时通过作者申请，无需再次审核。": "Approving this theme also approves the author request; no separate review is needed.",
+    "首发新作者 · 作者许可待审核": "First submission · author license pending",
+    "绑定作者 · 作者许可待审核": "Bind author · author license pending",
+    "新作者首发投稿会合并作者申请，批准主题时一并通过": "First submissions merge the author request and approve it together with the theme",
+    "点击批准或拒绝；首发新作者会同时获得作者许可": "Approve or reject; first-time authors receive their license at the same time",
     "拒绝原因（会发送给投稿用户，可留空）：": "Rejection reason (sent to the submitter, optional):",
     "已拒绝该投稿": "Submission rejected",
     "已启用": "Enabled",
@@ -2581,6 +2588,14 @@
     [
       "^申请说明：(.*)$",
       "Application note: $1"
+    ],
+    [
+      "^批准该主题后将同时通过作者申请（(.*)），无需再次审核。$",
+      "Approving this theme also approves the author request ($1); no separate review is needed."
+    ],
+    [
+      "^已批准，作者申请已同时通过，当前共 ([0-9]+) 个主题$",
+      "Approved. The author request was approved too. Total $1 themes."
     ]
   ]
 }

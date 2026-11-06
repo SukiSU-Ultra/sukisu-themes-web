@@ -7,7 +7,7 @@ use chrono::{Duration as ChronoDuration, SecondsFormat, Utc};
 use anyhow::{Context, Result};
 use rusqlite::{params, OptionalExtension};
 use serde::Serialize;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::catalog;
 use crate::config::Paths;
@@ -652,13 +652,109 @@ pub async fn has_restriction(db: &Database, hash: &str, feature: &str) -> Result
     Ok(restrictions_for(db, hash).await?.contains(feature))
 }
 
-pub async fn count_pending_author_requests(db: &Database) -> Result<i64> {
-    db.call(|conn| {
-        Ok(conn.query_row(
-            "SELECT COUNT(*) FROM authors.author_requests WHERE status = 'pending'",
-            [],
-            |row| row.get(0),
-        )?)
+/// Pairs of (submitter user id, author hash) for themes currently in review.
+/// A pending author request matching one of these is reviewed together with the
+/// theme submission instead of appearing as a separate item.
+pub fn pending_submission_author_pairs(paths: &Paths) -> HashSet<(String, String)> {
+    catalog::pending_submissions(paths)
+        .into_iter()
+        .filter_map(|item| {
+            let user_id = item
+                .get("submitterUserId")
+                .and_then(Value::as_str)?
+                .trim();
+            let hash = item.get("authorHash").and_then(Value::as_str)?.trim();
+            if user_id.is_empty() || hash.is_empty() {
+                return None;
+            }
+            Some((user_id.to_string(), hash.to_ascii_lowercase()))
+        })
+        .collect()
+}
+
+fn covered_request_id(request: &Value, pairs: &HashSet<(String, String)>) -> Option<String> {
+    if request.get("status").and_then(Value::as_str) != Some("pending") {
+        return None;
+    }
+    let kind = request.get("kind").and_then(Value::as_str).unwrap_or("");
+    if !matches!(kind, "new" | "bind") {
+        return None;
+    }
+    let id = request.get("id").and_then(Value::as_str)?;
+    let user_id = request.get("userId").and_then(Value::as_str)?;
+    let hash = request.get("authorHash").and_then(Value::as_str)?;
+    pairs
+        .contains(&(user_id.to_string(), hash.to_ascii_lowercase()))
+        .then(|| id.to_string())
+}
+
+/// Ids of pending author requests already merged into a pending theme
+/// submission. Approving that submission also approves the license, so these
+/// requests must not be reviewed or counted separately.
+pub fn covered_pending_request_ids(paths: &Paths, requests: &[Value]) -> HashSet<String> {
+    let pairs = pending_submission_author_pairs(paths);
+    requests
+        .iter()
+        .filter_map(|request| covered_request_id(request, &pairs))
+        .collect()
+}
+
+/// Approve the pending author request(s) that belong to the account and license
+/// of an approved theme submission. This is what lets a first-time author get
+/// their license together with their first published theme.
+pub async fn approve_pending_requests_for_submission(
+    db: &Database,
+    user_id: &str,
+    hash: &str,
+    actor: &str,
+) -> Result<Vec<String>> {
+    if user_id.trim().is_empty() || hash.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut approved = Vec::new();
+    for request in author_requests(db, Some("pending"), Some(user_id)).await? {
+        let kind = request.get("kind").and_then(Value::as_str).unwrap_or("");
+        if !matches!(kind, "new" | "bind") {
+            continue;
+        }
+        let matches = request
+            .get("authorHash")
+            .and_then(Value::as_str)
+            .map(|value| value.eq_ignore_ascii_case(hash))
+            .unwrap_or(false);
+        if !matches {
+            continue;
+        }
+        let Some(id) = request.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        review_author_request(db, id, "approved", actor, None, Some(hash)).await?;
+        approved.push(id.to_string());
+    }
+    Ok(approved)
+}
+
+pub async fn count_pending_author_requests(db: &Database, paths: &Paths) -> Result<i64> {
+    let pairs = pending_submission_author_pairs(paths);
+    db.call(move |conn| {
+        let mut statement = conn.prepare(
+            "SELECT user_id, author_hash, kind FROM authors.author_requests WHERE status = 'pending'",
+        )?;
+        let mut rows = statement.query([])?;
+        let mut count = 0;
+        while let Some(row) = rows.next()? {
+            let user_id: String = row.get(0)?;
+            let kind: String = row.get(2)?;
+            let covered = matches!(kind.as_str(), "new" | "bind")
+                && row
+                    .get::<_, Option<String>>(1)?
+                    .map(|hash| pairs.contains(&(user_id, hash.to_ascii_lowercase())))
+                    .unwrap_or(false);
+            if !covered {
+                count += 1;
+            }
+        }
+        Ok(count)
     })
     .await
 }
@@ -1222,6 +1318,70 @@ mod tests {
             .await
             .unwrap();
         assert!(!has_pending_request(&db, "u1").await.unwrap());
+    }
+
+    fn write_test_pending(paths: &Paths, submission: &str, user_id: &str, hash: &str) {
+        let directory = paths.pending.join(submission);
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("package.sukisu"), b"pkg").unwrap();
+        std::fs::write(directory.join("preview.png"), b"png").unwrap();
+        let meta = json!({
+            "submissionId": submission,
+            "id": "11010-01",
+            "name": "Test theme",
+            "package": "package.sukisu",
+            "preview": "preview.png",
+            "authorHash": hash,
+            "authorFingerprint": author_fingerprint(hash),
+            "submitterUserId": user_id,
+            "submittedAt": "2026-01-01T00:00:00Z",
+        });
+        std::fs::write(
+            directory.join("meta.json"),
+            serde_json::to_vec(&meta).unwrap(),
+        )
+        .unwrap();    }
+
+    #[tokio::test]
+    async fn merges_first_author_request_with_pending_submission() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open_test(dir.path()).await.unwrap();
+        seed_user(&db, "u1", "alice").await;
+        let paths = test_paths(dir.path());
+        std::fs::create_dir_all(&paths.pending).unwrap();
+
+        let hash = author_key("ffffffffffffffff");
+        create_author(
+            &db,
+            &hash,
+            &author_fingerprint(&hash),
+            "alice",
+            Some("u1"),
+            "pending",
+        )
+        .await
+        .unwrap();
+        let request_id = create_author_request(&db, "u1", "new", Some(&hash), "alice", None)
+            .await
+            .unwrap();
+        assert_eq!(count_pending_author_requests(&db, &paths).await.unwrap(), 1);
+
+        write_test_pending(&paths, "20260101-000000-abcdef01", "u1", &hash);
+        let requests = author_requests(&db, Some("pending"), None).await.unwrap();
+        assert_eq!(covered_pending_request_ids(&paths, &requests).len(), 1);
+        assert_eq!(count_pending_author_requests(&db, &paths).await.unwrap(), 0);
+
+        let approved = approve_pending_requests_for_submission(&db, "u1", &hash, "admin")
+            .await
+            .unwrap();
+        assert_eq!(approved, vec![request_id.clone()]);
+        let request = author_request_by_id(&db, &request_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(request.status, "approved");
+        assert!(!has_pending_request(&db, "u1").await.unwrap());
+        assert_eq!(count_pending_author_requests(&db, &paths).await.unwrap(), 0);
     }
 
     #[tokio::test]

@@ -113,7 +113,7 @@ async fn users(
     let total = accounts::count_users(&state.db)
         .await
         .map_err(ApiError::internal)?;
-    let author_pending = authors::count_pending_author_requests(&state.db)
+    let author_pending = authors::count_pending_author_requests(&state.db, &state.paths)
         .await
         .map_err(ApiError::internal)?;
     let disabled = accounts::count_disabled_users(&state.db)
@@ -643,6 +643,16 @@ async fn author_requests(
     let mut requests = authors::author_requests(&state.db, status, None)
         .await
         .map_err(ApiError::internal)?;
+    // First-time author requests are reviewed together with their pending
+    // theme submission, so they must not show up as a second review item.
+    let covered = authors::covered_pending_request_ids(&state.paths, &requests);
+    requests.retain(|request| {
+        !request
+            .get("id")
+            .and_then(Value::as_str)
+            .map(|id| covered.contains(id))
+            .unwrap_or(false)
+    });
     for request in &mut requests {
         let Some(hash) = request.get("authorHash").and_then(Value::as_str) else {
             continue;

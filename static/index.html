@@ -82,11 +82,6 @@
               <div><b>待审核主题</b><span>新的投稿等待审核</span></div>
               <span class="notify-count" id="notifyPending">0</span>
             </a>
-            <a class="notify-item" href="#users" data-notify-key="users">
-              <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="8" r="3"/><path d="M3 20c.7-4 2.7-6 6-6s5.3 2 6 6"/><path d="M16 5.5a3 3 0 0 1 0 5.5M18 14c2.2.5 3.5 2.5 4 6"/></svg></i>
-              <div><b>待验证用户</b><span>注册后还没有完成邮箱验证</span></div>
-              <span class="notify-count" id="notifyUsers">0</span>
-            </a>
             <a class="notify-item" href="#users" data-notify-key="requests" data-notify-tab="author">
               <i><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3.5" y="5" width="17" height="14" rx="3"/><circle cx="8.5" cy="10" r="2"/><path d="M5.8 16c.4-2 1.3-3 2.7-3s2.3 1 2.7 3"/><path d="M14 9h4M14 12h4"/></svg></i>
               <div><b>作者申请</b><span>绑定、新增或重置作者身份</span></div>
@@ -2373,6 +2368,13 @@ function renderPendingList() {
     const avatar = item.avatarUrl
       ? `<img class="author-avatar" src="${escapeHtml(item.avatarUrl)}" alt="" loading="lazy">`
       : '';
+    const authorRequest = item.authorRequest || null;
+    const authorRequestLabel = authorRequest
+      ? (authorRequest.kind === 'new' ? '首发新作者 · 作者许可待审核' : '绑定作者 · 作者许可待审核')
+      : '';
+    const authorRequestHint = authorRequest
+      ? `<div class="pending-author-merge"><span class="pill warn">${escapeHtml(authorRequestLabel)}</span><span class="hint">批准该主题后将同时通过作者申请（${escapeHtml(authorRequest.displayName || item.author || '新作者')}），无需再次审核。</span></div>`
+      : '';
     const card = document.createElement('div');
     card.className = 'pending-card';
     card.innerHTML = `
@@ -2394,9 +2396,10 @@ function renderPendingList() {
         </div>
         <div class="theme-desc">${renderInlineMarkdown(item.description || '暂无描述')}</div>
         <div class="theme-tags">${tags}</div>
+        ${authorRequestHint}
         <div class="pending-actions">
           <span class="validation ${item.deepValidated ? 'ok' : 'warn'}">${item.deepValidated ? '深度校验通过' : '基础校验'}</span>
-          <button class="approve">批准发布</button>
+          <button class="approve">${authorRequest ? '批准并授权作者' : '批准发布'}</button>
           <button class="reject">拒绝</button>
         </div>
       </div>`;
@@ -2415,7 +2418,7 @@ function renderPendingList() {
         }));
       });
     }
-    card.querySelector('.approve').addEventListener('click', () => approvePending(item.submissionId));
+    card.querySelector('.approve').addEventListener('click', () => approvePending(item.submissionId, !!item.authorRequest));
     card.querySelector('.reject').addEventListener('click', () => rejectPending(item.submissionId));
     list.appendChild(card);
   });
@@ -2720,14 +2723,16 @@ async function deleteAuthor(hash, fingerprint) {
   }
 }
 
-async function approvePending(submissionId) {
-  if (!confirm('批准并发布这个主题？')) return;
+async function approvePending(submissionId, mergedAuthorRequest = false) {
+  if (!confirm(mergedAuthorRequest ? '批准并发布这个主题？该作者申请也会同时通过。' : '批准并发布这个主题？')) return;
   try {
     const data = await api('/approve', {
       method: 'POST',
       body: JSON.stringify({ submissionId }),
     });
-    toast('已批准，当前共 ' + (data.themes ?? 0) + ' 个主题');
+    toast(data.authorRequestsApproved
+      ? '已批准，作者申请已同时通过，当前共 ' + (data.themes ?? 0) + ' 个主题'
+      : '已批准，当前共 ' + (data.themes ?? 0) + ' 个主题');
     await refresh(true);
   } catch (error) {
     toast('批准失败：' + error.message, 'bad');
@@ -3011,11 +3016,12 @@ function updateUserStats(counts) {
   setCount('usersTabTotal', total);
   if (counts && counts.disabled != null) setCount('usersTabDisabled', counts.disabled);
   const badge = $('usersNavBadge');
-  const pendingTotal = Number(pending || 0) + Number(authorRequests || 0);
+  // Email-pending users are not actionable notifications; only surface the
+  // author-request queue on the sidebar badge.
+  const pendingTotal = Number(authorRequests || 0);
   badge.textContent = pendingTotal > 99 ? '99+' : String(pendingTotal);
   badge.style.display = pendingTotal > 0 ? '' : 'none';
   if (counts && (counts.pending != null || counts.authorRequests != null)) {
-    notifyCounts.users = Number(counts.pending || 0);
     notifyCounts.requests = Number(counts.authorRequests || 0);
     if (counts.disabled != null) notifyCounts.disabled = Number(counts.disabled || 0);
     renderNotifications();
@@ -3023,15 +3029,14 @@ function updateUserStats(counts) {
 }
 
 const NOTIFY_KEY = 'sukisu-admin-seen-v1';
-const notifyCounts = { themes: 0, users: 0, requests: 0, disabled: 0 };
-let notifySeen = { themes: 0, users: 0, requests: 0 };
+const notifyCounts = { themes: 0, requests: 0, disabled: 0 };
+let notifySeen = { themes: 0, requests: 0 };
 let notifyPrevious = null;
 try {
   const saved = JSON.parse(localStorage.getItem(NOTIFY_KEY) || '{}');
   if (saved && typeof saved === 'object') {
     notifySeen = {
       themes: Number(saved.themes || 0),
-      users: Number(saved.users || 0),
       requests: Number(saved.requests || 0),
     };
   }
@@ -3040,14 +3045,13 @@ try {
 function unseenNotifications() {
   return {
     themes: Math.max(0, notifyCounts.themes - notifySeen.themes),
-    users: Math.max(0, notifyCounts.users - notifySeen.users),
     requests: Math.max(0, notifyCounts.requests - notifySeen.requests),
   };
 }
 
 function renderNotifications() {
   let seenChanged = false;
-  ['themes', 'users', 'requests'].forEach(key => {
+  ['themes', 'requests'].forEach(key => {
     if (notifyCounts[key] < notifySeen[key]) {
       notifySeen[key] = notifyCounts[key];
       seenChanged = true;
@@ -3057,8 +3061,8 @@ function renderNotifications() {
     try { localStorage.setItem(NOTIFY_KEY, JSON.stringify(notifySeen)); } catch (_) {}
   }
   const unseen = unseenNotifications();
-  const unseenTotal = unseen.themes + unseen.users + unseen.requests;
-  const total = notifyCounts.themes + notifyCounts.users + notifyCounts.requests;
+  const unseenTotal = unseen.themes + unseen.requests;
+  const total = notifyCounts.themes + notifyCounts.requests;
   const badge = $('notifyBadge');
   if (badge) {
     badge.textContent = unseenTotal > 99 ? '99+' : String(unseenTotal);
@@ -3071,7 +3075,6 @@ function renderNotifications() {
     if (el) el.textContent = String(value);
   };
   setText('notifyPending', notifyCounts.themes);
-  setText('notifyUsers', notifyCounts.users);
   setText('notifyRequests', notifyCounts.requests);
   const empty = $('notifyEmpty');
   if (empty) empty.hidden = total > 0;
@@ -3089,7 +3092,6 @@ function renderNotifications() {
     const changes = [];
     if (notifyCounts.themes > notifyPrevious.themes) changes.push(`有 ${notifyCounts.themes - notifyPrevious.themes} 个新的待审核主题`);
     if (notifyCounts.requests > notifyPrevious.requests) changes.push(`有 ${notifyCounts.requests - notifyPrevious.requests} 份新的作者申请`);
-    if (notifyCounts.users > notifyPrevious.users) changes.push(`有 ${notifyCounts.users - notifyPrevious.users} 个新的待验证用户`);
     if (changes.length) toast(changes.join('；'));
   }
   notifyPrevious = { ...notifyCounts };
@@ -3098,7 +3100,6 @@ function renderNotifications() {
 function markNotificationsSeen() {
   notifySeen = {
     themes: notifyCounts.themes,
-    users: notifyCounts.users,
     requests: notifyCounts.requests,
   };
   try { localStorage.setItem(NOTIFY_KEY, JSON.stringify(notifySeen)); } catch (_) {}
@@ -5361,8 +5362,8 @@ const PAGE_GUIDES = {
   pending: {
     title: '待审核投稿',
     what: '管理器提交的主题会先进入审核队列，通过后才会写入公开目录。',
-    abilities: ['查看标题、作者、标签和包校验结果', '预览主题包内容', '批准发布或拒绝并说明原因'],
-    steps: ['检查预览图和作者信息', '确认包内容与许可', '点击批准或拒绝'],
+    abilities: ['查看标题、作者、标签和包校验结果', '预览主题包内容', '批准发布或拒绝并说明原因', '新作者首发投稿会合并作者申请，批准主题时一并通过'],
+    steps: ['检查预览图和作者信息', '确认包内容与许可', '点击批准或拒绝；首发新作者会同时获得作者许可'],
   },
   comments: {
     title: '评论管理',

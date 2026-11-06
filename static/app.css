@@ -227,6 +227,8 @@ footer,.site-footer{margin-top:28px;padding-top:14px;border-top:1px solid var(--
 .user-card{grid-template-columns:minmax(0,1fr)}
 .user-card .meta{grid-template-columns:repeat(3,minmax(0,1fr))}
 .pending-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
+.pending-author-merge{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:9px;padding:6px 10px;border:1px solid color-mix(in srgb,var(--warn) 40%,transparent);border-radius:8px;background:color-mix(in srgb,var(--warn) 8%,transparent)}
+.pending-author-merge .hint{margin:0;font-size:12px}
 .pending-actions .validation{margin-right:auto;padding:1px 9px;border-radius:10px;font-size:12px;border:1px solid var(--line)}
 .pending-actions .validation.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,transparent)}
 .pending-actions .validation.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,transparent)}
