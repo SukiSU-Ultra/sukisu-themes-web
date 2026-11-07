@@ -259,6 +259,11 @@
       </div>
       <div id="pendingList"></div>
       <div class="empty" id="pendingEmpty"><b>没有待审核主题</b>管理器提交的主题会出现在这里。</div>
+      <div class="card" style="margin-top:18px">
+        <div class="section-head"><div><h3>已拒绝的投稿</h3><p>被拒绝的投稿会保留 30 天：可以直接重新发布，或按原主题 ID 重新上传主题包。</p></div><span class="pill" id="rejectedPill">0 个已拒绝</span></div>
+        <div class="list" id="rejectedList"></div>
+        <div class="empty hidden" id="rejectedEmpty"><b>没有被拒绝的投稿</b>拒绝后的投稿会显示在这里，方便撤销误判。</div>
+      </div>
     </section>
 
     <section id="authors" class="page">
@@ -2424,6 +2429,126 @@ function renderPendingList() {
   });
 }
 
+let rejectedItems = [];
+
+function renderRejected(items) {
+  rejectedItems = items || [];
+  const list = $('rejectedList');
+  if (!list) return;
+  $('rejectedPill').textContent = `${rejectedItems.length} 个已拒绝`;
+  $('rejectedEmpty').classList.toggle('hidden', rejectedItems.length > 0);
+  list.innerHTML = rejectedItems.map(item => {
+    const preview = item.previewUrl
+      ? `<img src="${escapeHtml(item.previewUrl)}" alt="" loading="lazy" style="width:64px;height:40px;object-fit:cover;border-radius:6px;background:var(--bg-elv)">`
+      : '';
+    const retained = item.retained
+      ? '<span class="pill ok">主题包已保留</span>'
+      : '<span class="pill warn">主题包已清理</span>';
+    const actions = [
+      item.retained
+        ? `<button class="btn small primary" data-reject-publish="${escapeHtml(item.submissionId)}">重新发布</button>`
+        : '',
+      `<button class="btn small" data-reject-upload="${escapeHtml(item.submissionId)}">重新上传</button>`,
+      item.retained
+        ? `<button class="btn small danger" data-reject-delete="${escapeHtml(item.submissionId)}">删除文件</button>`
+        : '',
+    ].filter(Boolean).join(' ');
+    return `<div class="item">
+      <div class="item-head">${preview}<b>${escapeHtml(item.name || item.id)}</b>
+        <span class="pill">v${escapeHtml(String(item.version || 1))}</span>${retained}</div>
+      <div class="item-meta">${escapeHtml(item.id)}${item.username ? ' · @' + escapeHtml(item.username) : ''} · ${escapeHtml(formatTime(item.reviewedAt || item.submittedAt))}<br>拒绝原因：${escapeHtml(item.rejectReason || '未填写')}</div>
+      <div class="row" style="margin-top:8px">${actions}</div>
+    </div>`;
+  }).join('');
+}
+
+async function loadRejected() {
+  try {
+    const data = await api('/rejected-submissions');
+    renderRejected(data.submissions || []);
+  } catch (error) {
+    $('rejectedPill').textContent = '加载失败';
+    $('rejectedEmpty').classList.remove('hidden');
+    $('rejectedEmpty').innerHTML = '<b>已拒绝列表加载失败</b>' + escapeHtml(error.message);
+  }
+}
+
+async function republishRejected(submissionId) {
+  if (!confirm('直接发布这条被拒绝的投稿？')) return;
+  try {
+    const data = await api('/rejected/publish', {
+      method: 'POST',
+      body: JSON.stringify({ submissionId }),
+    });
+    toast('已重新发布，当前共 ' + (data.themes ?? 0) + ' 个主题');
+    await refresh(true);
+  } catch (error) {
+    toast('重新发布失败：' + error.message, 'bad');
+  }
+}
+
+async function deleteRejectedFiles(submissionId) {
+  if (!confirm('删除这条被拒投稿保留的主题包？删除后只能重新上传。')) return;
+  try {
+    await api('/rejected/delete', {
+      method: 'POST',
+      body: JSON.stringify({ submissionId }),
+    });
+    toast('已删除保留的主题包');
+    await loadRejected();
+  } catch (error) {
+    toast('删除失败：' + error.message, 'bad');
+  }
+}
+
+// Feed a rejection back into the upload form under its original theme id so the
+// administrator can publish the package the author sends instead of a new id.
+async function prefillRejectedUpload(submissionId) {
+  const item = rejectedItems.find(entry => entry.submissionId === submissionId);
+  if (!item) return;
+  try {
+    if (!authorItems.length) await loadAuthors();
+    if (!uploadThemeItems.length) await loadThemes();
+  } catch (_) {}
+  showPage('themes');
+  switchThemeTab('upload');
+  const select = $('upAuthorHash');
+  const hash = item.authorHash || '';
+  if (select) {
+    select.value = Array.from(select.options).some(option => option.value === hash) ? hash : '';
+  }
+  const author = authorItems.find(entry => entry.hash === hash);
+  $('upAuthor').value = author
+    ? (author.name || author.userDisplayName || '')
+    : (item.author || '');
+  $('upUpdate').value = '';
+  $('upId').value = item.id || '';
+  $('upAutoId').value = item.id || '';
+  const existing = uploadThemeItems.find(theme => theme.id === item.id);
+  $('upVersion').value = String(existing ? (Number(existing.version) || 1) + 1 : (Number(item.version) || 1));
+  $('upName').value = item.name || '';
+  $('upTags').value = Array.isArray(item.tags) ? item.tags.join(', ') : (item.tags || '');
+  $('upLicense').value = item.license || 'CC-BY-4.0';
+  $('upMin').value = String(item.minManagerVersion ?? 0);
+  $('upDescription').value = item.description || '';
+  $('upChangelog').value = item.changelog || '';
+  for (const field of ['upPackage', 'upPreview', 'upAvatar', 'upScreenshots']) {
+    const input = $(field);
+    if (input) input.value = '';
+  }
+  toast('已填入被拒投稿信息，请重新选择主题包和预览图');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+$('rejectedList').addEventListener('click', event => {
+  const publish = event.target.closest('[data-reject-publish]');
+  if (publish) return republishRejected(publish.dataset.rejectPublish);
+  const upload = event.target.closest('[data-reject-upload]');
+  if (upload) return prefillRejectedUpload(upload.dataset.rejectUpload);
+  const remove = event.target.closest('[data-reject-delete]');
+  if (remove) return deleteRejectedFiles(remove.dataset.rejectDelete);
+});
+
 let authorItems = [];
 let selectedAuthorHashes = new Set();
 let restrictionAuthorHash = null;
@@ -2949,6 +3074,7 @@ async function loadPending() {
     $('pendingEmpty').innerHTML = '<b>待审核列表加载失败</b>' + escapeHtml(error.message);
     $('pendingNavBadge').style.display = 'none';
   }
+  await loadRejected();
 }
 
 let userStatus = 'pending';
@@ -5361,8 +5487,8 @@ const PAGE_GUIDES = {
   },
   pending: {
     title: '待审核投稿',
-    what: '管理器提交的主题会先进入审核队列，通过后才会写入公开目录。',
-    abilities: ['查看标题、作者、标签和包校验结果', '预览主题包内容', '批准发布或拒绝并说明原因', '新作者首发投稿会合并作者申请，批准主题时一并通过'],
+    what: '管理器提交的主题会先进入审核队列，通过后才会写入公开目录；被拒绝的投稿会保留 30 天并回退到作者草稿箱。',
+    abilities: ['查看标题、作者、标签和包校验结果', '预览主题包内容', '批准发布或拒绝并说明原因', '新作者首发投稿会合并作者申请，批准主题时一并通过', '误拒可直接重新发布，或按原主题 ID 重新上传'],
     steps: ['检查预览图和作者信息', '确认包内容与许可', '点击批准或拒绝；首发新作者会同时获得作者许可'],
   },
   comments: {

@@ -201,6 +201,10 @@ async fn run(settings: config::StorageSettings) -> anyhow::Result<()> {
                 Err(error) => tracing::warn!("withdrawn cleanup warning: {error:#}"),
             }
             cleanup_state.refresh_withdrawn_assets();
+            let expired_rejections = catalog::purge_expired_rejected(&cleanup_state.paths);
+            if !expired_rejections.is_empty() {
+                tracing::info!(count = expired_rejections.len(), "expired rejected submissions removed");
+            }
             resumable::cleanup_stale(&cleanup_state.paths);
             cleanup_state.flush_downloads().await;
             if let Err(error) = cleanup_state.db.reclaim_space().await {

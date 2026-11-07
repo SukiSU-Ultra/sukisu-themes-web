@@ -1016,6 +1016,109 @@ pub async fn user_submissions(db: &Database, user_id: &str) -> Result<Vec<serde_
     .await
 }
 
+pub async fn rejected_submissions(db: &Database, limit: i64) -> Result<Vec<serde_json::Value>> {
+    db.call(move |conn| {
+        let mut statement = conn.prepare(
+            "SELECT s.id, s.theme_id, s.name, s.version, s.submitted_at, s.reviewed_at,
+                    s.reject_reason, s.user_id, u.username, u.display_name,
+                    (SELECT a.hash FROM authors.authors a
+                      WHERE a.user_id = s.user_id ORDER BY a.updated_at DESC LIMIT 1),
+                    (SELECT a.display_name FROM authors.authors a
+                      WHERE a.user_id = s.user_id ORDER BY a.updated_at DESC LIMIT 1)
+             FROM authors.submissions s
+             LEFT JOIN users u ON u.id = s.user_id
+             WHERE s.status = 'rejected'
+             ORDER BY COALESCE(s.reviewed_at, s.submitted_at) DESC
+             LIMIT ?1",
+        )?;
+        let mut rows = statement.query([limit])?;
+        let mut items = Vec::new();
+        while let Some(row) = rows.next()? {
+            items.push(serde_json::json!({
+                "submissionId": row.get::<_, String>(0)?,
+                "id": row.get::<_, String>(1)?,
+                "name": row.get::<_, Option<String>>(2)?,
+                "version": row.get::<_, i64>(3)?,
+                "submittedAt": row.get::<_, String>(4)?,
+                "reviewedAt": row.get::<_, Option<String>>(5)?,
+                "rejectReason": row.get::<_, Option<String>>(6)?,
+                "userId": row.get::<_, Option<String>>(7)?,
+                "username": row.get::<_, Option<String>>(8)?,
+                "userDisplayName": row.get::<_, Option<String>>(9)?,
+                "authorHash": row.get::<_, Option<String>>(10)?,
+                "authorName": row.get::<_, Option<String>>(11)?,
+            }));
+        }
+        Ok(items)
+    })
+    .await
+}
+
+/// Drop a rejected submission's metadata into the submitter's draft box so the
+/// author can revise and resubmit it from the account portal.
+pub async fn save_rejected_draft(
+    db: &Database,
+    user_id: &str,
+    payload: serde_json::Value,
+) -> Result<()> {
+    let user_id = user_id.to_string();
+    let payload = serde_json::to_string(&payload)?;
+    let id = random_hex(16);
+    db.call(move |conn| {
+        let now = now_iso();
+        conn.execute(
+            "INSERT INTO authors.submission_drafts(id, user_id, payload, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?4)",
+            params![id, user_id, payload, now],
+        )?;
+        // Keep the draft box bounded no matter how often an author gets rejected.
+        conn.execute(
+            "DELETE FROM authors.submission_drafts
+              WHERE user_id = ?1 AND id NOT IN (
+                  SELECT id FROM authors.submission_drafts
+                   WHERE user_id = ?1 ORDER BY updated_at DESC, rowid DESC LIMIT 20)",
+            [&user_id],
+        )?;
+        Ok(())
+    })
+    .await
+}
+
+/// Remove the marked draft created when a submission was rejected, after an
+/// administrator republishes that submission.
+pub async fn clear_rejected_draft(db: &Database, submission_id: &str) -> Result<()> {
+    if !crate::util::valid_submission_id(submission_id) {
+        return Ok(());
+    }
+    let pattern = format!("%\"submissionId\":\"{submission_id}\"%");
+    db.call(move |conn| {
+        conn.execute(
+            "DELETE FROM authors.submission_drafts WHERE payload LIKE ?1",
+            [pattern],
+        )?;
+        Ok(())
+    })
+    .await
+}
+
+/// Drop rejection markers for a theme once an administrator uploads it again
+/// under its original id. Author-written drafts for the same theme are kept.
+pub async fn clear_rejected_drafts_for_theme(db: &Database, theme_id: &str) -> Result<()> {
+    if !crate::util::valid_theme_id(theme_id) {
+        return Ok(());
+    }
+    let theme_pattern = format!("%\"updateId\":\"{theme_id}\"%");
+    db.call(move |conn| {
+        conn.execute(
+            "DELETE FROM authors.submission_drafts
+              WHERE payload LIKE ?1 AND payload LIKE '%\"rejected\":true%'",
+            [theme_pattern],
+        )?;
+        Ok(())
+    })
+    .await
+}
+
 pub async fn audit_log(
     db: &Database,
     limit: i64,

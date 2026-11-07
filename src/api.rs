@@ -451,6 +451,9 @@ pub fn router(state: AppState) -> Router {
         .route("/delete-theme", post(delete_theme))
         .route("/approve", post(approve))
         .route("/reject", post(reject))
+        .route("/rejected-submissions", get(rejected_submissions))
+        .route("/rejected/publish", post(rejected_publish))
+        .route("/rejected/delete", post(rejected_delete))
         .route("/theme-tags", post(set_theme_tags))
         .route("/theme-meta", post(update_theme_meta))
         .route("/maintenance", get(maintenance_state).post(set_maintenance))
@@ -1814,6 +1817,7 @@ async fn preview(
         && !relative.starts_with("screenshots/")
         && !relative.starts_with("avatars/")
         && !relative.starts_with("pending/")
+        && !relative.starts_with("rejected/")
     {
         return Err(ApiError::not_found("not found"));
     }
@@ -1821,7 +1825,7 @@ async fn preview(
     if !image_extension_allowed(&ext) {
         return Err(ApiError::not_found("not found"));
     }
-    if relative.starts_with("pending/") {
+    if relative.starts_with("pending/") || relative.starts_with("rejected/") {
         let Some(path) = crate::util::safe_join(&state.paths.root, &relative) else {
             return Err(ApiError::not_found("not found"));
         };
@@ -2491,6 +2495,10 @@ async fn upload_theme(
         }
         let _ = crate::authors::clear_auto_revoke_for_published(&state.db, hash).await;
     }
+    // Publishing the theme again resolves any rejection markers in author drafts.
+    if let Err(error) = crate::accounts::clear_rejected_drafts_for_theme(&state.db, &theme_id).await {
+        tracing::warn!(?error, theme_id = %theme_id, "failed to clear rejected drafts");
+    }
     for id in &upload_ids {
         crate::resumable::remove_session(&state, &actor.user_id, id).await;
     }
@@ -2512,18 +2520,58 @@ async fn approve(
     let submission = value
         .get("submissionId")
         .and_then(|value| value.as_str())
-        .unwrap_or("");
-    let Some(directory) = catalog::pending_dir(&state.paths, submission) else {
+        .unwrap_or("")
+        .to_string();
+    let Some(directory) = catalog::pending_dir(&state.paths, &submission) else {
         return Err(ApiError::not_found("待审核主题不存在"));
     };
     if !directory.is_dir() {
         return Err(ApiError::not_found("待审核主题不存在"));
     }
-    let Some(meta) = catalog::pending_meta(&state.paths, &directory) else {
+    approve_directory(&state, &actor, &submission, &directory).await
+}
+
+/// Publish a parked rejection. A mistaken rejection must stay recoverable while
+/// the submission's files are still retained.
+async fn rejected_publish(
+    State(state): State<AppState>,
+    Extension(actor): Extension<crate::accounts::SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Response> {
+    let value = json_body(body).await?;
+    let submission = value
+        .get("submissionId")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    let Some(directory) = catalog::rejected_dir(&state.paths, &submission) else {
+        return Err(ApiError::not_found("投稿不存在"));
+    };
+    if !directory.is_dir() {
+        return Err(ApiError::not_found(
+            "该投稿的主题包已过保留期被清理，请向作者重新获取后上传",
+        ));
+    }
+    let response = approve_directory(&state, &actor, &submission, &directory).await?;
+    // The marked draft only exists to get the author to resubmit; the theme is
+    // published again now.
+    if let Err(error) = crate::accounts::clear_rejected_draft(&state.db, &submission).await {
+        tracing::warn!(?error, submission = %submission, "failed to clear rejected draft");
+    }
+    Ok(response)
+}
+
+async fn approve_directory(
+    state: &AppState,
+    actor: &crate::accounts::SessionInfo,
+    submission: &str,
+    directory: &std::path::Path,
+) -> ApiResult<Response> {
+    let Some(meta) = catalog::pending_meta(&state.paths, directory) else {
         return Err(ApiError::not_found("待审核信息损坏"));
     };
     let prepared =
-        uploads::load_pending_upload(&state.paths, &directory, &meta).map_err(ApiError::bad)?;
+        uploads::load_pending_upload(&state.paths, directory, &meta).map_err(ApiError::bad)?;
     let theme_id = prepared.id.clone();
     let old_meta = catalog::find_theme_meta(&state.paths, &theme_id);
     let mut already_published = false;
@@ -2548,7 +2596,7 @@ async fn approve(
             already_published = true;
         }
     }
-    let pending_size = uploads::pending_directory_size(&directory);
+    let pending_size = uploads::pending_directory_size(directory);
     let author_hash = if meta.author_hash.is_empty() {
         None
     } else {
@@ -2718,7 +2766,7 @@ async fn approve(
             }
         }
     }
-    let _ = tokio::fs::remove_dir_all(&directory).await;
+    let _ = tokio::fs::remove_dir_all(directory).await;
     let themes = catalog::catalog_themes_count(&state.paths);
     Ok(Json(json!({
         "ok": true,
@@ -2756,9 +2804,11 @@ async fn reject(
         return Err(ApiError::not_found("待审核主题不存在"));
     }
     let meta = catalog::pending_meta(&state.paths, &directory);
-    tokio::fs::remove_dir_all(&directory)
-        .await
-        .map_err(|_| ApiError::internal("删除待审核目录失败"))?;
+    // Keep the files around for a while: a mistaken rejection can still be
+    // published for the author from the admin console.
+    if let Err(error) = catalog::retain_rejected(&state.paths, &submission) {
+        tracing::warn!(?error, submission = %submission, "failed to retain rejected submission");
+    }
     crate::accounts::finish_submission(
         &state.db,
         &submission,
@@ -2779,15 +2829,45 @@ async fn reject(
     .await
     .ok();
     if let Some(meta) = meta {
+        // Hand the metadata back to the author as a marked draft so it can be
+        // revised and resubmitted without retyping everything.
+        if !meta.submitter_user_id.is_empty() {
+            let draft = json!({
+                "updateId": meta.id,
+                "version": meta.version,
+                "name": meta.name,
+                "tags": meta.tags.join(", "),
+                "license": meta.license,
+                "minManagerVersion": meta.min_manager_version,
+                "description": meta.description,
+                "changelog": meta.changelog,
+                "rejected": true,
+                "submissionId": submission.clone(),
+                "rejectedAt": crate::util::now_iso(),
+                "rejectReason": reason.clone(),
+            });
+            if let Err(error) = crate::accounts::save_rejected_draft(
+                &state.db,
+                &meta.submitter_user_id,
+                draft,
+            )
+            .await
+            {
+                tracing::warn!(?error, submission = %submission, "failed to save rejected draft");
+            }
+        }
         if !meta.submitter_user_id.is_empty() {
             if let Ok(Some(user)) =
                 crate::accounts::user_by_id(&state.db, &meta.submitter_user_id).await
             {
                 if let Some(email) = user.email {
                     let message = if reason.is_empty() {
-                        format!("你的主题「{}」未通过审核。", meta.name)
+                        format!("你的主题「{}」未通过审核，已存入投稿草稿箱。", meta.name)
                     } else {
-                        format!("你的主题「{}」未通过审核：{reason}", meta.name)
+                        format!(
+                            "你的主题「{}」未通过审核：{reason}。已存入投稿草稿箱，可修改后重新提交。",
+                            meta.name
+                        )
                     };
                     let _ = crate::mailer::send_notice(
                         &state.paths,
@@ -2801,6 +2881,109 @@ async fn reject(
         }
     }
     Ok(Json(json!({"ok": true, "submissionId": submission})).into_response())
+}
+
+/// Rejected submissions still visible in the admin console, including the ones
+/// whose parked files have already been cleaned up.
+async fn rejected_submissions(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+    let mut items = crate::accounts::rejected_submissions(&state.db, 200)
+        .await
+        .map_err(ApiError::internal)?;
+    for item in &mut items {
+        let Some(submission_id) = item
+            .get("submissionId")
+            .and_then(Value::as_str)
+            .map(|value| value.to_string())
+        else {
+            continue;
+        };
+        let Some(object) = item.as_object_mut() else {
+            continue;
+        };
+        let Some(directory) = catalog::rejected_dir(&state.paths, &submission_id) else {
+            continue;
+        };
+        if !directory.is_dir() {
+            object.insert("retained".to_string(), json!(false));
+            continue;
+        }
+        object.insert("retained".to_string(), json!(true));
+        if let Some(meta) = catalog::pending_meta(&state.paths, &directory) {
+            let stamp = meta.submitted_at.clone();
+            object.insert(
+                "previewUrl".to_string(),
+                json!(format!(
+                    "/admin/api/preview?path={}&v={}",
+                    crate::util::quote_query(&format!(
+                        "rejected/{submission_id}/{}",
+                        meta.preview
+                    )),
+                    crate::util::quote_query(&stamp)
+                )),
+            );
+            object.insert("formatVersion".to_string(), json!(meta.format_version));
+            object.insert("sha256".to_string(), json!(meta.sha256));
+            object.insert("tags".to_string(), json!(meta.tags));
+            object.insert("adaptive".to_string(), json!(meta.adaptive));
+            object.insert("description".to_string(), json!(meta.description));
+            object.insert("license".to_string(), json!(meta.license));
+            object.insert(
+                "minManagerVersion".to_string(),
+                json!(meta.min_manager_version),
+            );
+            object.insert("changelog".to_string(), json!(meta.changelog));
+            if meta.author_hash.is_empty() {
+                object.remove("authorHash");
+            } else {
+                object.insert("authorHash".to_string(), json!(meta.author_hash));
+            }
+            if !meta.author.is_empty() {
+                object.insert("author".to_string(), json!(meta.author));
+            }
+            let size = directory
+                .join(&meta.package)
+                .metadata()
+                .map(|metadata| metadata.len())
+                .unwrap_or(0);
+            object.insert("size".to_string(), json!(size));
+        } else {
+            object.insert("retained".to_string(), json!(false));
+        }
+    }
+    Ok(Json(json!({"ok": true, "submissions": items})))
+}
+
+async fn rejected_delete(
+    State(state): State<AppState>,
+    Extension(actor): Extension<crate::accounts::SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
+    let value = json_body(body).await?;
+    let submission = value
+        .get("submissionId")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let Some(directory) = catalog::rejected_dir(&state.paths, &submission) else {
+        return Err(ApiError::not_found("投稿不存在"));
+    };
+    if directory.is_dir() {
+        tokio::fs::remove_dir_all(&directory)
+            .await
+            .map_err(|_| ApiError::internal("删除被拒投稿文件失败"))?;
+    }
+    crate::accounts::audit(
+        &state.db,
+        Some(&actor.user_id),
+        "theme.reject.delete",
+        Some("theme"),
+        Some(&submission),
+        None,
+    )
+    .await
+    .ok();
+    Ok(Json(json!({"ok": true, "submissionId": submission})))
 }
 
 #[derive(Deserialize)]

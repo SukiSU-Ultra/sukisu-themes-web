@@ -20,6 +20,9 @@ use crate::util::{
 };
 
 pub const WITHDRAW_RETENTION_DAYS: i64 = 14;
+/// Rejected submissions keep their files for a while so an administrator can
+/// still publish them for the author after a mistaken rejection.
+pub const REJECTED_RETENTION_DAYS: i64 = 30;
 
 /// Bumped whenever theme metadata changes, so cached indexes can invalidate
 /// without rescanning the meta directory on every request.
@@ -741,6 +744,118 @@ pub fn pending_dir(paths: &Paths, submission: &str) -> Option<PathBuf> {
     }
 }
 
+fn rejected_root(paths: &Paths) -> PathBuf {
+    paths.root.join("rejected")
+}
+
+/// Where a rejected submission's files are parked while an administrator can
+/// still publish or delete them.
+pub fn rejected_dir(paths: &Paths, submission: &str) -> Option<PathBuf> {
+    if !valid_submission_id(submission) {
+        return None;
+    }
+    let root = rejected_root(paths);
+    let target = root.join(submission);
+    target.starts_with(&root).then_some(target)
+}
+
+/// Park a rejected submission instead of deleting it, so a mistaken rejection
+/// stays recoverable. Failing to move the files must never block the rejection,
+/// so the files are dropped as a fallback.
+pub fn retain_rejected(paths: &Paths, submission: &str) -> std::io::Result<()> {
+    let Some(source) = pending_dir(paths, submission) else {
+        return Ok(());
+    };
+    if !source.is_dir() {
+        return Ok(());
+    }
+    let Some(target) = rejected_dir(paths, submission) else {
+        return Ok(());
+    };
+    if target.exists() {
+        let _ = fs::remove_dir_all(&target);
+    }
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    match fs::rename(&source, &target) {
+        Ok(()) => {
+            // The directory keeps the submission's mtime; record the rejection
+            // time so the retention window starts when it was rejected.
+            let _ = fs::write(target.join("rejected-at"), now_iso());
+            Ok(())
+        }
+        Err(error) => {
+            let _ = fs::remove_dir_all(&source);
+            Err(error)
+        }
+    }
+}
+
+/// Delete parked rejections whose retention window has passed.
+pub fn purge_expired_rejected(paths: &Paths) -> Vec<String> {
+    let mut removed = Vec::new();
+    let root = rejected_root(paths);
+    let Ok(entries) = fs::read_dir(&root) else {
+        return removed;
+    };
+    for entry in entries.flatten() {
+        let directory = entry.path();
+        if !directory.is_dir() {
+            continue;
+        }
+        let Some(name) = directory.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !valid_submission_id(name) {
+            continue;
+        }
+        let stamped = fs::read_to_string(directory.join("rejected-at"))
+            .ok()
+            .and_then(|text| chrono::DateTime::parse_from_rfc3339(text.trim()).ok())
+            .map(|time| time.with_timezone(&chrono::Utc));
+        let stamp = stamped.or_else(|| {
+            directory
+                .metadata()
+                .ok()
+                .and_then(|metadata| metadata.modified().ok())
+                .map(chrono::DateTime::<chrono::Utc>::from)
+        });
+        let expired = stamp.is_some_and(|time| {
+            time + chrono::Duration::days(REJECTED_RETENTION_DAYS) <= chrono::Utc::now()
+        });
+        if expired && fs::remove_dir_all(&directory).is_ok() {
+            removed.push(name.to_string());
+        }
+    }
+    removed
+}
+
+pub fn rejected_state(paths: &Paths) -> (usize, u64) {
+    let mut count = 0usize;
+    let mut total = 0u64;
+    let Ok(entries) = fs::read_dir(rejected_root(paths)) else {
+        return (0, 0);
+    };
+    for entry in entries.flatten() {
+        let directory = entry.path();
+        if !directory.is_dir() || !directory.join("meta.json").is_file() {
+            continue;
+        }
+        count += 1;
+        for file in walkdir::WalkDir::new(&directory)
+            .into_iter()
+            .flatten()
+            .filter(|entry| entry.file_type().is_file())
+        {
+            if let Ok(metadata) = file.metadata() {
+                total = total.saturating_add(metadata.len());
+            }
+        }
+    }
+    (count, total)
+}
+
 pub fn pending_meta(_paths: &Paths, directory: &Path) -> Option<PendingMeta> {
     let text = fs::read_to_string(directory.join("meta.json")).ok()?;
     serde_json::from_str(&text).ok()
@@ -956,7 +1071,7 @@ pub async fn storage_usage(
             }
         }
     }
-    let pending_used = pending_state(paths).1;
+    let pending_used = pending_state(paths).1.saturating_add(rejected_state(paths).1);
     let used = asset_used.saturating_add(pending_used);
     let disk_free = fs4::available_space(&paths.root).unwrap_or(0);
     StorageUsage {

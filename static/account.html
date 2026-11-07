@@ -2842,12 +2842,19 @@ async function loadDrafts() {
     const data = await api('/drafts');
     const drafts = data.drafts || [];
     $('draftEmpty').classList.toggle('hidden', drafts.length > 0);
-    $('draftList').innerHTML = drafts.map(item => '<div class="list-item"><div class="item-head"><b>' +
-      escapeHtml(item.payload?.name || '未命名草稿') + '</b><span class="pill">v' +
-      escapeHtml(item.payload?.version || 1) + '</span></div><div class="item-meta">' +
-      escapeHtml(formatTime(item.updatedAt)) + '</div><div class="row"><button class="btn small" data-draft-restore="' +
-      escapeHtml(item.id) + '">继续编辑</button><button class="btn danger small" data-draft-delete="' +
-      escapeHtml(item.id) + '">删除草稿</button></div></div>').join('');
+    $('draftList').innerHTML = drafts.map(item => {
+      const rejected = item.payload && item.payload.rejected;
+      const reason = rejected && item.payload.rejectReason
+        ? '<br>拒绝原因：' + escapeHtml(item.payload.rejectReason)
+        : '';
+      return '<div class="list-item"><div class="item-head"><b>' +
+        escapeHtml(item.payload?.name || '未命名草稿') + '</b>' +
+        (rejected ? '<span class="pill bad">已拒绝</span>' : '') +
+        '<span class="pill">v' + escapeHtml(item.payload?.version || 1) + '</span></div><div class="item-meta">' +
+        escapeHtml(formatTime(item.updatedAt)) + reason + '</div><div class="row"><button class="btn small" data-draft-restore="' +
+        escapeHtml(item.id) + '">继续编辑</button><button class="btn danger small" data-draft-delete="' +
+        escapeHtml(item.id) + '">删除草稿</button></div></div>';
+    }).join('');
     $('draftList').querySelectorAll('[data-draft-restore]').forEach(button => button.addEventListener('click', () => {
       pendingDraft = drafts.find(item => item.id === button.dataset.draftRestore);
       if (pendingDraft) setView('upload');
