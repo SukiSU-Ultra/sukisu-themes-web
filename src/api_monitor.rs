@@ -1565,6 +1565,7 @@ fn account_function<'a>(method: &str, path: &str) -> Option<&'a str> {
         ("GET", "/discover") => "主题广场推荐",
         ("GET", "/history") => "读取最近主题",
         ("POST", "/history/view") => "记录主题查看",
+        ("POST", "/history/download") => "记录主题下载",
         ("POST", "/history/delete") => "删除主题历史",
         ("GET", "/messages") => "读取消息",
         ("GET", "/users/search") => "搜索用户",

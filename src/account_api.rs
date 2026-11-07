@@ -2725,10 +2725,19 @@ async fn require_active_author(state: &AppState, session: &SessionInfo) -> ApiRe
     Ok(())
 }
 
+#[derive(Default, Deserialize)]
+struct MyThemeDownloadQuery {
+    /// `0` skips the download-history entry, used when the manager prefills the
+    /// edit form with a theme the user already owns.
+    #[serde(default)]
+    history: Option<String>,
+}
+
 async fn download_my_theme(
     State(state): State<AppState>,
     Extension(session): Extension<SessionInfo>,
     Path(id): Path<String>,
+    Query(query): Query<MyThemeDownloadQuery>,
     method: axum::http::Method,
     headers: HeaderMap,
 ) -> ApiResult<Response> {
@@ -2742,7 +2751,8 @@ async fn download_my_theme(
     if !theme_owned_by_user(&state, &session, meta).await? {
         return Err(ApiError::forbidden("无权下载该主题"));
     }
-    if method == axum::http::Method::GET {
+    let record_history = query.history.as_deref() != Some("0");
+    if method == axum::http::Method::GET && record_history {
         let _ = crate::community::record_theme_history(
             &state.db,
             &session.user_id,
@@ -2767,7 +2777,7 @@ async fn download_my_theme(
         .serve(&meta.package, None)
         .await
         .map_err(|_| ApiError::not_found("主题包不存在"))?;
-    if method == axum::http::Method::GET {
+    if method == axum::http::Method::GET && record_history {
         state.record_theme_download(&meta.id);
     }
     let filename = format!("{}-v{}.sukisu", meta.id, meta.version);

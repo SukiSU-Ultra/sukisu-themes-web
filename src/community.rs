@@ -25,6 +25,7 @@ pub fn account_router() -> Router<AppState> {
         .route("/favorites/toggle", post(toggle_favorite))
         .route("/history", get(theme_history))
         .route("/history/view", post(record_theme_view))
+        .route("/history/download", post(record_theme_download))
         .route("/history/delete", post(delete_theme_history))
         .route("/updates", get(updates))
         .route("/updates/read", post(read_update))
@@ -891,6 +892,8 @@ async fn theme_history(
             "themeAuthorHash": theme.author_hash,
             "themeVersion": theme.version,
             "themePreviewUrl": preview,
+            "themePreviewPath": theme.preview_path,
+            "themeAdaptive": theme.adaptive,
             "r18": theme.r18,
         }));
     }
@@ -901,6 +904,25 @@ async fn record_theme_view(
     State(state): State<AppState>,
     Extension(session): Extension<SessionInfo>,
     body: Bytes,
+) -> ApiResult<Json<Value>> {
+    record_history_entry(&state, session, body, "view").await
+}
+
+/// The manager records downloads itself (it fetches packages from a source's
+/// asset URL rather than the account download route), so it reports them here.
+async fn record_theme_download(
+    State(state): State<AppState>,
+    Extension(session): Extension<SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
+    record_history_entry(&state, session, body, "download").await
+}
+
+async fn record_history_entry(
+    state: &AppState,
+    session: SessionInfo,
+    body: Bytes,
+    kind: &'static str,
 ) -> ApiResult<Json<Value>> {
     let value = json_body(body).await?;
     let body: HistoryViewBody = serde_json::from_value(value)
@@ -915,7 +937,7 @@ async fn record_theme_view(
     if meta.withdrawn_at.is_some() {
         return Err(ApiError::not_found("主题不存在"));
     }
-    record_theme_history(&state.db, &session.user_id, &meta.id, "view")
+    record_theme_history(&state.db, &session.user_id, &meta.id, kind)
         .await
         .map_err(ApiError::internal)?;
     Ok(Json(json!({"ok": true})))
