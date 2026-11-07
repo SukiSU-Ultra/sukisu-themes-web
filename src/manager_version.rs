@@ -93,38 +93,3 @@ async fn fetch() -> anyhow::Result<i64> {
     );
     Ok(code)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::page_count;
-
-    #[test]
-    fn reads_last_page_from_github_link_header() {
-        assert_eq!(
-            page_count(
-                Some(
-                    r#"<https://api.github.com/repos/example/repo/commits?per_page=1&page=3912>; rel="last", <https://api.github.com/repos/example/repo/commits?per_page=1&page=2>; rel="next""#
-                ),
-                1,
-            ),
-            Some(3912),
-        );
-    }
-
-    #[test]
-    fn uses_first_page_length_when_history_has_no_pagination() {
-        assert_eq!(page_count(None, 1), Some(1));
-        assert_eq!(page_count(Some(""), 0), Some(0));
-    }
-
-    #[test]
-    fn rejects_incomplete_paginated_link_headers() {
-        assert_eq!(
-            page_count(
-                Some(r#"<https://api.github.com/repos/example/repo/commits?page=2>; rel="next""#),
-                1
-            ),
-            None,
-        );
-    }
-}

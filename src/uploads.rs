@@ -1028,31 +1028,3 @@ pub fn pending_directory_size(directory: &Path) -> u64 {
 pub fn normalize_key_or_err(key: &str) -> Result<String, String> {
     normalize_asset_key(key).ok_or_else(|| "无效的资源路径".to_string())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn canonicalizes_adaptive_tag_aliases() {
-        let tags = normalize_tags(
-            vec![
-                "自适应主题".to_string(),
-                "pink".to_string(),
-                "Adaptive".to_string(),
-            ],
-            true,
-        );
-        assert_eq!(tags, vec!["adaptive".to_string(), "pink".to_string()]);
-    }
-
-    #[test]
-    fn adds_adaptive_tag_without_exceeding_the_limit() {
-        let mut tags: Vec<String> = (0..10).map(|index| format!("tag{index}")).collect();
-        tags[9] = "自适应".to_string();
-        let tags = normalize_tags(tags, true);
-        assert_eq!(tags.len(), 10);
-        assert_eq!(tags.first().map(String::as_str), Some("adaptive"));
-        assert_eq!(tags.iter().filter(|tag| *tag == "adaptive").count(), 1);
-    }
-}

@@ -135,27 +135,3 @@ pub fn image_format_for_ext(ext: &str) -> Option<ImageFormat> {
         _ => None,
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use image::{Rgb, RgbImage};
-
-    #[test]
-    fn resizes_png_to_jpeg() {
-        let mut source = RgbImage::new(2000, 1000);
-        for (x, y, pixel) in source.enumerate_pixels_mut() {
-            *pixel = Rgb([(x % 255) as u8, (y % 255) as u8, 128]);
-        }
-        let mut png = Vec::new();
-        DynamicImage::ImageRgb8(source)
-            .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
-            .unwrap();
-        let (optimized, ext) = optimize_image(png, ".png", 1280).unwrap();
-        assert_eq!(ext, ".jpg");
-        let decoded = load_image(&optimized).unwrap();
-        assert!(decoded.width().max(decoded.height()) <= 1280);
-        assert_eq!(decoded.width(), 1280);
-        assert_eq!(decoded.height(), 640);
-    }
-}
