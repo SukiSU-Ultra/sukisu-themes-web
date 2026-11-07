@@ -3468,7 +3468,7 @@ async fn submit_theme(
                 }
             }
         }
-        if old.version >= prepared.version as i64 {
+        if !crate::uploads::publish_version_allowed(&state.store, old, &prepared).await {
             return Err(ApiError::conflict(
                 "该主题已有同版本或更高版本，请提升版本号",
             ));

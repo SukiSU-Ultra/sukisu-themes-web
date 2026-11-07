@@ -2270,7 +2270,7 @@ async fn submit(
                 return Err(ApiError::conflict("该主题 ID 属于其他作者"));
             }
         }
-        if old.version >= prepared.version as i64 {
+        if !uploads::publish_version_allowed(&state.store, old, &prepared).await {
             return Err(ApiError::conflict(
                 "该主题已有同版本或更高版本，请提升版本号",
             ));
@@ -2526,6 +2526,7 @@ async fn approve(
         uploads::load_pending_upload(&state.paths, &directory, &meta).map_err(ApiError::bad)?;
     let theme_id = prepared.id.clone();
     let old_meta = catalog::find_theme_meta(&state.paths, &theme_id);
+    let mut already_published = false;
     if let Some((_, old)) = &old_meta {
         let pending_owner = meta.author_hash.clone();
         let old_owner = old.author_hash.clone().unwrap_or_default();
@@ -2535,6 +2536,17 @@ async fn approve(
         if old.version > prepared.version as i64 {
             return Err(ApiError::conflict("商店中已有更高版本，不能降级发布"));
         }
+        // An earlier approval of this very submission may have published the
+        // package before its response was lost or its pending directory could
+        // not be removed. Republishing is impossible at the same version, so
+        // finish the submission instead of leaving it stuck in the queue.
+        if old.version == prepared.version as i64
+            && state.store.exists(&old.package).await
+            && state.store.exists(&old.preview).await
+            && uploads::publishes_same_package(&state.store, old, &prepared).await
+        {
+            already_published = true;
+        }
     }
     let pending_size = uploads::pending_directory_size(&directory);
     let author_hash = if meta.author_hash.is_empty() {
@@ -2543,18 +2555,41 @@ async fn approve(
         Some(meta.author_hash.clone())
     };
     let mut approved_author_requests: Vec<String> = Vec::new();
-    let _ = uploads::publish_theme(
-        &state.store,
-        &state.settings,
-        &state.paths,
-        state.limit_bytes.load(Ordering::Relaxed),
-        prepared,
-        author_hash.clone(),
-        pending_size,
-        old_meta,
-    )
-    .await?;
-    state.refresh_withdrawn_assets();
+    if already_published {
+        // The theme is live already; only republish it if it was withdrawn and
+        // make sure the catalog lists it.
+        if old_meta.as_ref().is_some_and(|(_, old)| old.withdrawn_at.is_some()) {
+            let lock = catalog::theme_mutation_lock(&theme_id);
+            let _guard = lock.lock().await;
+            if let Some((latest_file, mut latest_meta)) =
+                catalog::find_theme_meta(&state.paths, &theme_id)
+            {
+                if latest_meta.withdrawn_at.is_some() {
+                    latest_meta.withdrawn_at = None;
+                    latest_meta.updated_at = crate::util::now_iso();
+                    catalog::write_meta(&latest_file, &latest_meta)
+                        .map_err(ApiError::internal)?;
+                }
+            }
+        }
+        if let Err(error) = catalog::rebuild_catalog(&state.store, &state.paths).await {
+            tracing::warn!(?error, theme_id = %theme_id, "retried approval catalog rebuild failed");
+        }
+        state.refresh_withdrawn_assets();
+    } else {
+        uploads::publish_theme(
+            &state.store,
+            &state.settings,
+            &state.paths,
+            state.limit_bytes.load(Ordering::Relaxed),
+            prepared,
+            author_hash.clone(),
+            pending_size,
+            old_meta,
+        )
+        .await?;
+        state.refresh_withdrawn_assets();
+    }
     if let Some(hash) = author_hash.as_deref() {
         if let Err(error) = crate::community::record_release(&state.db, hash, &theme_id, &meta.name, meta.version).await {
             tracing::warn!(?error, "failed to record theme update");

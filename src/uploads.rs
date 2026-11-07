@@ -716,6 +716,53 @@ pub fn load_pending_upload(
     })
 }
 
+/// Whether an upload may replace the metadata that already exists for its
+/// theme id.
+///
+/// A higher version is always allowed. The same version is only allowed when
+/// nothing is served for it any more — the previous metadata is a hidden
+/// leftover whose package or preview is missing from storage (for example a
+/// theme whose assets were never written, or one purged from an overflow
+/// location). A theme that is still downloadable must bump its version because
+/// managers cache the versioned asset URLs immutably. Retried approvals of an
+/// already-published package are handled by the approval path itself.
+pub async fn publish_version_allowed(
+    store: &AssetStore,
+    existing: &Meta,
+    prepared: &PreparedUpload,
+) -> bool {
+    let incoming = prepared.version as i64;
+    if existing.version != incoming {
+        return existing.version < incoming;
+    }
+    !(store.exists(&existing.package).await && store.exists(&existing.preview).await)
+}
+
+/// True when this upload carries the exact package that is already stored for
+/// its theme id. Used to finish a retried approval that already published the
+/// submission instead of failing it forever on the version check.
+pub async fn publishes_same_package(
+    store: &AssetStore,
+    existing: &Meta,
+    prepared: &PreparedUpload,
+) -> bool {
+    if prepared.package_sha256.is_empty() {
+        return false;
+    }
+    let recorded = existing
+        .sha256
+        .as_deref()
+        .map(str::trim)
+        .filter(|sha| !sha.is_empty());
+    let existing_sha = match recorded {
+        Some(sha) => Some(sha.to_string()),
+        // Metadata written before checksums were tracked (or a failed
+        // backfill) still has the package on disk; compare against that.
+        None => store.sha256(&existing.package).await.ok(),
+    };
+    existing_sha.is_some_and(|sha| sha.eq_ignore_ascii_case(&prepared.package_sha256))
+}
+
 pub async fn publish_theme(
     store: &AssetStore,
     _settings: &StorageSettings,
@@ -743,8 +790,12 @@ pub async fn publish_theme(
     if !unchanged {
         return Err(PublishError::Conflict("主题在上传期间发生变化，请刷新后重试".to_string()));
     }
-    if latest.as_ref().is_some_and(|(_, meta)| meta.version >= prepared.version as i64) {
-        return Err(PublishError::Conflict("该主题已有同版本或更高版本，请提升版本号".to_string()));
+    if let Some((_, meta)) = latest.as_ref() {
+        if !publish_version_allowed(store, meta, &prepared).await {
+            return Err(PublishError::Conflict(
+                "该主题已有同版本或更高版本，请提升版本号".to_string(),
+            ));
+        }
     }
     let old_meta = latest;
     let stem = format!("{}-v{}", prepared.id, prepared.version);
