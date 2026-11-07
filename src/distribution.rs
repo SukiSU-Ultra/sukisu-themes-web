@@ -183,9 +183,11 @@ impl Distribution {
         };
         validate_config(&config)?;
         let client = crate::net::apply_client_family(
-            reqwest::Client::builder()
-                .timeout(Duration::from_secs(2))
-                .redirect(reqwest::redirect::Policy::none()),
+            crate::net::apply_extra_cas(
+                reqwest::Client::builder()
+                    .timeout(Duration::from_secs(2))
+                    .redirect(reqwest::redirect::Policy::none()),
+            ),
             family,
         )
         .build()?;

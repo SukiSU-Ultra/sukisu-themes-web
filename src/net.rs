@@ -65,6 +65,47 @@ impl reqwest::dns::Resolve for FamilyResolver {
     }
 }
 
+/// PEM file holding extra CAs that distribution probes must trust. Edges reached
+/// over a private network (EasyTier, LAN) usually present a self-signed certificate
+/// that no public root authority covers.
+pub const EXTRA_CA_ENV: &str = "THEME_DISTRIBUTION_CA_FILE";
+
+/// Trust the bundled roots plus the PEM bundle named by `THEME_DISTRIBUTION_CA_FILE`.
+/// Without the variable the builder is untouched, so unrelated traffic cannot be
+/// downgraded by a stray file.
+pub fn apply_extra_cas(builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
+    let Some(path) = std::env::var_os(EXTRA_CA_ENV).filter(|value| !value.is_empty()) else {
+        return builder;
+    };
+    let mut builder = builder;
+    match std::fs::read(&path) {
+        Ok(pem) => {
+            // A PEM bundle concatenates certificates; split on the END marker so each
+            // block is added as its own trust anchor.
+            let text = String::from_utf8_lossy(&pem).into_owned();
+            let marker = "-----END CERTIFICATE-----";
+            let mut blocks = 0;
+            let mut start = 0usize;
+            while let Some(index) = text[start..].find(marker) {
+                let end = start + index + marker.len();
+                let block = &text[start..end];
+                if let Some(begin) = block.find("-----BEGIN CERTIFICATE-----") {
+                    if let Ok(cert) = reqwest::Certificate::from_pem(block[begin..].as_bytes()) {
+                        builder = builder.add_root_certificate(cert);
+                        blocks += 1;
+                    }
+                }
+                start = end;
+            }
+            tracing::info!(blocks, path = %std::path::Path::new(&path).display(), "loaded extra distribution CAs");
+        }
+        Err(error) => {
+            tracing::warn!(%error, path = %std::path::Path::new(&path).display(), "failed to read distribution CA file");
+        }
+    }
+    builder
+}
+
 /// Install the family filter on a reqwest builder. `Auto` is a no-op so the
 /// platform resolver's ordering and /etc/hosts behavior stay untouched.
 pub fn apply_client_family(
