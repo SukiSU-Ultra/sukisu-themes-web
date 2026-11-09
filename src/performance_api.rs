@@ -41,6 +41,16 @@ struct PerformanceBody {
     #[serde(default)]
     flush_interval_secs: Option<u64>,
     #[serde(default)]
+    api_timeout_secs: Option<u64>,
+    #[serde(default)]
+    admin_timeout_secs: Option<u64>,
+    #[serde(default)]
+    preview_timeout_secs: Option<u64>,
+    #[serde(default)]
+    download_timeout_secs: Option<u64>,
+    #[serde(default)]
+    upload_timeout_secs: Option<u64>,
+    #[serde(default)]
     poll_interval_secs: Option<u64>,
     #[serde(default)]
     worker_threads: Option<usize>,
@@ -75,6 +85,21 @@ impl PerformanceBody {
             flush_interval_secs: self
                 .flush_interval_secs
                 .unwrap_or(current.flush_interval_secs),
+            api_timeout_secs: self
+                .api_timeout_secs
+                .unwrap_or(current.api_timeout_secs),
+            admin_timeout_secs: self
+                .admin_timeout_secs
+                .unwrap_or(current.admin_timeout_secs),
+            preview_timeout_secs: self
+                .preview_timeout_secs
+                .unwrap_or(current.preview_timeout_secs),
+            download_timeout_secs: self
+                .download_timeout_secs
+                .unwrap_or(current.download_timeout_secs),
+            upload_timeout_secs: self
+                .upload_timeout_secs
+                .unwrap_or(current.upload_timeout_secs),
             poll_interval_secs: self
                 .poll_interval_secs
                 .unwrap_or(current.poll_interval_secs),
@@ -225,6 +250,11 @@ async fn performance_get(State(state): State<AppState>) -> ApiResult<Json<Value>
             "compressionMinBytes": state.performance.compression_min_bytes.load(std::sync::atomic::Ordering::Relaxed),
             "downloadBufferBytes": state.performance.download_buffer_bytes.load(std::sync::atomic::Ordering::Relaxed),
             "flushIntervalSecs": state.performance.flush_interval_secs.load(std::sync::atomic::Ordering::Relaxed),
+            "apiTimeoutSecs": state.performance.api_timeout_secs.load(std::sync::atomic::Ordering::Relaxed),
+            "adminTimeoutSecs": state.performance.admin_timeout_secs.load(std::sync::atomic::Ordering::Relaxed),
+            "previewTimeoutSecs": state.performance.preview_timeout_secs.load(std::sync::atomic::Ordering::Relaxed),
+            "downloadTimeoutSecs": state.performance.download_timeout_secs.load(std::sync::atomic::Ordering::Relaxed),
+            "uploadTimeoutSecs": state.performance.upload_timeout_secs.load(std::sync::atomic::Ordering::Relaxed),
         },
         "runtime": {
             "version": env!("CARGO_PKG_VERSION"),
@@ -235,7 +265,7 @@ async fn performance_get(State(state): State<AppState>) -> ApiResult<Json<Value>
         },
         "database": database,
         "compression": state.performance.stats.snapshot(),
-        "pipeline": ["public_headers", "compression_stats", "compression (gzip/zstd)", "compression_stats_inner", "maintenance", "token_guard", "router"],
+        "pipeline": ["public_headers", "compression_stats", "compression (gzip/zstd)", "compression_stats_inner", "maintenance", "token_guard", "request_deadline", "router"],
         "routes": route_structure(),
         "restartRequiredFor": ["codecs", "quality", "uploadConcurrency", "workerThreads", "blockingThreads", "dbPoolSize"],
     })))
@@ -262,7 +292,7 @@ async fn performance_save(
         Some("config"),
         None,
         Some(&format!(
-            "compression={} gzip={} zstd={} min={} quality={} buffer={} upload={} flush={} poll={} workers={} blocking={}",
+            "compression={} gzip={} zstd={} min={} quality={} buffer={} upload={} flush={} poll={} workers={} blocking={} timeouts={}/{}/{}/{}/{}",
             next.compression_enabled,
             next.compression_gzip,
             next.compression_zstd,
@@ -273,7 +303,12 @@ async fn performance_save(
             next.flush_interval_secs,
             next.poll_interval_secs,
             next.worker_threads,
-            next.blocking_threads
+            next.blocking_threads,
+            next.api_timeout_secs,
+            next.admin_timeout_secs,
+            next.preview_timeout_secs,
+            next.download_timeout_secs,
+            next.upload_timeout_secs
         )),
     )
     .await;

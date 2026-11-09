@@ -137,6 +137,11 @@ pub struct PerformanceRuntime {
     pub compression_min_bytes: AtomicUsize,
     pub download_buffer_bytes: AtomicUsize,
     pub flush_interval_secs: AtomicU64,
+    pub api_timeout_secs: AtomicU64,
+    pub admin_timeout_secs: AtomicU64,
+    pub preview_timeout_secs: AtomicU64,
+    pub download_timeout_secs: AtomicU64,
+    pub upload_timeout_secs: AtomicU64,
     pub stats: CompressionStats,
     pub live: LiveStats,
 }
@@ -268,6 +273,11 @@ impl PerformanceRuntime {
             compression_min_bytes: AtomicUsize::new(settings.compression_min_bytes),
             download_buffer_bytes: AtomicUsize::new(settings.download_buffer_bytes),
             flush_interval_secs: AtomicU64::new(settings.flush_interval_secs),
+            api_timeout_secs: AtomicU64::new(settings.api_timeout_secs),
+            admin_timeout_secs: AtomicU64::new(settings.admin_timeout_secs),
+            preview_timeout_secs: AtomicU64::new(settings.preview_timeout_secs),
+            download_timeout_secs: AtomicU64::new(settings.download_timeout_secs),
+            upload_timeout_secs: AtomicU64::new(settings.upload_timeout_secs),
             stats: CompressionStats::default(),
             live: LiveStats::default(),
         }
@@ -282,7 +292,58 @@ impl PerformanceRuntime {
             .store(settings.download_buffer_bytes, Ordering::Relaxed);
         self.flush_interval_secs
             .store(settings.flush_interval_secs, Ordering::Relaxed);
+        self.api_timeout_secs
+            .store(settings.api_timeout_secs, Ordering::Relaxed);
+        self.admin_timeout_secs
+            .store(settings.admin_timeout_secs, Ordering::Relaxed);
+        self.preview_timeout_secs
+            .store(settings.preview_timeout_secs, Ordering::Relaxed);
+        self.download_timeout_secs
+            .store(settings.download_timeout_secs, Ordering::Relaxed);
+        self.upload_timeout_secs
+            .store(settings.upload_timeout_secs, Ordering::Relaxed);
     }
+
+    /// Hard deadline for a route class. `None` means the request may stay open
+    /// indefinitely (uploads and package downloads by default). This only limits
+    /// how long the handler may run; streamed bodies deliberately keep their own
+    /// backpressure instead of being cut mid-transfer.
+    pub fn request_timeout(&self, path: &str) -> Option<Duration> {
+        let seconds = if is_upload_path(path) {
+            self.upload_timeout_secs.load(Ordering::Relaxed)
+        } else if path == "/catalog.json"
+            || path.starts_with("/previews/")
+            || path.starts_with("/screenshots/")
+            || path.starts_with("/avatars/")
+        {
+            self.preview_timeout_secs.load(Ordering::Relaxed)
+        } else if path.starts_with("/themes/")
+            || path.starts_with("/distribution/asset")
+            || path.ends_with("/download")
+        {
+            self.download_timeout_secs.load(Ordering::Relaxed)
+        } else if path == "/api"
+            || path.starts_with("/api/")
+            || path == "/admin/api"
+            || path.starts_with("/admin/api/")
+        {
+            self.admin_timeout_secs.load(Ordering::Relaxed)
+        } else {
+            self.api_timeout_secs.load(Ordering::Relaxed)
+        };
+        (seconds > 0).then(|| Duration::from_secs(seconds))
+    }
+}
+
+fn is_upload_path(path: &str) -> bool {
+    path == "/submit"
+        || path == "/account/api/submit"
+        || path.starts_with("/api/upload-theme")
+        || path.starts_with("/api/uploads")
+        || path.starts_with("/admin/api/upload-theme")
+        || path.starts_with("/admin/api/uploads")
+        || path.starts_with("/account/api/uploads")
+        || path.starts_with("/distribution/upload")
 }
 
 #[derive(Clone)]

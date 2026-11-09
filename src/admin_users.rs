@@ -755,7 +755,8 @@ async fn approve_author_request_record(
         if let Err(error) = authors::schedule_grace_if_needed(&state.db, &state.paths, hash).await {
             tracing::warn!("author grace scheduling failed: {error:#}");
         }
-        if let Err(error) = crate::uploads::inherit_author_avatar(
+        // Returns the inherited avatar path, or None when there is nothing to copy.
+        if let Some(avatar) = crate::uploads::inherit_author_avatar(
             &state.store,
             &state.paths,
             &state.db,
@@ -765,7 +766,7 @@ async fn approve_author_request_record(
         )
         .await
         {
-            tracing::warn!("author avatar inherit failed: {error:#}");
+            tracing::info!(%avatar, "author avatar inherited on approval");
         }
     }
     if let Err(error) = accounts::audit(

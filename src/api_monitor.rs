@@ -1007,23 +1007,14 @@ impl Identity {
 }
 
 fn is_monitored_path(path: &str) -> bool {
-    if path.starts_with("/client/")
-        || path.starts_with("/_site/")
-        || path.starts_with("/account/api/access")
-        || path.starts_with("/api/client-credentials")
-        || path.starts_with("/admin/api/client-credentials")
-        || path.starts_with("/api/sites")
-        || path.starts_with("/admin/api/sites")
+    // Managed home-CDN routes carry one-time node credentials/capabilities and
+    // high-frequency edge sync traffic; never persist them in captures. Every
+    // other business route (client credentials, site management, /client/,
+    // /_site/ and resumable-upload status) stays visible in the monitor.
+    if path.starts_with("/distribution/")
+        || path.starts_with("/admin/api/distribution")
+        || path.starts_with("/api/distribution")
     {
-        return false;
-    }
-    // Upload status responses contain short-lived edge capabilities.
-    if path.starts_with("/distribution/") || path.starts_with("/api/uploads/")
-        || path.starts_with("/admin/api/uploads/") || path.starts_with("/account/api/uploads/") {
-        return false;
-    }
-    // One-time node credentials must not be persisted in request/response captures.
-    if path.starts_with("/admin/api/distribution") || path.starts_with("/api/distribution") {
         return false;
     }
     if path.starts_with("/admin/api/monitor") || path.starts_with("/api/monitor") {
@@ -1039,6 +1030,8 @@ fn is_monitored_path(path: &str) -> bool {
         || path.starts_with("/admin/api/")
         || path == "/account/api"
         || path.starts_with("/account/api/")
+        || path.starts_with("/client/")
+        || path.starts_with("/_site/")
         || path.starts_with("/themes/")
         || path.starts_with("/previews/")
         || path.starts_with("/screenshots/")
@@ -1096,6 +1089,14 @@ fn is_credential_capture_path(path: &str) -> bool {
             | "/admin/api/tokens/create"
             | "/api/storage"
             | "/api/storage/backend"
+            | "/client/access"
+            | "/client/refresh"
+            | "/account/api/access"
+            | "/account/api/access/revoke"
+            | "/api/client-credentials"
+            | "/api/client-credentials/revoke"
+            | "/admin/api/client-credentials"
+            | "/admin/api/client-credentials/revoke"
     )
 }
 
@@ -1402,6 +1403,15 @@ fn function_name(method: &str, path: &str) -> String {
     }
     if path.starts_with("/themes/") {
         return "下载主题包".to_string();
+    }
+    if path == "/client/access" {
+        return "客户端凭据引导".to_string();
+    }
+    if path == "/client/refresh" {
+        return "刷新客户端凭据".to_string();
+    }
+    if let Some(relative) = path.strip_prefix("/_site/") {
+        return format!("站点同步 {relative}");
     }
     if path.starts_with("/previews/") {
         return "获取预览图".to_string();

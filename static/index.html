@@ -723,7 +723,20 @@
           <div><label for="perfDbPoolSize">数据库连接池</label><input id="perfDbPoolSize" type="number" min="1" max="32"></div>
         </div>
         <div class="row"><button class="primary" id="perfSaveRuntime">保存运行配置</button><button id="perfRestart">重启服务</button></div>
-        <p class="field-hint">上传并发、线程数和编码需要重启；下载缓冲、落库间隔和轮询间隔即时生效。</p>
+        <p class="field-hint">上传并发、线程数和编码需要重启；下载缓冲、落库间隔、轮询间隔和请求超时即时生效。</p>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h4>接口强制关闭时间</h4>
+        <p class="hint">超过时限的请求会被主动断开并返回 504，避免来源不明的流量长期占用连接。0 表示不限制；填写时范围为 15 到 600 秒（下载与上传最多 3600 秒）。</p>
+        <div class="form-grid">
+          <div><label for="perfApiTimeout">普通接口（秒）</label><input id="perfApiTimeout" type="number" min="0" max="600"></div>
+          <div><label for="perfAdminTimeout">管理接口（秒）</label><input id="perfAdminTimeout" type="number" min="0" max="600"></div>
+          <div><label for="perfPreviewTimeout">预览图 / 目录（秒）</label><input id="perfPreviewTimeout" type="number" min="0" max="600"></div>
+          <div><label for="perfDownloadTimeout">主题包下载（秒，0=不限）</label><input id="perfDownloadTimeout" type="number" min="0" max="3600"></div>
+          <div><label for="perfUploadTimeout">主题上传（秒，0=不限）</label><input id="perfUploadTimeout" type="number" min="0" max="3600"></div>
+        </div>
+        <div class="row"><button class="primary" id="perfSaveTimeouts">保存超时配置</button></div>
+        <p class="field-hint">默认：普通接口 30 秒、管理接口 600 秒、预览 15 秒；下载与上传默认 0（不限制），大文件不会被中途截断。只有分布式分发与边缘节点接口不写入接口监控。</p>
       </div>
       <div class="card" style="margin-top:14px">
         <h4>压缩分类</h4>
@@ -751,7 +764,7 @@
       </div>
       <div class="card">
         <div class="section-head">
-          <div><h4>实时连接</h4><p class="hint">监控 /api、/admin/api、/account/api、/submit、/catalog.json、/health 以及主题包/预览图/头像/截图下载，每 1 秒自动刷新；正在处理和最近完成的请求都会显示在这里。</p></div>
+          <div><h4>实时连接</h4><p class="hint">监控 /api、/admin/api、/account/api、/submit、/catalog.json、/health、/client/、/_site/ 以及主题包/预览图/头像/截图下载，每 1 秒自动刷新；正在处理和最近完成的请求都会显示在这里。只有分布式分发与边缘节点接口默认不记录，避免节点令牌和高频同步日志占满监控。</p></div>
           <div class="row" style="margin:0">
             <span class="pill" id="monitorWatchPill">追踪 0</span>
             <label class="check"><input id="monitorAutoRefresh" type="checkbox" checked> 自动刷新</label>
@@ -4010,6 +4023,11 @@ function applyPerformanceForm(settings) {
   $('perfWorkerThreads').value = settings.workerThreads || 0;
   $('perfBlockingThreads').value = settings.blockingThreads || 64;
   $('perfDbPoolSize').value = settings.dbPoolSize || 4;
+  $('perfApiTimeout').value = settings.apiTimeoutSecs ?? 30;
+  $('perfAdminTimeout').value = settings.adminTimeoutSecs ?? 600;
+  $('perfPreviewTimeout').value = settings.previewTimeoutSecs ?? 15;
+  $('perfDownloadTimeout').value = settings.downloadTimeoutSecs ?? 0;
+  $('perfUploadTimeout').value = settings.uploadTimeoutSecs ?? 0;
 }
 
 function performancePayload() {
@@ -4026,6 +4044,11 @@ function performancePayload() {
     workerThreads: Number($('perfWorkerThreads').value) || 0,
     blockingThreads: Number($('perfBlockingThreads').value) || 64,
     dbPoolSize: Number($('perfDbPoolSize').value) || 4,
+    apiTimeoutSecs: Math.max(0, Math.trunc(Number($('perfApiTimeout').value) || 0)),
+    adminTimeoutSecs: Math.max(0, Math.trunc(Number($('perfAdminTimeout').value) || 0)),
+    previewTimeoutSecs: Math.max(0, Math.trunc(Number($('perfPreviewTimeout').value) || 0)),
+    downloadTimeoutSecs: Math.max(0, Math.trunc(Number($('perfDownloadTimeout').value) || 0)),
+    uploadTimeoutSecs: Math.max(0, Math.trunc(Number($('perfUploadTimeout').value) || 0)),
   };
 }
 
@@ -4147,6 +4170,7 @@ async function savePerformance() {
 
 $('perfSaveCompression').addEventListener('click', savePerformance);
 $('perfSaveRuntime').addEventListener('click', savePerformance);
+$('perfSaveTimeouts').addEventListener('click', savePerformance);
 $('perfResetStats').addEventListener('click', async () => {
   if (!confirmTwice('重置压缩统计会清零当前统计计数，是否继续？', '再次确认重置统计？')) return;
   try {

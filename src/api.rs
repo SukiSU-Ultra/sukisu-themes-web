@@ -511,6 +511,12 @@ pub fn router(state: AppState) -> Router {
         .route("/screenshots/{*path}", get(asset))
         .route("/avatars/{*path}", get(asset))
         .fallback(get(static_file))
+        // Innermost: every outer metrics/monitor layer must observe the 504 and
+        // finish its bookkeeping instead of being cancelled with the handler.
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            request_deadline,
+        ))
         .layer(DefaultBodyLimit::max(config::MAX_UPLOAD_BODY_BYTES))
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .layer(middleware::from_fn_with_state(
@@ -542,6 +548,30 @@ pub fn router(state: AppState) -> Router {
         .layer(middleware::from_fn(request_context))
         .layer(middleware::from_fn(crate::site::child_guard))
         .with_state(state)
+}
+
+/// Hard request deadline applied directly around the routes (innermost layer,
+/// so monitoring/metrics still see the 504 and can release their counters).
+/// Route classes get different budgets: preview images are cut quickly, admin
+/// mutations may run for up to ten minutes, and uploads plus package downloads
+/// stay unlimited by default so large transfers are not interrupted. A timed-out
+/// handler is cancelled and the client receives 504.
+async fn request_deadline(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let path = request.uri().path().to_string();
+    let Some(limit) = state.performance.request_timeout(&path) else {
+        return next.run(request).await;
+    };
+    match tokio::time::timeout(limit, next.run(request)).await {
+        Ok(response) => response,
+        Err(_) => {
+            tracing::warn!(path = %path, timeout_secs = limit.as_secs(), "request deadline exceeded");
+            (StatusCode::GATEWAY_TIMEOUT, "请求超时，连接已关闭").into_response()
+        }
+    }
 }
 
 /// Static assets and the catalog used to sit behind Caddy's token gate. The
@@ -2736,7 +2766,8 @@ async fn approve_directory(
             {
                 tracing::warn!("author grace clearing failed: {error:#}");
             }
-            if let Err(error) = crate::uploads::inherit_author_avatar(
+            // Returns the inherited avatar path, or None when there is nothing to copy.
+            if let Some(avatar) = crate::uploads::inherit_author_avatar(
                 &state.store,
                 &state.paths,
                 &state.db,
@@ -2746,7 +2777,7 @@ async fn approve_directory(
             )
             .await
             {
-                tracing::warn!(%hash, "inherit author avatar after approval failed: {error:#}");
+                tracing::info!(%hash, %avatar, "author avatar inherited after approval");
             }
         }
     }

@@ -273,6 +273,11 @@ pub const DEFAULT_UPLOAD_CONCURRENCY: usize = 4;
 pub const DEFAULT_FLUSH_INTERVAL_SECS: u64 = 3;
 pub const DEFAULT_POLL_INTERVAL_SECS: u64 = 30;
 pub const DEFAULT_BLOCKING_THREADS: usize = 64;
+pub const DEFAULT_API_TIMEOUT_SECS: u64 = 30;
+pub const DEFAULT_ADMIN_TIMEOUT_SECS: u64 = 600;
+pub const DEFAULT_PREVIEW_TIMEOUT_SECS: u64 = 15;
+pub const DEFAULT_DOWNLOAD_TIMEOUT_SECS: u64 = 0;
+pub const DEFAULT_UPLOAD_TIMEOUT_SECS: u64 = 0;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -289,6 +294,16 @@ pub struct PerformanceSettings {
     pub worker_threads: usize,
     pub blocking_threads: usize,
     pub db_pool_size: usize,
+    /// Hard request deadline for account/public APIs; 0 disables it.
+    pub api_timeout_secs: u64,
+    /// Hard request deadline for admin APIs; 0 disables it.
+    pub admin_timeout_secs: u64,
+    /// Hard request deadline for preview images/catalog; 0 disables it.
+    pub preview_timeout_secs: u64,
+    /// Hard request deadline for theme package downloads; 0 disables it.
+    pub download_timeout_secs: u64,
+    /// Hard request deadline for uploads; 0 keeps uploads unlimited.
+    pub upload_timeout_secs: u64,
 }
 
 impl Default for PerformanceSettings {
@@ -306,6 +321,11 @@ impl Default for PerformanceSettings {
             worker_threads: 0,
             blocking_threads: DEFAULT_BLOCKING_THREADS,
             db_pool_size: 4,
+            api_timeout_secs: DEFAULT_API_TIMEOUT_SECS,
+            admin_timeout_secs: DEFAULT_ADMIN_TIMEOUT_SECS,
+            preview_timeout_secs: DEFAULT_PREVIEW_TIMEOUT_SECS,
+            download_timeout_secs: DEFAULT_DOWNLOAD_TIMEOUT_SECS,
+            upload_timeout_secs: DEFAULT_UPLOAD_TIMEOUT_SECS,
         }
     }
 }
@@ -362,6 +382,19 @@ pub fn read_performance_settings(paths: &Paths) -> PerformanceSettings {
         blocking_threads: parse_usize("PERF_BLOCKING_THREADS", defaults.blocking_threads)
             .clamp(8, 512),
         db_pool_size: parse_usize("PERF_DB_POOL_SIZE", defaults.db_pool_size).clamp(1, 32),
+        api_timeout_secs: parse_u64("PERF_API_TIMEOUT_SECS", defaults.api_timeout_secs)
+            .clamp(0, 600),
+        admin_timeout_secs: parse_u64("PERF_ADMIN_TIMEOUT_SECS", defaults.admin_timeout_secs)
+            .clamp(0, 600),
+        preview_timeout_secs: parse_u64("PERF_PREVIEW_TIMEOUT_SECS", defaults.preview_timeout_secs)
+            .clamp(0, 600),
+        download_timeout_secs: parse_u64(
+            "PERF_DOWNLOAD_TIMEOUT_SECS",
+            defaults.download_timeout_secs,
+        )
+        .clamp(0, 3600),
+        upload_timeout_secs: parse_u64("PERF_UPLOAD_TIMEOUT_SECS", defaults.upload_timeout_secs)
+            .clamp(0, 3600),
     }
 }
 
@@ -400,6 +433,23 @@ pub fn validate_performance_settings(settings: PerformanceSettings) -> Result<Pe
     }
     if !(1..=32).contains(&settings.db_pool_size) {
         bail!("数据库连接池需要在 1 到 32 之间");
+    }
+    for (value, label) in [
+        (settings.api_timeout_secs, "接口超时"),
+        (settings.admin_timeout_secs, "管理接口超时"),
+        (settings.preview_timeout_secs, "预览超时"),
+    ] {
+        if value != 0 && !(15..=600).contains(&value) {
+            bail!("{label}需要 15 到 600 秒，0 表示不限制");
+        }
+    }
+    for (value, label) in [
+        (settings.download_timeout_secs, "下载超时"),
+        (settings.upload_timeout_secs, "上传超时"),
+    ] {
+        if value > 3600 {
+            bail!("{label}不能超过 3600 秒，0 表示不限制");
+        }
     }
     Ok(settings)
 }
@@ -453,6 +503,26 @@ pub fn write_performance_settings(paths: &Paths, settings: &PerformanceSettings)
         (
             "PERF_DB_POOL_SIZE",
             settings.db_pool_size.to_string(),
+        ),
+        (
+            "PERF_API_TIMEOUT_SECS",
+            settings.api_timeout_secs.to_string(),
+        ),
+        (
+            "PERF_ADMIN_TIMEOUT_SECS",
+            settings.admin_timeout_secs.to_string(),
+        ),
+        (
+            "PERF_PREVIEW_TIMEOUT_SECS",
+            settings.preview_timeout_secs.to_string(),
+        ),
+        (
+            "PERF_DOWNLOAD_TIMEOUT_SECS",
+            settings.download_timeout_secs.to_string(),
+        ),
+        (
+            "PERF_UPLOAD_TIMEOUT_SECS",
+            settings.upload_timeout_secs.to_string(),
         ),
     ] {
         set_env_key(&paths.admin_config, key, &value)?;
