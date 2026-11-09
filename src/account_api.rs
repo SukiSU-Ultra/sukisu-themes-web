@@ -1172,7 +1172,7 @@ async fn update_preferences(
         .map(|_| now.clone());
     state
         .db
-        .call(move |conn| {
+        .call_write(move |conn| {
             conn.execute(
                 "INSERT INTO user_preferences(user_id, show_r18, show_r18_set, consent_version, consent_at, updated_at)
                  VALUES (?1, COALESCE(?2, 0), CASE WHEN ?2 IS NULL THEN 0 ELSE 1 END, COALESCE(?3, 0), ?4, ?5)
@@ -1517,7 +1517,7 @@ async fn device_start(
     let ip_for_db = ip.clone();
     state
         .db
-        .call(move |conn| {
+        .call_write(move |conn| {
             conn.execute(
                 "DELETE FROM device_login_codes WHERE expires_at <= ?1",
                 [unix_now() as i64],
@@ -1616,7 +1616,7 @@ async fn device_poll(
         let consumed_at = now_iso();
         state
             .db
-            .call(move |conn| {
+            .call_write(move |conn| {
                 let changed = conn.execute(
                     "UPDATE device_login_codes
                      SET consumed_at = ?1
@@ -1755,7 +1755,7 @@ async fn device_approve(
     let approved_at = now_iso();
     let changed = state
         .db
-        .call(move |conn| {
+        .call_write(move |conn| {
             let changed = conn.execute(
                 "UPDATE device_login_codes
                  SET status = 'approved', user_id = ?1, approved_at = ?2

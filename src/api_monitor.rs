@@ -182,7 +182,7 @@ pub struct MonitorRuntime {
 impl MonitorRuntime {
     pub async fn new(db: Database, paths: &Paths) -> Arc<Self> {
         let settings = MonitorSettings::load(paths);
-        let (tx, rx) = mpsc::channel(512);
+        let (tx, rx) = mpsc::channel(4096);
         let total = db
             .call(|conn| {
                 let count: i64 =
@@ -447,8 +447,8 @@ impl MonitorRuntime {
     async fn insert_batch(&self, records: &[ApiLogRecord]) -> anyhow::Result<()> {
         let records = records.to_vec();
         self.db
-            .call(move |conn| {
-                let transaction = conn.transaction()?;
+            .call_write(move |conn| {
+                let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
                 for record in &records {
                     transaction.execute(
                         INSERT_SQL,
@@ -495,7 +495,7 @@ impl MonitorRuntime {
     async fn prune(&self) -> anyhow::Result<Option<u64>> {
         let retention = self.retention;
         self.db
-            .call(move |conn| {
+            .call_write(move |conn| {
                 let count: i64 =
                     conn.query_row("SELECT COUNT(*) FROM audit.api_request_logs", [], |row| {
                         row.get(0)
@@ -1932,7 +1932,7 @@ async fn delete_logs(db: &Database, ids: &[i64]) -> anyhow::Result<usize> {
         return Ok(0);
     }
     let ids = ids.to_vec();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         let placeholders = std::iter::repeat("?")
             .take(ids.len())
             .collect::<Vec<_>>()
@@ -1947,7 +1947,7 @@ async fn delete_logs(db: &Database, ids: &[i64]) -> anyhow::Result<usize> {
 }
 
 async fn clear_logs(db: &Database) -> anyhow::Result<usize> {
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         let deleted = conn.execute("DELETE FROM audit.api_request_logs", [])?;
         Ok(deleted)
     })

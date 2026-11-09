@@ -2657,7 +2657,7 @@ async fn approve_directory(
                 .map_err(ApiError::internal)?
                 .is_none()
             {
-                let _ = crate::authors::create_author(
+                if let Err(error) = crate::authors::create_author(
                     &state.db,
                     hash,
                     &meta.author_fingerprint,
@@ -2669,22 +2669,35 @@ async fn approve_directory(
                     },
                     "active",
                 )
-                .await;
+                .await
+                {
+                    tracing::warn!(%hash, "create author after approval failed: {error:#}");
+                }
             }
-            let _ =
+            if let Err(error) =
                 crate::authors::set_author_status(&state.db, hash, "active", Some(&actor.user_id))
-                    .await;
-            let _ = crate::authors::set_auto_publish(&state.db, hash, true).await;
+                    .await
+            {
+                tracing::warn!(%hash, "activate author after approval failed: {error:#}");
+            }
+            if let Err(error) = crate::authors::set_auto_publish(&state.db, hash, true).await {
+                tracing::warn!(%hash, "enable auto publish after approval failed: {error:#}");
+            }
             if !meta.submitter_user_id.is_empty() {
-                let _ = crate::authors::bind_author_to_user(
+                if let Err(error) = crate::authors::bind_author_to_user(
                     &state.db,
                     hash,
                     &meta.submitter_user_id,
                     Some(&meta.author),
                 )
-                .await;
+                .await
+                {
+                    tracing::warn!(%hash, "bind author after approval failed: {error:#}");
+                }
             }
-            let _ = crate::authors::touch_author(&state.db, hash).await;
+            if let Err(error) = crate::authors::touch_author(&state.db, hash).await {
+                tracing::warn!(%hash, "touch author after approval failed: {error:#}");
+            }
             if !meta.submitter_user_id.is_empty() {
                 match crate::authors::approve_pending_requests_for_submission(
                     &state.db,
@@ -2696,7 +2709,7 @@ async fn approve_directory(
                 {
                     Ok(requests) => {
                         for id in &requests {
-                            let _ = crate::accounts::audit(
+                            if let Err(error) = crate::accounts::audit(
                                 &state.db,
                                 Some(&actor.user_id),
                                 "author.request.approve",
@@ -2704,7 +2717,10 @@ async fn approve_directory(
                                 Some(id),
                                 Some("theme.approve"),
                             )
-                            .await;
+                            .await
+                            {
+                                tracing::warn!("automatic author request audit failed: {error:#}");
+                            }
                         }
                         approved_author_requests = requests;
                     }
@@ -2720,7 +2736,7 @@ async fn approve_directory(
             {
                 tracing::warn!("author grace clearing failed: {error:#}");
             }
-            let _ = crate::uploads::inherit_author_avatar(
+            if let Err(error) = crate::uploads::inherit_author_avatar(
                 &state.store,
                 &state.paths,
                 &state.db,
@@ -2728,10 +2744,13 @@ async fn approve_directory(
                 hash,
                 Some(meta.author.as_str()),
             )
-            .await;
+            .await
+            {
+                tracing::warn!(%hash, "inherit author avatar after approval failed: {error:#}");
+            }
         }
     }
-    crate::accounts::finish_submission(
+    if let Err(error) = crate::accounts::finish_submission(
         &state.db,
         submission,
         "approved",
@@ -2739,7 +2758,9 @@ async fn approve_directory(
         None,
     )
     .await
-    .ok();
+    {
+        tracing::error!("failed to mark submission approved: {error:#}");
+    }
     crate::accounts::audit(
         &state.db,
         Some(&actor.user_id),
@@ -2763,13 +2784,12 @@ async fn approve_directory(
                         meta.name
                     )
                 };
-                let _ = crate::mailer::send_notice(
+                crate::mailer::queue_notice(
                     &state.paths,
                     &email,
                     "主题投稿已通过审核",
                     &message,
-                )
-                .await;
+                );
             }
         }
     }
@@ -2816,7 +2836,7 @@ async fn reject(
     if let Err(error) = catalog::retain_rejected(&state.paths, &submission) {
         tracing::warn!(?error, submission = %submission, "failed to retain rejected submission");
     }
-    crate::accounts::finish_submission(
+    if let Err(error) = crate::accounts::finish_submission(
         &state.db,
         &submission,
         "rejected",
@@ -2824,7 +2844,9 @@ async fn reject(
         Some(&reason),
     )
     .await
-    .ok();
+    {
+        tracing::error!("failed to mark submission rejected: {error:#}");
+    }
     crate::accounts::audit(
         &state.db,
         Some(&actor.user_id),
@@ -2876,13 +2898,12 @@ async fn reject(
                             meta.name
                         )
                     };
-                    let _ = crate::mailer::send_notice(
+                    crate::mailer::queue_notice(
                         &state.paths,
                         &email,
                         "主题投稿审核结果",
                         &message,
-                    )
-                    .await;
+                    );
                 }
             }
         }
@@ -3607,75 +3628,23 @@ async fn author_batch(
     let actor_super = crate::accounts::is_super_admin(&state.db, &actor.user_id)
         .await
         .map_err(ApiError::internal)?;
-    let mut updated = 0usize;
-    let mut skipped = 0usize;
-    let mut missing = 0usize;
-    for hash in &hashes {
-        let Some(author) = crate::authors::author_by_hash(&state.db, hash)
-            .await
-            .map_err(ApiError::internal)?
-        else {
-            missing += 1;
-            continue;
-        };
-        if !actor_super {
-            let allowed = match author.user_id.as_deref() {
-                Some(owner_id) => crate::accounts::user_by_id(&state.db, owner_id)
-                    .await
-                    .map_err(ApiError::internal)?
-                    .map(|owner| owner.role == "user")
-                    .unwrap_or(false),
-                None => false,
-            };
-            if !allowed {
-                skipped += 1;
-                continue;
-            }
-        }
-        match action.as_str() {
-            "revoke" => {
-                crate::authors::set_author_status_with_reason(
-                    &state.db,
-                    hash,
-                    "revoked",
-                    Some(&actor.user_id),
-                    Some(&reason),
-                )
-                .await
-                .map_err(ApiError::internal)?;
-                let _ = crate::authors::set_auto_publish(&state.db, hash, false).await;
-                updated += 1;
-            }
-            "disable" => {
-                crate::authors::set_author_status_with_reason(
-                    &state.db,
-                    hash,
-                    "retired",
-                    Some(&actor.user_id),
-                    Some(&reason),
-                )
-                .await
-                .map_err(ApiError::internal)?;
-                let _ = crate::authors::set_auto_publish(&state.db, hash, false).await;
-                updated += 1;
-            }
-            "delete" => {
-                if author.status == "revoked" || author.status == "retired" {
-                    crate::authors::delete_author(&state.db, hash)
-                        .await
-                        .map_err(ApiError::internal)?;
-                    updated += 1;
-                } else {
-                    skipped += 1;
-                }
-            }
-            _ => unreachable!(),
-        }
-    }
+    let outcome = crate::authors::batch_moderate(
+        &state.db,
+        &hashes,
+        &action,
+        &reason,
+        &actor.user_id,
+        actor_super,
+    )
+    .await
+    .map_err(ApiError::internal)?;
+    let updated = outcome.updated;
+    let skipped = outcome.skipped;
+    let missing = outcome.missing;
     let detail = format!(
         "action={action}; updated={updated}; skipped={skipped}; missing={missing}; reason={reason}"
     );
-    crate::accounts::audit(
+    if let Err(error) = crate::accounts::audit(
         &state.db,
         Some(&actor.user_id),
         "author.batch",
@@ -3684,7 +3653,9 @@ async fn author_batch(
         Some(&detail),
     )
     .await
-    .ok();
+    {
+        tracing::warn!("author batch audit failed: {error:#}");
+    }
     Ok(Json(json!({
         "ok": true,
         "action": action,

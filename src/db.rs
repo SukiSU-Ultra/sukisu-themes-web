@@ -13,7 +13,7 @@ use tokio_rusqlite::Connection as AsyncConnection;
 const CONNECTION_PRAGMAS: &str = "
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
-PRAGMA busy_timeout=5000;
+PRAGMA busy_timeout=15000;
 PRAGMA synchronous=NORMAL;
 PRAGMA temp_store=MEMORY;
 PRAGMA cache_size=-8000;
@@ -623,7 +623,7 @@ fn create_schema_file(path: &Path, kind: DbKind) -> anyhow::Result<()> {
     conn.execute_batch(
         "PRAGMA journal_mode=WAL;
          PRAGMA foreign_keys=ON;
-         PRAGMA busy_timeout=5000;
+         PRAGMA busy_timeout=15000;
          PRAGMA synchronous=NORMAL;
          PRAGMA temp_store=MEMORY;
          PRAGMA cache_size=-8000;",
@@ -946,6 +946,10 @@ pub struct Database {
     conns: Arc<Vec<AsyncConnection>>,
     next: Arc<AtomicUsize>,
     schemas: Arc<Vec<String>>,
+    /// SQLite allows one writer at a time. Serializing writes in-process keeps
+    /// concurrent handlers from fighting over the WAL write lock, which used to
+    /// surface as delayed or silently failed updates.
+    write_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Database {
@@ -979,6 +983,7 @@ impl Database {
             conns: Arc::new(conns),
             next: Arc::new(AtomicUsize::new(0)),
             schemas: Arc::new(vec!["main".to_string()]),
+            write_lock: Arc::new(tokio::sync::Mutex::new(())),
         };
         db.initialize().await?;
         db.call(|c| {
@@ -1036,6 +1041,7 @@ impl Database {
             conns: Arc::new(conns),
             next: Arc::new(AtomicUsize::new(0)),
             schemas: Arc::new(schemas),
+            write_lock: Arc::new(tokio::sync::Mutex::new(())),
         };
         #[cfg(unix)]
         {
@@ -1266,8 +1272,32 @@ impl Database {
         F: FnOnce(&mut Connection) -> tokio_rusqlite::Result<R> + Send + 'static,
         R: Send + 'static,
     {
-        let index = self.next.fetch_add(1, Ordering::Relaxed) % self.conns.len();
+        // Connection 0 is reserved for the serialized write path. Reads rotate
+        // over the remaining connections so a slow read never delays a write.
+        let index = if self.conns.len() > 1 {
+            let offset = self.next.fetch_add(1, Ordering::Relaxed) % (self.conns.len() - 1);
+            offset + 1
+        } else {
+            0
+        };
         self.conns[index]
+            .call(function)
+            .await
+            .map_err(|error| anyhow::anyhow!("database error: {error}"))
+    }
+
+    /// Runs a write closure on the dedicated writer connection. The process-wide
+    /// mutex matches SQLite's single-writer model: callers queue instead of
+    /// racing for the WAL write lock, and every statement in the closure sees a
+    /// consistent database. Prefer [`Database::call_write`] over [`Database::call`]
+    /// for anything that inserts, updates or deletes.
+    pub async fn call_write<F, R>(&self, function: F) -> anyhow::Result<R>
+    where
+        F: FnOnce(&mut Connection) -> tokio_rusqlite::Result<R> + Send + 'static,
+        R: Send + 'static,
+    {
+        let _guard = self.write_lock.lock().await;
+        self.conns[0]
             .call(function)
             .await
             .map_err(|error| anyhow::anyhow!("database error: {error}"))
@@ -1278,7 +1308,7 @@ impl Database {
     /// planner statistics at the same time.
     pub async fn reclaim_space(&self) -> anyhow::Result<()> {
         let schemas = self.schemas.clone();
-        self.call(move |conn| {
+        self.call_write(move |conn| {
             for schema in schemas.iter() {
                 let mode: i64 = conn.query_row(
                     &format!("PRAGMA {schema}.auto_vacuum"),
@@ -1303,7 +1333,7 @@ impl Database {
     /// Cross-file foreign keys are enforced by the application. This removes
     /// rows left behind by a failed multi-step delete or an older import.
     pub async fn repair_orphans(&self) -> anyhow::Result<usize> {
-        self.call(|conn| {
+        self.call_write(|conn| {
             let mut changed = 0;
             for sql in [
                 "DELETE FROM social.theme_comment_mentions
@@ -1430,8 +1460,8 @@ pub async fn record_theme_downloads(
         .format("%Y-%m-%d")
         .to_string();
     let now = crate::util::now_iso();
-    db.call(move |conn| {
-        let transaction = conn.transaction()?;
+    db.call_write(move |conn| {
+        let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         for (theme_id, count) in &counts {
             transaction.execute(
                 "INSERT INTO stats.theme_stats(theme_id, downloads, updated_at) VALUES (?1, ?2, ?3)

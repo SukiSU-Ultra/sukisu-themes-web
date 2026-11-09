@@ -185,7 +185,7 @@ pub async fn create_state(
     let now = now_iso();
     let expires_at = unix_now() as i64 + STATE_TTL_SECS as i64;
     let state_value = state.clone();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "DELETE FROM oauth_states WHERE expires_at <= ?1",
             [unix_now() as i64],
@@ -204,8 +204,8 @@ pub async fn create_state(
 pub async fn consume_state(db: &Database, state: &str) -> Result<Option<OAuthState>> {
     let state = state.to_string();
     let now = unix_now() as i64;
-    db.call(move |conn| {
-        let transaction = conn.transaction()?;
+    db.call_write(move |conn| {
+        let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let row = transaction
             .query_row(
                 "SELECT link_user_id, redirect FROM oauth_states
@@ -247,7 +247,7 @@ pub async fn link_identity(db: &Database, user_id: &str, profile: &GithubProfile
     let login = profile.login.clone();
     let email = profile.email.clone();
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "INSERT INTO user_identities(user_id, provider, provider_user_id, provider_login, email, created_at)
              VALUES (?1, 'github', ?2, ?3, ?4, ?5)
@@ -286,7 +286,7 @@ pub async fn github_identity(db: &Database, user_id: &str) -> Result<Option<serd
 
 pub async fn unlink_github(db: &Database, user_id: &str) -> Result<bool> {
     let user_id = user_id.to_string();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         let removed = conn.execute(
             "DELETE FROM user_identities WHERE user_id = ?1 AND provider = 'github'",
             [user_id],

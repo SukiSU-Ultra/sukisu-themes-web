@@ -202,7 +202,7 @@ async fn toggle_favorite(
     }
     let id = id.to_string();
     let user_id = session.user_id.clone();
-    state.db.call(move |conn| {
+    state.db.call_write(move |conn| {
         if favorite {
             conn.execute("INSERT OR IGNORE INTO social.theme_favorites(user_id, theme_id, created_at) VALUES (?1, ?2, ?3)", params![user_id, id, now_iso()])?;
         } else {
@@ -229,7 +229,7 @@ pub async fn record_release(
         theme_id.to_string(),
         name.to_string(),
     );
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         let id = format!("{theme_id}:{version}");
         conn.execute("INSERT OR IGNORE INTO social.theme_updates(id, theme_id, author_hash, name, version, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![id, theme_id, author_hash, name, version, now_iso()])?;
@@ -239,8 +239,8 @@ pub async fn record_release(
 
 pub async fn remove_theme_activity(db: &Database, theme_id: &str) -> anyhow::Result<()> {
     let theme_id = theme_id.to_string();
-    db.call(move |conn| {
-        let transaction = conn.transaction()?;
+    db.call_write(move |conn| {
+        let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         transaction.execute("DELETE FROM social.theme_update_reads WHERE update_id IN (SELECT id FROM social.theme_updates WHERE theme_id = ?1)", [&theme_id])?;
         transaction.execute("DELETE FROM social.theme_updates WHERE theme_id = ?1", [&theme_id])?;
         transaction.execute("DELETE FROM social.theme_favorites WHERE theme_id = ?1", [&theme_id])?;
@@ -293,7 +293,7 @@ async fn read_update(
     }
     let id = id.to_string();
     let user_id = session.user_id.clone();
-    state.db.call(move |conn| {
+    state.db.call_write(move |conn| {
         conn.execute("INSERT OR IGNORE INTO social.theme_update_reads(user_id, update_id, read_at)
             SELECT ?1, u.id, ?3 FROM social.theme_updates u JOIN social.user_follows f ON f.author_hash = u.author_hash
             WHERE u.id = ?2 AND f.follower_id = ?1 AND u.created_at >= f.created_at", params![user_id, id, now_iso()])?;
@@ -427,7 +427,7 @@ async fn save_draft(
     };
     let user_id = session.user_id.clone();
     let id_for_db = id.clone();
-    let saved = state.db.call(move |conn| {
+    let saved = state.db.call_write(move |conn| {
         if is_new {
             let count: i64 = conn.query_row("SELECT COUNT(*) FROM authors.submission_drafts WHERE user_id = ?1", [&user_id], |row| row.get(0))?;
             if count >= 20 { return Ok(false); }
@@ -464,7 +464,7 @@ async fn delete_draft(
     let user_id = session.user_id.clone();
     state
         .db
-        .call(move |conn| {
+        .call_write(move |conn| {
             conn.execute(
                 "DELETE FROM authors.submission_drafts WHERE id = ?1 AND user_id = ?2",
                 params![id, user_id],
@@ -605,7 +605,7 @@ async fn create_report(
         category.to_string(),
         detail.to_string(),
     );
-    let inserted = state.db.call(move |conn| {
+    let inserted = state.db.call_write(move |conn| {
         let now = now_iso();
         Ok(conn.execute("INSERT INTO social.theme_reports(id, reporter_id, theme_id, category, detail, created_at, updated_at)
             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?6 WHERE NOT EXISTS
@@ -764,7 +764,7 @@ async fn create_appeal(
         target_id.to_string(),
         detail.to_string(),
     );
-    let inserted = state.db.call(move |conn| {
+    let inserted = state.db.call_write(move |conn| {
         let now = now_iso();
         Ok(conn.execute("INSERT INTO social.theme_appeals(id, appellant_id, target_kind, target_id, detail, created_at, updated_at)
             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?6 WHERE NOT EXISTS
@@ -821,7 +821,7 @@ pub async fn record_theme_history(
     let theme_id = theme_id.to_string();
     let kind = history_kind(Some(kind));
     let created_at = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "INSERT INTO social.theme_history(user_id, theme_id, kind, created_at)
              VALUES (?1, ?2, ?3, ?4)
@@ -965,7 +965,7 @@ async fn delete_theme_history(
     let all = body.all;
     let deleted = state
         .db
-        .call(move |conn| {
+        .call_write(move |conn| {
             if all {
                 return Ok(conn.execute(
                     "DELETE FROM social.theme_history WHERE user_id = ?1 AND kind = ?2",
@@ -1088,7 +1088,7 @@ async fn resolve_report(
         resolution.to_string(),
         actor.user_id.clone(),
     );
-    let changed = state.db.call(move |conn| {
+    let changed = state.db.call_write(move |conn| {
         Ok(conn.execute("UPDATE social.theme_reports SET status = ?2, resolution = ?3, moderator_id = ?4, updated_at = ?5 WHERE id = ?1 AND status = 'pending'",
             params![id_db, status_db, resolution, actor_id, now_iso()])? > 0)
     }).await.map_err(ApiError::internal)?;
@@ -1194,8 +1194,8 @@ async fn resolve_appeal(
         resolution.to_string(),
         actor.user_id.clone(),
     );
-    let changed = state.db.call(move |conn| {
-        let transaction = conn.transaction()?;
+    let changed = state.db.call_write(move |conn| {
+        let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let target: Option<(String, String)> = transaction.query_row("SELECT target_kind, target_id FROM social.theme_appeals WHERE id = ?1 AND status = 'pending'",
             [&id_db], |row| Ok((row.get(0)?, row.get(1)?))).optional()?;
         let Some((kind, target_id)) = target else { return Ok(false); };

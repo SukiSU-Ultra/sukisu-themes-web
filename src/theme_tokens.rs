@@ -137,7 +137,7 @@ pub async fn create_token_row(
     let created_at = now_iso();
     let expires_at = expires_days.map(|days| unix_now() as i64 + days * 86_400);
     let id_for_insert = id.clone();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "INSERT INTO theme_tokens(id, name, token_hash, token_prefix, scopes, enabled, created_at, expires_at)
              VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7)",
@@ -184,7 +184,7 @@ pub async fn update_token_row(
     let expires_at =
         set_expiry.map(|days| days.map(|days| unix_now() as i64 + days * 86_400));
     let set_expiry = set_expiry.is_some() as i64;
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         let changed = conn.execute(
             "UPDATE theme_tokens
              SET name = COALESCE(?1, name),
@@ -201,7 +201,7 @@ pub async fn update_token_row(
 
 pub async fn delete_token_row(db: &Database, id: &str) -> anyhow::Result<bool> {
     let id = id.to_string();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         let changed = conn.execute("DELETE FROM theme_tokens WHERE id = ?1", [id])?;
         Ok(changed > 0)
     })

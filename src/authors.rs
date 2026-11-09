@@ -104,7 +104,7 @@ pub async fn author_hashes_for_user(db: &Database, user_id: &str) -> Result<Vec<
 /// Fills the ownership table from current license rows. Runs at startup so
 /// authors created before the table existed keep their theme list.
 pub async fn backfill_author_owners(db: &Database) -> Result<usize> {
-    db.call(|conn| {
+    db.call_write(|conn| {
         Ok(conn.execute(
             "INSERT INTO authors.author_owners(author_hash, user_id, display_name, updated_at)
              SELECT hash, user_id, display_name, updated_at FROM authors.authors
@@ -160,8 +160,8 @@ pub async fn backfill_author_owners_from_submissions(
         return Ok(0);
     }
     let now = now_iso();
-    db.call(move |conn| {
-        let transaction = conn.transaction()?;
+    db.call_write(move |conn| {
+        let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let mut inserted = 0usize;
         for (hash, (user_id, name)) in owners {
             inserted += transaction.execute(
@@ -206,7 +206,7 @@ pub async fn create_author(
     let user_id = user_id.map(str::to_string);
     let status = status.to_string();
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "INSERT INTO authors.authors(hash, fingerprint, display_name, user_id, status, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
@@ -257,7 +257,7 @@ pub async fn set_author_status_with_reason(
     let actor = actor.map(str::to_string);
     let reason = reason.map(str::to_string);
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         let approved_at = if status == "active" {
             Some(now.clone())
         } else {
@@ -294,7 +294,7 @@ pub async fn set_author_status_with_reason(
 
 pub async fn delete_author(db: &Database, hash: &str) -> Result<usize> {
     let hash = hash.to_string();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         // Follow relationships, comments and favorites belong to the account
         // and to the theme, not to the license record. Keep them when the
         // license is removed so they survive a later re-licensing.
@@ -309,7 +309,7 @@ pub async fn delete_author(db: &Database, hash: &str) -> Result<usize> {
 
 pub async fn delete_authors_for_user(db: &Database, user_id: &str) -> Result<usize> {
     let user_id = user_id.to_string();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         let mut statement =
             conn.prepare("SELECT hash FROM authors.authors WHERE user_id = ?1")?;
         let hashes = statement
@@ -371,7 +371,7 @@ pub async fn bind_author_to_user(
     let user_id = user_id.to_string();
     let display_name = display_name.map(str::to_string);
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "UPDATE authors.authors
              SET user_id = ?2,
@@ -396,8 +396,8 @@ pub async fn bind_author_to_user(
 
 pub async fn ensure_author_code(db: &Database, hash: &str) -> Result<(String, i64)> {
     let hash = hash.to_string();
-    db.call(move |conn| {
-        let transaction = conn.transaction()?;
+    db.call_write(move |conn| {
+        let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let row = transaction
             .query_row(
                 "SELECT code, next_theme_seq FROM authors.authors WHERE hash = ?1",
@@ -438,8 +438,8 @@ pub async fn peek_next_theme_id(db: &Database, hash: &str) -> Result<Option<Stri
 pub async fn allocate_theme_id(db: &Database, hash: &str) -> Result<String> {
     let hash = hash.to_string();
     let (code, seq) = db
-        .call(move |conn| {
-            let transaction = conn.transaction()?;
+        .call_write(move |conn| {
+            let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
             let row = transaction
                 .query_row(
                     "SELECT code, next_theme_seq FROM authors.authors WHERE hash = ?1",
@@ -491,7 +491,7 @@ pub async fn allocate_unique_theme_id(db: &Database, paths: &Paths, hash: &str) 
 pub async fn set_auto_publish(db: &Database, hash: &str, enabled: bool) -> Result<()> {
     let hash = hash.to_string();
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "UPDATE authors.authors SET auto_publish = ?2, updated_at = ?3 WHERE hash = ?1",
             params![hash, if enabled { 1 } else { 0 }, now],
@@ -511,7 +511,7 @@ pub async fn set_auto_revoke_at(db: &Database, hash: &str, at: Option<&str>) -> 
     let hash = hash.to_string();
     let at = at.map(str::to_string);
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "UPDATE authors.authors SET auto_revoke_at = ?2, updated_at = ?3 WHERE hash = ?1",
             params![hash, at, now],
@@ -642,7 +642,7 @@ pub async fn revoke_inactive_authors(db: &Database, paths: &Paths) -> Result<usi
 pub async fn touch_author(db: &Database, hash: &str) -> Result<()> {
     let hash = hash.to_string();
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "UPDATE authors.authors SET last_used_at = ?2, updated_at = ?2 WHERE hash = ?1",
             params![hash, now],
@@ -656,7 +656,7 @@ pub async fn update_author_name(db: &Database, hash: &str, name: &str) -> Result
     let hash = hash.to_string();
     let name = name.trim().to_string();
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "UPDATE authors.authors SET display_name = ?2, updated_at = ?3 WHERE hash = ?1",
             params![hash, name, now],
@@ -776,7 +776,7 @@ pub async fn set_restrictions(
         reason.map(str::to_string)
     };
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "INSERT INTO authors.author_restrictions(author_hash, features, updated_at, updated_by)
              VALUES (?1, ?2, ?3, ?4)
@@ -887,8 +887,8 @@ pub async fn approve_pending_requests_for_submission(
 pub async fn reconcile_stale_author_requests(db: &Database) -> Result<Vec<(String, String)>> {
     let now = now_iso();
     let updated = db
-        .call(move |conn| {
-            let transaction = conn.transaction()?;
+        .call_write(move |conn| {
+            let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
             let rows = {
                 let mut statement = transaction.prepare(
                     "SELECT r.id, r.author_hash
@@ -1174,7 +1174,7 @@ pub async fn create_author_request_with_source(
     .to_string();
     let now = now_iso();
     let request_id = id.clone();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "INSERT INTO authors.author_requests
              (id, user_id, kind, author_hash, display_name, status, note, source, created_at)
@@ -1227,6 +1227,246 @@ pub async fn author_request_by_id(db: &Database, id: &str) -> Result<Option<Auth
     .await
 }
 
+/// Approve a pending author request and activate/bind its licence in one
+/// transaction. Returns `false` when the request was already handled (another
+/// admin got there first) so callers can report a conflict instead of
+/// overwriting the result.
+pub async fn approve_author_request_atomic(
+    db: &Database,
+    id: &str,
+    reviewer: &str,
+) -> Result<bool> {
+    let id = id.to_string();
+    let reviewer = reviewer.to_string();
+    let now = now_iso();
+    let changed_at = now.clone();
+    db.call_write(move |conn| {
+        let transaction =
+            conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let row: Option<(String, String, Option<String>, String, Option<String>)> = transaction
+            .query_row(
+                "SELECT status, kind, author_hash, user_id, display_name
+                 FROM authors.author_requests WHERE id = ?1",
+                [&id],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((status, kind, hash, user_id, display_name)) = row else {
+            return Ok(false);
+        };
+        if status != "pending" {
+            return Ok(false);
+        }
+        if kind != "reset" {
+            if let Some(hash) = hash.as_deref() {
+                transaction.execute(
+                    "UPDATE authors.authors
+                     SET user_id = ?2,
+                         display_name = COALESCE(?3, display_name),
+                         status = 'active',
+                         approved_at = ?4,
+                         approved_by = ?5,
+                         updated_at = ?4,
+                         auto_publish = CASE WHEN ?6 = 'new' THEN 0 ELSE auto_publish END,
+                         revoke_reason = NULL
+                     WHERE hash = ?1",
+                    params![hash, user_id, display_name, now, reviewer, kind],
+                )?;
+                transaction.execute(
+                    "INSERT INTO authors.author_owners(author_hash, user_id, display_name, updated_at)
+                     SELECT hash, user_id, display_name, ?2 FROM authors.authors
+                     WHERE hash = ?1 AND user_id IS NOT NULL AND TRIM(user_id) <> ''
+                     ON CONFLICT(author_hash) DO UPDATE SET
+                         user_id = excluded.user_id,
+                         display_name = COALESCE(excluded.display_name, author_owners.display_name),
+                         updated_at = excluded.updated_at",
+                    params![hash, changed_at],
+                )?;
+            }
+        }
+        let changed = transaction.execute(
+            "UPDATE authors.author_requests
+             SET status = 'approved', reviewed_at = ?2, reviewed_by = ?3,
+                 reject_reason = NULL, generated_author_hash = NULL
+             WHERE id = ?1 AND status = 'pending'",
+            params![id, changed_at, reviewer],
+        )?;
+        if changed == 0 {
+            return Ok(false);
+        }
+        transaction.commit()?;
+        Ok(true)
+    })
+    .await
+}
+
+/// Reject a pending author request and revoke the matching licence in one
+/// transaction. The old code marked the request rejected first and then
+/// ignored a failed licence update, which left approved-looking requests with a
+/// still-active author.
+pub async fn reject_author_request_atomic(
+    db: &Database,
+    id: &str,
+    reviewer: &str,
+    reason: &str,
+) -> Result<bool> {
+    let id = id.to_string();
+    let reviewer = reviewer.to_string();
+    let reason = reason.to_string();
+    let now = now_iso();
+    let changed_at = now.clone();
+    db.call_write(move |conn| {
+        let transaction =
+            conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let row: Option<(String, String, Option<String>)> = transaction
+            .query_row(
+                "SELECT status, kind, author_hash FROM authors.author_requests WHERE id = ?1",
+                [&id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+        let Some((status, kind, hash)) = row else {
+            return Ok(false);
+        };
+        if status != "pending" {
+            return Ok(false);
+        }
+        let changed = transaction.execute(
+            "UPDATE authors.author_requests
+             SET status = 'rejected', reviewed_at = ?2, reviewed_by = ?3, reject_reason = ?4
+             WHERE id = ?1 AND status = 'pending'",
+            params![id, changed_at, reviewer, reason],
+        )?;
+        if changed == 0 {
+            return Ok(false);
+        }
+        if kind == "new" {
+            if let Some(hash) = hash.as_deref() {
+                transaction.execute(
+                    "UPDATE authors.authors
+                     SET status = 'revoked',
+                         approved_by = COALESCE(?2, approved_by),
+                         updated_at = ?3,
+                         auto_revoke_at = NULL,
+                         revoke_reason = COALESCE(?4, revoke_reason)
+                     WHERE hash = ?1",
+                    params![hash, reviewer, changed_at, reason],
+                )?;
+            }
+        }
+        transaction.commit()?;
+        Ok(true)
+    })
+    .await
+}
+
+#[derive(Debug, Default)]
+pub struct BatchAuthorOutcome {
+    pub updated: usize,
+    pub skipped: usize,
+    pub missing: usize,
+}
+
+/// Apply a moderation action to many authors in one write transaction. Doing
+/// one round-trip (and one commit) per batch keeps 200-item selections fast and
+/// avoids leaving half of them updated when one statement fails.
+pub async fn batch_moderate(
+    db: &Database,
+    hashes: &[String],
+    action: &str,
+    reason: &str,
+    actor: &str,
+    actor_super: bool,
+) -> Result<BatchAuthorOutcome> {
+    let hashes = hashes.to_vec();
+    let action = action.to_string();
+    let reason = reason.to_string();
+    let actor = actor.to_string();
+    let now = now_iso();
+    db.call_write(move |conn| {
+        let transaction =
+            conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let mut outcome = BatchAuthorOutcome::default();
+        for hash in &hashes {
+            let row: Option<(String, Option<String>)> = transaction
+                .query_row(
+                    "SELECT status, user_id FROM authors.authors WHERE hash = ?1",
+                    [hash],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            let Some((status, user_id)) = row else {
+                outcome.missing += 1;
+                continue;
+            };
+            if !actor_super {
+                let allowed = match user_id.as_deref() {
+                    Some(owner_id) => transaction
+                        .query_row(
+                            "SELECT role FROM users WHERE id = ?1",
+                            [owner_id],
+                            |row| row.get::<_, String>(0),
+                        )
+                        .optional()?
+                        .map(|role| role == "user")
+                        .unwrap_or(false),
+                    None => false,
+                };
+                if !allowed {
+                    outcome.skipped += 1;
+                    continue;
+                }
+            }
+            match action.as_str() {
+                "revoke" | "disable" => {
+                    let new_status = if action == "revoke" { "revoked" } else { "retired" };
+                    transaction.execute(
+                        "UPDATE authors.authors
+                         SET status = ?2,
+                             approved_by = COALESCE(?3, approved_by),
+                             updated_at = ?4,
+                             auto_publish = 0,
+                             auto_revoke_at = NULL,
+                             revoke_reason = COALESCE(?5, revoke_reason)
+                         WHERE hash = ?1",
+                        params![hash, new_status, actor, now, reason],
+                    )?;
+                    outcome.updated += 1;
+                }
+                "delete" => {
+                    if status == "revoked" || status == "retired" {
+                        transaction.execute(
+                            "DELETE FROM authors.author_restrictions WHERE author_hash = ?1",
+                            [hash],
+                        )?;
+                        transaction.execute(
+                            "DELETE FROM authors.authors WHERE hash = ?1",
+                            [hash],
+                        )?;
+                        outcome.updated += 1;
+                    } else {
+                        outcome.skipped += 1;
+                    }
+                }
+                _ => {
+                    outcome.skipped += 1;
+                }
+            }
+        }
+        transaction.commit()?;
+        Ok(outcome)
+    })
+    .await
+}
+
 pub async fn review_author_request(
     db: &Database,
     id: &str,
@@ -1241,7 +1481,7 @@ pub async fn review_author_request(
     let reason = reason.map(str::to_string);
     let generated_hash = generated_hash.map(str::to_string);
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "UPDATE authors.author_requests
              SET status = ?2, reviewed_at = ?3, reviewed_by = ?4,
@@ -1285,7 +1525,7 @@ pub async fn reset_author(db: &Database, user_id: &str, actor: &str) -> Result<(
         let new_hash = hash.clone();
         let actor = actor.to_string();
         let now = now_iso();
-        db.call(move |conn| {
+        db.call_write(move |conn| {
             conn.execute(
                 "INSERT INTO authors.author_reset_history(user_id, old_hash, new_hash, created_at, created_by)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -1307,7 +1547,7 @@ pub async fn import_legacy_authors(db: &Database, paths: &Paths) -> Result<bool>
     }
     let path = &paths.authors_file;
     if !path.is_file() {
-        db.call(|conn| {
+        db.call_write(|conn| {
             db::set_meta(conn, "authors_json_imported", "1")?;
             Ok(())
         })
@@ -1358,7 +1598,7 @@ pub async fn import_legacy_authors(db: &Database, paths: &Paths) -> Result<bool>
         let approved_at = record.approved_at;
         let last_used_at = record.last_used_at;
         let now = now_iso();
-        db.call(move |conn| {
+        db.call_write(move |conn| {
             conn.execute(
                 "INSERT INTO authors.authors(hash, fingerprint, display_name, status, approved_at, last_used_at, created_at, updated_at)
                  VALUES (?1, ?2, NULLIF(?3, ''), 'active', NULLIF(?4, ''), NULLIF(?5, ''), ?6, ?6)
@@ -1369,7 +1609,7 @@ pub async fn import_legacy_authors(db: &Database, paths: &Paths) -> Result<bool>
         })
         .await?;
     }
-    db.call(|conn| {
+    db.call_write(|conn| {
         db::set_meta(conn, "authors_json_imported", "1")?;
         Ok(())
     })

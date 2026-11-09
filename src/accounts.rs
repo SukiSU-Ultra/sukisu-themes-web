@@ -179,7 +179,7 @@ pub async fn create_user(db: &Database, new_user: NewUser<'_>) -> Result<User> {
     let status = new_user.status.to_string();
     let email_verified = new_user.email_verified;
     let insert_id = id.clone();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         if let Some(email) = &email {
             let exists: i64 = conn.query_row(
                 "SELECT COUNT(*) FROM users WHERE email = ?1 COLLATE NOCASE",
@@ -231,7 +231,7 @@ pub async fn create_user(db: &Database, new_user: NewUser<'_>) -> Result<User> {
 pub async fn mark_email_verified(db: &Database, user_id: &str) -> Result<()> {
     let user_id = user_id.to_string();
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "UPDATE users
              SET email_verified = 1,
@@ -251,7 +251,7 @@ pub async fn mark_email_verified(db: &Database, user_id: &str) -> Result<()> {
 pub async fn update_login_time(db: &Database, user_id: &str) -> Result<()> {
     let user_id = user_id.to_string();
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "UPDATE users SET last_login_at = ?2 WHERE id = ?1",
             params![user_id, now],
@@ -273,7 +273,7 @@ pub async fn set_status(
     let reason = reason.map(str::to_string);
     let actor = actor.map(str::to_string);
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         let approved_at = if status == "active" {
             Some(now.clone())
         } else {
@@ -296,7 +296,7 @@ pub async fn set_status(
 
 pub async fn delete_user(db: &Database, user_id: &str) -> Result<()> {
     let user_id = user_id.to_string();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute("DELETE FROM social.theme_favorites WHERE user_id = ?1", [&user_id])?;
         conn.execute("DELETE FROM social.theme_history WHERE user_id = ?1", [&user_id])?;
         conn.execute("DELETE FROM social.theme_update_reads WHERE user_id = ?1", [&user_id])?;
@@ -319,7 +319,7 @@ pub async fn set_role(db: &Database, user_id: &str, role: &str) -> Result<()> {
     let user_id = user_id.to_string();
     let role = role.to_string();
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "UPDATE users SET role = ?2, updated_at = ?3 WHERE id = ?1",
             params![user_id, role, now],
@@ -341,7 +341,7 @@ pub async fn update_profile(
     let display_name = display_name.trim().to_string();
     let avatar = avatar.map(str::to_string);
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         let exists: i64 = conn.query_row(
             "SELECT COUNT(*) FROM users WHERE username = ?1 COLLATE NOCASE AND id <> ?2",
             params![username, user_id],
@@ -371,7 +371,7 @@ pub async fn update_password(db: &Database, user_id: &str, hash: &str) -> Result
     let user_id = user_id.to_string();
     let hash = hash.to_string();
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "UPDATE users SET password_hash = ?2, updated_at = ?3 WHERE id = ?1",
             params![user_id, hash, now],
@@ -385,7 +385,7 @@ pub async fn update_email(db: &Database, user_id: &str, email: &str) -> Result<(
     let user_id = user_id.to_string();
     let email = email.trim().to_ascii_lowercase();
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         let exists: i64 = conn.query_row(
             "SELECT COUNT(*) FROM users WHERE email = ?1 COLLATE NOCASE AND id <> ?2",
             params![email, user_id],
@@ -410,7 +410,7 @@ pub async fn set_avatar(db: &Database, user_id: &str, avatar: Option<&str>) -> R
     let user_id = user_id.to_string();
     let avatar = avatar.map(str::to_string);
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "UPDATE users SET avatar = ?2, updated_at = ?3 WHERE id = ?1",
             params![user_id, avatar, now],
@@ -523,7 +523,7 @@ pub async fn is_super_admin(db: &Database, user_id: &str) -> Result<bool> {
 
 pub async fn mark_super_admin(db: &Database, user_id: &str) -> Result<()> {
     let user_id = user_id.to_string();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "UPDATE users SET is_super_admin = CASE WHEN id = ?1 THEN 1 ELSE 0 END",
             params![user_id],
@@ -650,7 +650,7 @@ pub async fn create_session(
     let now = now_iso();
     let now_unix = unix_now() as i64;
     let expires_at = now_unix + ttl_secs as i64;
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute("DELETE FROM sessions WHERE expires_at <= ?1", [now_unix])?;
         conn.execute(
             "INSERT INTO sessions(token_hash, user_id, scope, expires_at, created_at, last_seen_at, user_agent, ip)
@@ -703,7 +703,7 @@ pub async fn validate_session(
 
 pub async fn delete_session(db: &Database, token: &str) -> Result<()> {
     let token_hash = hash_token(token);
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute("DELETE FROM sessions WHERE token_hash = ?1", [token_hash])?;
         Ok(())
     })
@@ -712,7 +712,7 @@ pub async fn delete_session(db: &Database, token: &str) -> Result<()> {
 
 pub async fn revoke_user_sessions(db: &Database, user_id: &str) -> Result<()> {
     let user_id = user_id.to_string();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute("DELETE FROM sessions WHERE user_id = ?1", [&user_id])?;
         conn.execute(
             "UPDATE client_credentials SET revoked=1 WHERE user_id=?1",
@@ -763,7 +763,7 @@ pub async fn user_sessions(db: &Database, user_id: &str) -> Result<Vec<AccountSe
 pub async fn revoke_owned_session(db: &Database, user_id: &str, id: &str) -> Result<bool> {
     let user_id = user_id.to_string();
     let id = id.to_string();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         Ok(conn.execute(
             "DELETE FROM sessions WHERE token_hash = ?1 AND user_id = ?2",
             params![id, user_id],
@@ -786,7 +786,7 @@ pub async fn issue_email_token(
     let purpose = purpose.to_string();
     let now = now_iso();
     let expires_at = unix_now() as i64 + ttl_secs as i64;
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "DELETE FROM email_tokens WHERE email = ?1 AND purpose = ?2",
             params![email, purpose],
@@ -817,8 +817,8 @@ pub async fn consume_email_token(
     let purpose = purpose.to_string();
     let now = unix_now() as i64;
     let now_text = now_iso();
-    db.call(move |conn| {
-        let transaction = conn.transaction()?;
+    db.call_write(move |conn| {
+        let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let row = transaction
             .query_row(
                 "SELECT user_id, email, purpose FROM email_tokens
@@ -866,7 +866,7 @@ pub async fn record_submission(
     let name = name.to_string();
     let status = status.to_string();
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "INSERT INTO authors.submissions
              (id, user_id, theme_id, name, version, status, submitted_at, auto_published)
@@ -900,7 +900,7 @@ pub async fn finish_submission(
     let reviewer = reviewer.map(str::to_string);
     let reason = reason.map(str::to_string);
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "UPDATE authors.submissions
              SET status = ?2, reviewed_at = ?3, reviewed_by = ?4, reject_reason = ?5
@@ -920,7 +920,7 @@ pub async fn withdraw_theme_submissions(
     let user_id = user_id.to_string();
     let theme_id = theme_id.to_string();
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "UPDATE authors.submissions
              SET status = 'withdrawn', reviewed_at = ?3, reviewed_by = ?2, reject_reason = NULL
@@ -936,7 +936,7 @@ pub async fn restore_theme_submissions(db: &Database, user_id: &str, theme_id: &
     let user_id = user_id.to_string();
     let theme_id = theme_id.to_string();
     let now = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "UPDATE authors.submissions
              SET status = 'approved', reviewed_at = ?3, reviewed_by = ?2, reject_reason = NULL
@@ -951,7 +951,7 @@ pub async fn restore_theme_submissions(db: &Database, user_id: &str, theme_id: &
 pub async fn delete_theme_submissions(db: &Database, user_id: &str, theme_id: &str) -> Result<()> {
     let user_id = user_id.to_string();
     let theme_id = theme_id.to_string();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "DELETE FROM authors.submissions WHERE user_id = ?1 AND theme_id = ?2",
             params![user_id, theme_id],
@@ -979,7 +979,7 @@ pub async fn submission_owned(db: &Database, id: &str, user_id: &str) -> Result<
 pub async fn delete_submission(db: &Database, id: &str, user_id: &str) -> Result<()> {
     let id = id.to_string();
     let user_id = user_id.to_string();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "DELETE FROM authors.submissions WHERE id = ?1 AND user_id = ?2",
             params![id, user_id],
@@ -1064,7 +1064,7 @@ pub async fn save_rejected_draft(
     let user_id = user_id.to_string();
     let payload = serde_json::to_string(&payload)?;
     let id = random_hex(16);
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         let now = now_iso();
         conn.execute(
             "INSERT INTO authors.submission_drafts(id, user_id, payload, created_at, updated_at)
@@ -1091,7 +1091,7 @@ pub async fn clear_rejected_draft(db: &Database, submission_id: &str) -> Result<
         return Ok(());
     }
     let pattern = format!("%\"submissionId\":\"{submission_id}\"%");
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "DELETE FROM authors.submission_drafts WHERE payload LIKE ?1",
             [pattern],
@@ -1108,7 +1108,7 @@ pub async fn clear_rejected_drafts_for_theme(db: &Database, theme_id: &str) -> R
         return Ok(());
     }
     let theme_pattern = format!("%\"updateId\":\"{theme_id}\"%");
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         conn.execute(
             "DELETE FROM authors.submission_drafts
               WHERE payload LIKE ?1 AND payload LIKE '%\"rejected\":true%'",

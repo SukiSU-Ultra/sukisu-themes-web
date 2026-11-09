@@ -137,8 +137,8 @@ pub async fn issue(
     let access_hash = hash_token(&access);
     let refresh_hash = hash_token(&refresh);
     let prefix = access[..11].to_string();
-    db.call(move |conn| {
-        let tx = conn.transaction()?;
+    db.call_write(move |conn| {
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         tx.execute("DELETE FROM client_credentials WHERE expires_at < ?1 - 86400", [at])?;
         let count: i64 = tx.query_row("SELECT COUNT(*) FROM client_credentials WHERE user_id IS ?1 AND revoked = 0 AND expires_at > ?2", params![user_id, at], |r| r.get(0))?;
         // Anonymous installs are separately IP-limited at the public boundary.
@@ -198,8 +198,8 @@ pub async fn rotate(db: &Database, provided: &str) -> anyhow::Result<Option<Valu
     let access_hash = hash_token(&access);
     let prefix = access[..11].to_string();
     let at = now();
-    db.call(move |conn| {
-        let tx = conn.transaction()?;
+    db.call_write(move |conn| {
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         // A replay of the immediately previous refresh secret revokes the family.
         let replay: Option<String> = tx.query_row("SELECT id FROM client_credentials WHERE previous_refresh_hash=?1 AND revoked=0", [&hash], |r| r.get(0)).optional()?;
         if let Some(id) = replay {
@@ -299,7 +299,7 @@ async fn revoke(
     id: String,
     owner: Option<String>,
 ) -> Result<axum::response::Response, ApiError> {
-    let changed = state.db.call(move |conn| Ok(conn.execute("UPDATE client_credentials SET revoked=1 WHERE id=?1 AND (?2 IS NULL OR user_id=?2)", params![id,owner])?)).await.map_err(ApiError::internal)?;
+    let changed = state.db.call_write(move |conn| Ok(conn.execute("UPDATE client_credentials SET revoked=1 WHERE id=?1 AND (?2 IS NULL OR user_id=?2)", params![id,owner])?)).await.map_err(ApiError::internal)?;
     if changed == 0 {
         return Err(ApiError::not_found("设备不存在"));
     }

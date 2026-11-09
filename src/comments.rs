@@ -281,7 +281,7 @@ async fn record_mentions(
     let mentioner_id = mentioner_id.to_string();
     let excluded = excluded.clone();
     let _ = db
-        .call(move |conn| {
+        .call_write(move |conn| {
             let mut statement = conn.prepare(
                 "INSERT OR IGNORE INTO social.theme_comment_mentions(comment_id, user_id, created_at)
                  VALUES (?1, ?2, ?3)",
@@ -630,7 +630,7 @@ pub async fn retention_days(db: &Database) -> i64 {
 async fn save_retention_days(db: &Database, days: i64) -> ApiResult<i64> {
     let days = days.clamp(0, MAX_RETENTION_DAYS);
     let value = days.to_string();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         db::set_meta(conn, META_KEY, &value)?;
         Ok(())
     })
@@ -654,7 +654,7 @@ async fn insert_record(
     let now = now_iso();
     let comment_id = id.clone();
     let result: Result<(), String> = db
-        .call(move |conn| {
+        .call_write(move |conn| {
             let mut parent_id = parent_id;
             let mut visibility = visibility.to_string();
             if let Some(parent) = parent_id.clone() {
@@ -717,7 +717,7 @@ async fn insert_record(
 /// every comment on their own theme; admins pass `owns_theme = true` too.
 async fn delete_record(db: &Database, id: &str) -> ApiResult<usize> {
     let id = id.to_string();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         let deleted = conn.execute("DELETE FROM social.theme_comments WHERE id = ?1", params![id])?;
         Ok(deleted)
     })
@@ -727,7 +727,7 @@ async fn delete_record(db: &Database, id: &str) -> ApiResult<usize> {
 
 pub async fn clear_theme(db: &Database, theme_id: &str) -> ApiResult<usize> {
     let theme_id = theme_id.to_string();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         let deleted = conn.execute(
             "DELETE FROM social.theme_comments WHERE theme_id = ?1",
             params![theme_id],
@@ -739,7 +739,7 @@ pub async fn clear_theme(db: &Database, theme_id: &str) -> ApiResult<usize> {
 }
 
 async fn clear_all(db: &Database) -> ApiResult<usize> {
-    db.call(|conn| {
+    db.call_write(|conn| {
         let deleted = conn.execute("DELETE FROM social.theme_comments", [])?;
         Ok(deleted)
     })
@@ -752,7 +752,7 @@ async fn clear_themes(db: &Database, theme_ids: &HashSet<String>) -> ApiResult<u
         return Ok(0);
     }
     let ids: Vec<String> = theme_ids.iter().cloned().collect();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         let placeholders = std::iter::repeat("?")
             .take(ids.len())
             .collect::<Vec<_>>()
@@ -772,7 +772,7 @@ async fn clear_user_messages(
 ) -> ApiResult<usize> {
     let user_id = user_id.to_string();
     let theme_id = theme_id.map(str::to_string);
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         let deleted = match theme_id {
             Some(theme_id) => conn.execute(
                 "DELETE FROM social.theme_comments
@@ -804,7 +804,7 @@ pub async fn purge_expired(db: &Database) -> anyhow::Result<usize> {
     }
     let cutoff =
         (Utc::now() - ChronoDuration::days(days)).to_rfc3339_opts(SecondsFormat::Secs, true);
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         let deleted = conn.execute(
             "DELETE FROM social.theme_comments WHERE created_at < ?1",
             params![cutoff],

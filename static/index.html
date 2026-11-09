@@ -3591,6 +3591,7 @@ async function reviewAuthorRequest(id, action) {
 // They pile up when a submission is rejected or withdrawn before review, so the
 // tab offers select-all, batch approve/reject and one-click clear (= reject all).
 let autoAuthorRequestsCache = [];
+let bulkAuthorBusy = false;
 
 function selectedAutoAuthorRequestIds() {
   return Array.from(document.querySelectorAll('#userList input[data-auto-request]:checked'))
@@ -3668,6 +3669,10 @@ function renderAutoAuthorRequests(requests) {
 }
 
 async function bulkReviewAuthorRequests(ids, action, presetReason) {
+  if (bulkAuthorBusy) {
+    toast('批量操作正在进行，请稍候', 'bad');
+    return;
+  }
   if (!ids.length) {
     toast('请先选择要处理的申请', 'bad');
     return;
@@ -3687,21 +3692,26 @@ async function bulkReviewAuthorRequests(ids, action, presetReason) {
   let approved = 0;
   let rejected = 0;
   let failed = 0;
-  for (let index = 0; index < ids.length; index += 100) {
-    const chunk = ids.slice(index, index + 100);
-    const body = { action, ids: chunk };
-    if (action === 'reject') body.reason = reason;
-    try {
-      const data = await api('/author-requests/bulk', { method: 'POST', body: JSON.stringify(body) });
-      approved += Number(data.approved || 0);
-      rejected += Number(data.rejected || 0);
-      failed += (data.failed || []).length;
-    } catch (_) {
-      failed += chunk.length;
+  bulkAuthorBusy = true;
+  try {
+    for (let index = 0; index < ids.length; index += 100) {
+      const chunk = ids.slice(index, index + 100);
+      const body = { action, ids: chunk };
+      if (action === 'reject') body.reason = reason;
+      try {
+        const data = await api('/author-requests/bulk', { method: 'POST', body: JSON.stringify(body) });
+        approved += Number(data.approved || 0);
+        rejected += Number(data.rejected || 0);
+        failed += (data.failed || []).length;
+      } catch (_) {
+        failed += chunk.length;
+      }
     }
+    const processed = approved + rejected;
+    toast(failed ? `已处理 ${processed} 个申请，失败 ${failed} 个` : `已处理 ${processed} 个申请`, failed ? 'bad' : undefined);
+  } finally {
+    bulkAuthorBusy = false;
   }
-  const processed = approved + rejected;
-  toast(failed ? `已处理 ${processed} 个申请，失败 ${failed} 个` : `已处理 ${processed} 个申请`, failed ? 'bad' : undefined);
   await loadUsers();
   await refresh(true);
 }

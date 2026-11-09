@@ -241,13 +241,12 @@ async fn user_approve(
     .await
     .ok();
     if let Some(email) = user.email {
-        let _ = mailer::send_notice(
+        mailer::queue_notice(
             &state.paths,
             &email,
             "SukiSU 主题镜像账号已通过审核",
             "你的账号已经通过管理员审核，现在可以登录用户中心、绑定作者身份并投稿。",
-        )
-        .await;
+        );
     }
     Ok(Json(json!({"ok": true, "message": "账号已通过审核"})))
 }
@@ -299,13 +298,12 @@ async fn user_reject(
         } else {
             format!("账号审核未通过：{reason}")
         };
-        let _ = mailer::send_notice(
+        mailer::queue_notice(
             &state.paths,
             &email,
             "SukiSU 主题镜像账号审核结果",
             &message,
-        )
-        .await;
+        );
     }
     Ok(Json(json!({"ok": true, "message": "账号已拒绝"})))
 }
@@ -707,23 +705,18 @@ async fn approve_author_request_record(
     if request.status != "pending" {
         return Err(ApiError::conflict("该申请已处理"));
     }
-    if request.kind != "reset" {
-        let Some(hash) = request.author_hash.as_deref() else {
-            return Err(ApiError::bad("申请缺少作者 hash"));
-        };
-        authors::bind_author_to_user(
-            &state.db,
-            hash,
-            &request.user_id,
-            request.display_name.as_deref(),
-        )
+    if request.kind != "reset" && request.author_hash.is_none() {
+        return Err(ApiError::bad("申请缺少作者 hash"));
+    }
+    let activated = authors::approve_author_request_atomic(&state.db, id, &actor.user_id)
         .await
         .map_err(ApiError::internal)?;
-        authors::set_author_status(&state.db, hash, "active", Some(&actor.user_id))
-            .await
-            .map_err(ApiError::internal)?;
+    if !activated {
+        return Err(ApiError::conflict("该申请已处理"));
+    }
+    if request.kind != "reset" {
+        let hash = request.author_hash.as_deref().unwrap_or_default();
         if request.kind == "new" {
-            let _ = authors::set_auto_publish(&state.db, hash, false).await;
             match authors::bind_latest_theme(
                 &state.db,
                 &state.paths,
@@ -740,7 +733,7 @@ async fn approve_author_request_record(
                         tracing::warn!("author theme rebind catalog rebuild failed: {error:#}");
                     }
                     state.refresh_withdrawn_assets();
-                    let _ = accounts::audit(
+                    if let Err(error) = accounts::audit(
                         &state.db,
                         Some(&actor.user_id),
                         "author.bind_latest_theme",
@@ -748,7 +741,10 @@ async fn approve_author_request_record(
                         Some(&theme_id),
                         Some(hash),
                     )
-                    .await;
+                    .await
+                    {
+                        tracing::warn!("author bind audit failed: {error:#}");
+                    }
                 }
                 Ok(None) => {}
                 Err(error) => {
@@ -759,7 +755,7 @@ async fn approve_author_request_record(
         if let Err(error) = authors::schedule_grace_if_needed(&state.db, &state.paths, hash).await {
             tracing::warn!("author grace scheduling failed: {error:#}");
         }
-        let _ = crate::uploads::inherit_author_avatar(
+        if let Err(error) = crate::uploads::inherit_author_avatar(
             &state.store,
             &state.paths,
             &state.db,
@@ -767,12 +763,12 @@ async fn approve_author_request_record(
             hash,
             request.display_name.as_deref(),
         )
-        .await;
-    }
-    authors::review_author_request(&state.db, &id, "approved", &actor.user_id, None, None)
         .await
-        .map_err(ApiError::internal)?;
-    accounts::audit(
+        {
+            tracing::warn!("author avatar inherit failed: {error:#}");
+        }
+    }
+    if let Err(error) = accounts::audit(
         &state.db,
         Some(&actor.user_id),
         "author.request.approve",
@@ -781,7 +777,9 @@ async fn approve_author_request_record(
         None,
     )
     .await
-    .ok();
+    {
+        tracing::warn!("author request audit failed: {error:#}");
+    }
     if let Ok(Some(user)) = accounts::user_by_id(&state.db, &request.user_id).await {
         if let Some(email) = user.email {
             let message = if request.kind == "reset" {
@@ -789,8 +787,12 @@ async fn approve_author_request_record(
             } else {
                 "你的作者身份申请已通过，现在可以使用账号投稿。"
             };
-            let _ =
-                mailer::send_notice(&state.paths, &email, "SukiSU 作者申请审核结果", message).await;
+            mailer::queue_notice(
+                &state.paths,
+                &email,
+                "SukiSU 作者申请审核结果",
+                message,
+            );
         }
     }
     Ok(())
@@ -830,29 +832,14 @@ async fn reject_author_request_record(
     if request.status != "pending" {
         return Err(ApiError::conflict("该申请已处理"));
     }
-    authors::review_author_request(
-        &state.db,
-        &id,
-        "rejected",
-        &actor.user_id,
-        Some(&reason),
-        None,
-    )
-    .await
-    .map_err(ApiError::internal)?;
-    if request.kind == "new" {
-        if let Some(hash) = request.author_hash.as_deref() {
-            let _ = authors::set_author_status_with_reason(
-                &state.db,
-                hash,
-                "revoked",
-                Some(&actor.user_id),
-                Some(&reason),
-            )
-            .await;
-        }
+    let rejected =
+        authors::reject_author_request_atomic(&state.db, id, &actor.user_id, &reason)
+            .await
+            .map_err(ApiError::internal)?;
+    if !rejected {
+        return Err(ApiError::conflict("该申请已处理"));
     }
-    accounts::audit(
+    if let Err(error) = accounts::audit(
         &state.db,
         Some(&actor.user_id),
         "author.request.reject",
@@ -861,7 +848,9 @@ async fn reject_author_request_record(
         Some(&reason),
     )
     .await
-    .ok();
+    {
+        tracing::warn!("author request reject audit failed: {error:#}");
+    }
     if let Ok(Some(user)) = accounts::user_by_id(&state.db, &request.user_id).await {
         if let Some(email) = user.email {
             let message = if reason.is_empty() {
@@ -869,8 +858,12 @@ async fn reject_author_request_record(
             } else {
                 format!("你的作者申请未通过：{reason}")
             };
-            let _ = mailer::send_notice(&state.paths, &email, "SukiSU 作者申请审核结果", &message)
-                .await;
+            mailer::queue_notice(
+                &state.paths,
+                &email,
+                "SukiSU 作者申请审核结果",
+                &message,
+            );
         }
     }
     Ok(())

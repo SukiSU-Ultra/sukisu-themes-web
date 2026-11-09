@@ -206,16 +206,85 @@ pub async fn send_test(paths: &Paths, to: &str) -> Result<()> {
 }
 
 pub async fn send_notice(paths: &Paths, to: &str, subject: &str, message: &str) -> Result<()> {
+    let base = account_base_url(paths);
+    let (text, html) = notice_payload(&base, subject, message);
+    send_or_log(paths, to, subject, text, html, "").await
+}
+
+/// Queue an account notice without waiting for SMTP. Moderation and batch
+/// endpoints use this so one slow or unreachable mail server cannot delay the
+/// response, and a 100-item batch does not open 100 SMTP connections inline.
+pub fn queue_notice(paths: &Paths, to: &str, subject: &str, message: &str) {
+    let to = to.trim();
+    if to.is_empty() {
+        return;
+    }
+    let job = MailJob {
+        paths: paths.clone(),
+        to: to.to_string(),
+        subject: subject.to_string(),
+        message: message.to_string(),
+    };
+    if let Err(error) = queue().try_send(job) {
+        tracing::warn!(to = %to, "notification mail queue rejected: {error}");
+    }
+}
+
+struct MailJob {
+    paths: Paths,
+    to: String,
+    subject: String,
+    message: String,
+}
+
+static MAIL_QUEUE: std::sync::OnceLock<tokio::sync::mpsc::Sender<MailJob>> =
+    std::sync::OnceLock::new();
+
+fn queue() -> &'static tokio::sync::mpsc::Sender<MailJob> {
+    MAIL_QUEUE.get_or_init(|| {
+        let (tx, rx) = tokio::sync::mpsc::channel(4096);
+        tokio::spawn(mail_worker(rx));
+        tx
+    })
+}
+
+async fn mail_worker(mut rx: tokio::sync::mpsc::Receiver<MailJob>) {
+    while let Some(job) = rx.recv().await {
+        if let Err(error) = deliver_notice(&job).await {
+            tracing::warn!(to = %job.to, subject = %job.subject, "notification mail failed: {error:#}");
+        }
+    }
+}
+
+async fn deliver_notice(job: &MailJob) -> Result<()> {
+    let Some(settings) = MailSettings::load(&job.paths) else {
+        if dev_mode() {
+            tracing::info!(
+                to = %job.to,
+                subject = %job.subject,
+                "mail dev mode: notification not sent"
+            );
+            return Ok(());
+        }
+        return Err(anyhow!("邮件服务尚未配置"));
+    };
+    let base = configured_account_base_url(&job.paths);
+    let (text, html) = notice_payload(&base, &job.subject, &job.message);
+    settings
+        .send(&job.to, &job.subject, text, html)
+        .await
+}
+
+fn notice_payload(base: &str, subject: &str, message: &str) -> (String, String) {
     let html = format!(
         r#"<div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:28px">
 <h2 style="margin:0 0 12px">{subject}</h2>
 <p style="color:#475569;line-height:1.7">{message}</p>
-<p style="margin-top:28px"><a href="{}" style="color:#2563eb">打开用户中心</a></p>
-</div>"#,
-        account_base_url(paths)
+<p style="margin-top:28px"><a href="{base}" style="color:#2563eb">打开用户中心</a></p>
+</div>"#
     );
-    let text = format!("{subject}\n\n{message}\n\n{}", account_base_url(paths));
-    send_or_log(paths, to, subject, text, html, "").await
+    let text = format!("{subject}\n\n{message}\n\n{base}");
+    (text, html)
 }
 
 async fn send_or_log(

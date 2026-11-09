@@ -44,7 +44,7 @@ pub async fn follow(
     let follower_id = follower_id.to_string();
     let author_hash = author_hash.trim().to_string();
     let created_at = now_iso();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         let changed = conn.execute(
             "INSERT OR IGNORE INTO social.user_follows(follower_id, author_hash, created_at)
              VALUES (?1, ?2, ?3)",
@@ -62,7 +62,7 @@ pub async fn unfollow(
 ) -> anyhow::Result<bool> {
     let follower_id = follower_id.to_string();
     let author_hash = author_hash.trim().to_string();
-    db.call(move |conn| {
+    db.call_write(move |conn| {
         let changed = conn.execute(
             "DELETE FROM social.user_follows WHERE follower_id = ?1 AND author_hash = ?2",
             params![follower_id, author_hash],
