@@ -307,6 +307,9 @@ pub struct UploadForm {
     pub name: String,
     pub author: String,
     pub author_id: Option<String>,
+    /// Reason entered in the manager when the submitter has no active author
+    /// licence yet. Stored on the author request created by the submission.
+    pub author_apply_note: Option<String>,
     pub owner_hash: Option<String>,
     pub description: String,
     pub tags: String,

@@ -954,6 +954,7 @@ pub async fn import_theme(
         name: request.name.trim().to_string(),
         author: author_name,
         author_id: None,
+        author_apply_note: None,
         owner_hash: publish_owner.clone(),
         description: request.description,
         tags: request.tags,

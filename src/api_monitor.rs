@@ -1490,6 +1490,7 @@ fn admin_function<'a>(method: &str, path: &str) -> Option<&'a str> {
         ("GET", "/tokens") => "读取访问令牌",
         ("POST", "/author-requests/{id}/approve") => "批准作者申请",
         ("POST", "/author-requests/{id}/reject") => "拒绝作者申请",
+        ("POST", "/author-requests/bulk") => "批量处理作者申请",
         _ if path.starts_with("/users/") => user_function(method, path)?,
         _ if path.starts_with("/author-requests/") && path.ends_with("/approve") => "批准作者申请",
         _ if path.starts_with("/author-requests/") && path.ends_with("/reject") => "拒绝作者申请",

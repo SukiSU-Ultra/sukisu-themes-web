@@ -396,6 +396,11 @@ impl ApiError {
     pub(crate) fn internal(error: impl std::fmt::Display) -> Self {
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
     }
+
+    /// Human-readable message, used when one item of a batch operation fails.
+    pub(crate) fn detail(&self) -> &str {
+        &self.message
+    }
 }
 
 impl IntoResponse for ApiError {
@@ -1253,6 +1258,7 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
             ("用户列表", "GET", "/users"),
             ("账号审核", "POST", "/users/{id}/approve"),
             ("作者申请", "GET", "/author-requests"),
+            ("批量作者申请", "POST", "/author-requests/bulk"),
             ("操作日志", "GET", "/audit"),
             ("评论列表", "GET", "/comments"),
             ("关注列表", "GET", "/follows"),
@@ -1281,9 +1287,9 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
         .await
         .unwrap_or(0);
     let author_requests_pending =
-        crate::authors::count_pending_author_requests(&state.db, &state.paths)
+        crate::authors::count_pending_author_requests_split(&state.db, &state.paths)
             .await
-            .unwrap_or(0);
+            .unwrap_or((0, 0));
     let usage = state.storage_usage_cached().await;
     let storage_value = serde_json::to_value(&usage).unwrap_or_else(|_| json!({}));
     let sync_timer = system::service_state("sukisu-themes-sync.timer").await;
@@ -1332,7 +1338,8 @@ async fn status(State(state): State<AppState>) -> Json<Value> {
         "authorsCount": authors_count,
         "usersCount": users_count,
         "usersPending": users_pending,
-        "authorRequestsPending": author_requests_pending,
+        "authorRequestsPending": author_requests_pending.0 + author_requests_pending.1,
+        "submissionAuthorRequestsPending": author_requests_pending.1,
         "mailConfigured": crate::mailer::configured(&state.paths),
         "githubConfigured": crate::oauth::GithubSettings::load(&state.paths).is_some(),
         "managerVersionCode": crate::manager_version::current(&state.paths).await,

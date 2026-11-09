@@ -939,26 +939,48 @@ pub async fn reconcile_stale_author_requests(db: &Database) -> Result<Vec<(Strin
 }
 
 pub async fn count_pending_author_requests(db: &Database, paths: &Paths) -> Result<i64> {
+    let (manual, submitted) = count_pending_author_requests_split(db, paths).await?;
+    Ok(manual + submitted)
+}
+
+/// Pending requests split into (user-centre applications, submission-carried
+/// applications). Requests already covered by a pending theme submission are
+/// excluded because they are reviewed together with that theme.
+pub async fn count_pending_author_requests_split(
+    db: &Database,
+    paths: &Paths,
+) -> Result<(i64, i64)> {
     let pairs = pending_submission_author_pairs(paths);
     db.call(move |conn| {
         let mut statement = conn.prepare(
-            "SELECT user_id, author_hash, kind FROM authors.author_requests WHERE status = 'pending'",
+            "SELECT user_id, author_hash, kind, source, note
+             FROM authors.author_requests WHERE status = 'pending'",
         )?;
         let mut rows = statement.query([])?;
-        let mut count = 0;
+        let mut manual = 0;
+        let mut submitted = 0;
         while let Some(row) = rows.next()? {
             let user_id: String = row.get(0)?;
             let kind: String = row.get(2)?;
+            let source: Option<String> = row.get(3)?;
+            let note: Option<String> = row.get(4)?;
             let covered = matches!(kind.as_str(), "new" | "bind")
                 && row
                     .get::<_, Option<String>>(1)?
                     .map(|hash| pairs.contains(&(user_id, hash.to_ascii_lowercase())))
                     .unwrap_or(false);
-            if !covered {
-                count += 1;
+            if covered {
+                continue;
+            }
+            let auto_created = source.as_deref() == Some("submit")
+                || note.as_deref() == Some("由投稿自动创建");
+            if auto_created {
+                submitted += 1;
+            } else {
+                manual += 1;
             }
         }
-        Ok(count)
+        Ok((manual, submitted))
     })
     .await
 }
@@ -978,7 +1000,8 @@ pub async fn author_requests(
                     r.note, a.revoke_reason,
                     (SELECT prev.revoke_reason FROM authors.authors prev
                      WHERE prev.user_id = r.user_id AND prev.status IN ('revoked', 'retired')
-                     ORDER BY prev.updated_at DESC LIMIT 1)
+                     ORDER BY prev.updated_at DESC LIMIT 1),
+                    r.source
              FROM authors.author_requests r
              JOIN users u ON u.id = r.user_id
              LEFT JOIN authors.authors a ON a.hash = r.author_hash
@@ -998,6 +1021,12 @@ pub async fn author_requests(
         let mut rows = statement.query(rusqlite::params_from_iter(values.iter()))?;
         let mut items = Vec::new();
         while let Some(row) = rows.next()? {
+            let note: Option<String> = row.get(13)?;
+            let source: Option<String> = row.get(16)?;
+            let source = source.unwrap_or_else(|| "manual".to_string());
+            // Legacy rows created before the source column used a fixed note.
+            let auto_created =
+                source == "submit" || note.as_deref() == Some("由投稿自动创建");
             items.push(json!({
                 "id": row.get::<_, String>(0)?,
                 "kind": row.get::<_, String>(1)?,
@@ -1012,9 +1041,11 @@ pub async fn author_requests(
                 "username": row.get::<_, String>(10)?,
                 "userDisplayName": row.get::<_, String>(11)?,
                 "authorStatus": row.get::<_, Option<String>>(12)?,
-                "note": row.get::<_, Option<String>>(13)?,
+                "note": note,
                 "revokeReason": row.get::<_, Option<String>>(14)?,
                 "lastRevokeReason": row.get::<_, Option<String>>(15)?,
+                "source": source,
+                "autoCreated": auto_created,
             }));
         }
         Ok(items)
@@ -1113,19 +1144,41 @@ pub async fn create_author_request(
     display_name: &str,
     note: Option<&str>,
 ) -> Result<String> {
+    create_author_request_with_source(db, user_id, kind, author_hash, display_name, note, "manual")
+        .await
+}
+
+/// Same as [create_author_request] but records where the request came from.
+/// `submit` requests are created together with a theme submission and are
+/// reviewed under the admin "随投稿申请" tab; `manual` requests come from the
+/// user centre application form.
+pub async fn create_author_request_with_source(
+    db: &Database,
+    user_id: &str,
+    kind: &str,
+    author_hash: Option<&str>,
+    display_name: &str,
+    note: Option<&str>,
+    source: &str,
+) -> Result<String> {
     let id = random_hex(12);
     let user_id = user_id.to_string();
     let kind = kind.to_string();
     let author_hash = author_hash.map(str::to_string);
     let display_name = display_name.trim().to_string();
     let note = note.map(str::to_string);
+    let source = match source {
+        "submit" => "submit",
+        _ => "manual",
+    }
+    .to_string();
     let now = now_iso();
     let request_id = id.clone();
     db.call(move |conn| {
         conn.execute(
             "INSERT INTO authors.author_requests
-             (id, user_id, kind, author_hash, display_name, status, note, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7)",
+             (id, user_id, kind, author_hash, display_name, status, note, source, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7, ?8)",
             params![
                 request_id,
                 user_id,
@@ -1133,6 +1186,7 @@ pub async fn create_author_request(
                 author_hash,
                 display_name,
                 note,
+                source,
                 now
             ],
         )?;

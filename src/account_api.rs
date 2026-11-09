@@ -3204,6 +3204,7 @@ async fn ensure_author_request(
     kind: &str,
     hash: &str,
     display_name: &str,
+    note: Option<&str>,
 ) -> ApiResult<()> {
     let pending = authors::author_requests(&state.db, Some("pending"), Some(user_id))
         .await
@@ -3214,13 +3215,15 @@ async fn ensure_author_request(
     {
         return Ok(());
     }
-    authors::create_author_request(
+    let note = note.map(str::trim).filter(|value| !value.is_empty());
+    authors::create_author_request_with_source(
         &state.db,
         user_id,
         kind,
         Some(hash),
         display_name,
-        Some("由投稿自动创建"),
+        note.or(Some("由投稿自动创建")),
+        "submit",
     )
     .await
     .map_err(ApiError::internal)?;
@@ -3232,6 +3235,7 @@ async fn resolve_account_author(
     session: &SessionInfo,
     author_id: Option<&str>,
     display_name: &str,
+    apply_note: Option<&str>,
 ) -> ApiResult<ResolvedAuthor> {
     let display_name = if display_name.trim().is_empty() {
         session.display_name.clone()
@@ -3277,8 +3281,15 @@ async fn resolve_account_author(
                 {
                     return Err(ApiError::conflict("你还有待审核的作者申请，请等待审核完成"));
                 }
-                ensure_author_request(state, &session.user_id, "bind", &hash, &display_name)
-                    .await?;
+                ensure_author_request(
+                    state,
+                    &session.user_id,
+                    "bind",
+                    &hash,
+                    &display_name,
+                    apply_note,
+                )
+                .await?;
             }
             author.user_id = Some(session.user_id.clone());
             return Ok(ResolvedAuthor {
@@ -3304,7 +3315,15 @@ async fn resolve_account_author(
         .await
         .map_err(ApiError::internal)?;
         let _ = authors::set_auto_publish(&state.db, &hash, false).await;
-        ensure_author_request(state, &session.user_id, "new", &hash, &display_name).await?;
+        ensure_author_request(
+            state,
+            &session.user_id,
+            "new",
+            &hash,
+            &display_name,
+            apply_note,
+        )
+        .await?;
         return Ok(ResolvedAuthor {
             author,
             generated_id: None,
@@ -3354,7 +3373,15 @@ async fn resolve_account_author(
     .await
     .map_err(ApiError::internal)?;
     let _ = authors::set_auto_publish(&state.db, &hash, false).await;
-    ensure_author_request(state, &session.user_id, "new", &hash, &display_name).await?;
+    ensure_author_request(
+        state,
+        &session.user_id,
+        "new",
+        &hash,
+        &display_name,
+        apply_note,
+    )
+    .await?;
     Ok(ResolvedAuthor {
         author,
         generated_id: Some(raw_id),
@@ -3367,25 +3394,35 @@ async fn next_theme_id(
     Extension(session): Extension<SessionInfo>,
 ) -> ApiResult<Json<Value>> {
     require_active(&session)?;
-    let resolved = resolve_account_author(&state, &session, None, &session.display_name).await?;
-    if authors::has_restriction(&state.db, &resolved.author.hash, "upload")
+    // Previewing an ID must not create an author identity or an author request:
+    // those are only created when the user actually submits a theme, together
+    // with the reason they enter in the manager's submit-review dialog.
+    let Some(author) = authors::active_author_for_user(&state.db, &session.user_id)
+        .await
+        .map_err(ApiError::internal)?
+    else {
+        return Ok(Json(json!({
+            "ok": true,
+            "id": "",
+            "author": Value::Null,
+            "requiresAuthorRequest": true,
+        })));
+    };
+    if authors::has_restriction(&state.db, &author.hash, "upload")
         .await
         .map_err(ApiError::internal)?
     {
         return Err(ApiError::forbidden("该作者身份已被限制投稿"));
     }
-    let id = authors::peek_next_theme_id(&state.db, &resolved.author.hash)
+    let id = authors::peek_next_theme_id(&state.db, &author.hash)
         .await
         .map_err(ApiError::internal)?
         .ok_or_else(|| ApiError::conflict("无法分配主题 ID"))?;
-    let author = authors::author_by_hash(&state.db, &resolved.author.hash)
-        .await
-        .map_err(ApiError::internal)?
-        .unwrap_or(resolved.author);
     Ok(Json(json!({
         "ok": true,
         "id": id,
         "author": author,
+        "requiresAuthorRequest": false,
     })))
 }
 
@@ -3415,9 +3452,28 @@ async fn submit_theme(
     let upload_ids = crate::resumable::resolve_form(&state, &session.user_id, &mut form).await?;
     let author_id = form.author_id.clone();
     let author_name = form.author.clone();
+    let apply_note = form
+        .author_apply_note
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    if apply_note
+        .as_deref()
+        .map(|value| value.chars().count() > 500)
+        .unwrap_or(false)
+    {
+        return Err(ApiError::bad("申请说明不能超过 500 个字符"));
+    }
     let requested_id = form.id.trim().to_string();
-    let resolved =
-        resolve_account_author(&state, &session, author_id.as_deref(), &author_name).await?;
+    let resolved = resolve_account_author(
+        &state,
+        &session,
+        author_id.as_deref(),
+        &author_name,
+        apply_note.as_deref(),
+    )
+    .await?;
     if authors::has_restriction(&state.db, &resolved.author.hash, "upload")
         .await
         .map_err(ApiError::internal)?

@@ -2990,6 +2990,7 @@ async function loadUploadView() {
     const data = await api('/theme-id/next');
     userUploadNextId = data.id || '';
     $('userUpAutoId').value = userUploadNextId;
+    $('userUpAutoId').placeholder = userUploadNextId ? '' : '提交审核后自动分配';
     $('userUpAuthor').value = data.author?.displayName || data.author?.name || profile?.displayName || '';
     const themes = await api('/my-themes');
     userUploadThemes = themes.themes || [];

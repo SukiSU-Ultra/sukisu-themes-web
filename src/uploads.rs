@@ -221,6 +221,7 @@ pub async fn parse_multipart(mut multipart: Multipart) -> Result<UploadForm, Str
     let mut name = String::new();
     let mut author = String::new();
     let mut author_id: Option<String> = None;
+    let mut author_apply_note: Option<String> = None;
     let mut owner_hash: Option<String> = None;
     let mut description = String::new();
     let mut tags = String::new();
@@ -309,6 +310,7 @@ pub async fn parse_multipart(mut multipart: Multipart) -> Result<UploadForm, Str
                     "name" => name = value,
                     "author" => author = value,
                     "authorId" => author_id = Some(value),
+                    "authorApplyNote" => author_apply_note = Some(value),
                     "ownerHash" => owner_hash = Some(value),
                     "description" => description = value,
                     "tags" => tags = value,
@@ -356,6 +358,7 @@ pub async fn parse_multipart(mut multipart: Multipart) -> Result<UploadForm, Str
         name,
         author,
         author_id,
+        author_apply_note,
         owner_hash,
         description,
         tags,

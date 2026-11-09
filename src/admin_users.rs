@@ -28,6 +28,7 @@ pub fn router() -> Router<AppState> {
         .route("/users/{id}/author/bind", post(user_author_bind))
         .route("/users/{id}/author/reset", post(user_author_reset))
         .route("/author-requests", get(author_requests))
+        .route("/author-requests/bulk", post(author_request_bulk))
         .route(
             "/author-requests/{id}/approve",
             post(author_request_approve),
@@ -113,7 +114,7 @@ async fn users(
     let total = accounts::count_users(&state.db)
         .await
         .map_err(ApiError::internal)?;
-    let author_pending = authors::count_pending_author_requests(&state.db, &state.paths)
+    let author_pending = authors::count_pending_author_requests_split(&state.db, &state.paths)
         .await
         .map_err(ApiError::internal)?;
     let disabled = accounts::count_disabled_users(&state.db)
@@ -147,7 +148,8 @@ async fn users(
         "counts": {
             "total": total,
             "pending": pending,
-            "authorRequests": author_pending,
+            "authorRequests": author_pending.0 + author_pending.1,
+            "submissionAuthorRequests": author_pending.1,
             "disabled": disabled,
         }
     })))
@@ -689,7 +691,16 @@ async fn author_request_approve(
     Extension(actor): Extension<SessionInfo>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    let request = authors::author_request_by_id(&state.db, &id)
+    approve_author_request_record(&state, &actor, &id).await?;
+    Ok(Json(json!({"ok": true, "message": "申请已通过"})))
+}
+
+async fn approve_author_request_record(
+    state: &AppState,
+    actor: &SessionInfo,
+    id: &str,
+) -> ApiResult<()> {
+    let request = authors::author_request_by_id(&state.db, id)
         .await
         .map_err(ApiError::internal)?
         .ok_or_else(|| ApiError::not_found("申请不存在"))?;
@@ -782,7 +793,7 @@ async fn author_request_approve(
                 mailer::send_notice(&state.paths, &email, "SukiSU 作者申请审核结果", message).await;
         }
     }
-    Ok(Json(json!({"ok": true, "message": "申请已通过"})))
+    Ok(())
 }
 
 async fn author_request_reject(
@@ -798,10 +809,21 @@ async fn author_request_reject(
         .unwrap_or("")
         .trim()
         .to_string();
+    reject_author_request_record(&state, &actor, &id, &reason).await?;
+    Ok(Json(json!({"ok": true, "message": "申请已拒绝"})))
+}
+
+async fn reject_author_request_record(
+    state: &AppState,
+    actor: &SessionInfo,
+    id: &str,
+    reason: &str,
+) -> ApiResult<()> {
+    let reason = reason.trim().to_string();
     if !(1..=500).contains(&reason.chars().count()) {
         return Err(ApiError::bad("请填写 1-500 字的拒绝原因"));
     }
-    let request = authors::author_request_by_id(&state.db, &id)
+    let request = authors::author_request_by_id(&state.db, id)
         .await
         .map_err(ApiError::internal)?
         .ok_or_else(|| ApiError::not_found("申请不存在"))?;
@@ -851,7 +873,85 @@ async fn author_request_reject(
                 .await;
         }
     }
-    Ok(Json(json!({"ok": true, "message": "申请已拒绝"})))
+    Ok(())
+}
+
+async fn author_request_bulk(
+    State(state): State<AppState>,
+    Extension(actor): Extension<SessionInfo>,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
+    let value = json_body(body).await?;
+    let action = value
+        .get("action")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if !matches!(action.as_str(), "approve" | "reject") {
+        return Err(ApiError::bad("未知的批量操作"));
+    }
+    let ids: Vec<String> = value
+        .get("ids")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|id| !id.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut unique = Vec::with_capacity(ids.len());
+    let mut seen = std::collections::HashSet::new();
+    for id in ids {
+        if seen.insert(id.clone()) {
+            unique.push(id);
+        }
+    }
+    if unique.is_empty() {
+        return Err(ApiError::bad("没有选择要处理的申请"));
+    }
+    if unique.len() > 200 {
+        return Err(ApiError::bad("一次最多处理 200 个申请"));
+    }
+    let reason = value
+        .get("reason")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if action == "reject" && !(1..=500).contains(&reason.chars().count()) {
+        return Err(ApiError::bad("请填写 1-500 字的拒绝原因"));
+    }
+    let mut approved = 0usize;
+    let mut rejected = 0usize;
+    let mut failed = Vec::new();
+    for id in unique {
+        let result = if action == "approve" {
+            approve_author_request_record(&state, &actor, &id).await
+        } else {
+            reject_author_request_record(&state, &actor, &id, &reason).await
+        };
+        match result {
+            Ok(()) => {
+                if action == "approve" {
+                    approved += 1;
+                } else {
+                    rejected += 1;
+                }
+            }
+            Err(error) => failed.push(json!({"id": id, "error": error.detail()})),
+        }
+    }
+    Ok(Json(json!({
+        "ok": true,
+        "approved": approved,
+        "rejected": rejected,
+        "failed": failed,
+    })))
 }
 
 #[derive(Deserialize)]

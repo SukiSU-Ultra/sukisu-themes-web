@@ -670,6 +670,25 @@
     "作者": "Author",
     "作者名称": "Author name",
     "作者申请": "Author requests",
+    "随投稿申请": "Submission author requests",
+    "批量通过": "Approve selected",
+    "批量拒绝": "Reject selected",
+    "创建时间": "Created",
+    "没有随投稿创建的作者申请": "No author requests created by submissions",
+    "用户中心提交的绑定/重置申请会出现在这里；随投稿创建的申请在“随投稿申请”标签。": "Binding and reset requests submitted from the user centre appear here; requests created with a submission are under the “Submission author requests” tab.",
+    "首次投稿会自动创建作者身份；投稿被拒绝或撤回后未处理的申请会出现在这里。": "The first submission creates the author identity automatically. Requests left over after a submission is rejected or withdrawn appear here.",
+    "请先选择要处理的申请": "Select the requests to process first",
+    "拒绝所选作者申请": "Reject selected author requests",
+    "拒绝原因会发送到每个用户邮箱，并写入操作日志。": "The rejection reason is emailed to each user and written to the audit log.",
+    "例如：随投稿创建的作者申请未通过审核": "e.g. the author request created with the submission was not approved",
+    "全部拒绝": "Reject all",
+    "一键清空随投稿申请": "Clear submission author requests",
+    "清空等同于全部拒绝：对应的作者许可会被撤销，用户需要重新申请。拒绝原因会发送到每个用户邮箱。": "Clearing is the same as rejecting everything: affected author licences are revoked and users must apply again. The rejection reason is emailed to each user.",
+    "例如：投稿已撤回，随投稿创建的作者申请一并关闭": "e.g. the submission was withdrawn, so its author request is closed too",
+    "继续": "Continue",
+    "作者申请分“作者申请 / 随投稿申请”两个标签，可批量通过、拒绝或一键清空": "Author requests are split into “Author requests” and “Submission author requests”, with batch approve, reject and clear-all",
+    "提交审核后自动分配": "Assigned after you submit for review",
+    "全部拒绝后无法撤销，再次确认清空？": "Rejecting everything cannot be undone. Clear again to confirm?",
     "作者头像（可选）": "Author avatar (optional)",
     "作者许可": "Author licenses",
     "API 接口": "API endpoints",
@@ -2614,6 +2633,26 @@
     [
       "^已批准，作者申请已同时通过，当前共 ([0-9]+) 个主题$",
       "Approved. The author request was approved too. Total $1 themes."
+    ],
+    [
+      "^共 (\\d+) 个随投稿申请；与待审核投稿绑定的申请会随该投稿一并审核，不在此列出。$",
+      "$1 submission author {{p:$1|request|requests}}. Requests bound to a pending submission are reviewed with that submission and are not listed here."
+    ],
+    [
+      "^通过所选的 (\\d+) 个作者申请？$",
+      "Approve the $1 selected author {{p:$1|request|requests}}?"
+    ],
+    [
+      "^已处理 (\\d+) 个申请，失败 (\\d+) 个$",
+      "Processed $1 {{p:$1|request|requests}}, $2 failed"
+    ],
+    [
+      "^已处理 (\\d+) 个申请$",
+      "Processed $1 {{p:$1|request|requests}}"
+    ],
+    [
+      "^清空 (\\d+) 个随投稿申请？$",
+      "Clear $1 submission author {{p:$1|request|requests}}?"
     ]
   ]
 }

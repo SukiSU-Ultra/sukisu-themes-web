@@ -131,6 +131,7 @@ CREATE TABLE IF NOT EXISTS author_requests (
     display_name TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     note TEXT,
+    source TEXT NOT NULL DEFAULT 'manual',
     created_at TEXT NOT NULL,
     reviewed_at TEXT,
     reviewed_by TEXT,
@@ -364,6 +365,7 @@ CREATE TABLE IF NOT EXISTS author_requests (
     display_name TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     note TEXT,
+    source TEXT NOT NULL DEFAULT 'manual',
     created_at TEXT NOT NULL,
     reviewed_at TEXT,
     reviewed_by TEXT,
@@ -679,6 +681,23 @@ fn create_schema_file(path: &Path, kind: DbKind) -> anyhow::Result<()> {
                     [],
                 )?;
             }
+        }
+        // Author requests created by a theme submission are reviewed in their own
+        // admin tab; older rows only carry the legacy note marker.
+        let has_source: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('author_requests') WHERE name = 'source'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_source == 0 {
+            conn.execute(
+                "ALTER TABLE author_requests ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'",
+                [],
+            )?;
+            conn.execute(
+                "UPDATE author_requests SET source = 'submit' WHERE note = '由投稿自动创建'",
+                [],
+            )?;
         }
     }
     conn.pragma_update(None, "user_version", SPLIT_SCHEMA_VERSION)?;
@@ -1206,6 +1225,21 @@ impl Database {
             )?;
             if has_audit_ip == 0 {
                 conn.execute("ALTER TABLE audit_log ADD COLUMN ip TEXT", [])?;
+            }
+            let has_request_source: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('author_requests') WHERE name = 'source'",
+                [],
+                |row| row.get(0),
+            )?;
+            if has_request_source == 0 {
+                conn.execute(
+                    "ALTER TABLE author_requests ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'",
+                    [],
+                )?;
+                conn.execute(
+                    "UPDATE author_requests SET source = 'submit' WHERE note = '由投稿自动创建'",
+                    [],
+                )?;
             }
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS authors_code_idx ON authors(code) WHERE code IS NOT NULL",

@@ -194,6 +194,7 @@
           <div class="row" id="userTabs">
             <button data-user-status="pending" class="active">待验证邮箱 <span class="tab-count" id="usersTabPending">0</span></button>
             <button data-user-status="author">作者申请 <span class="tab-count" id="usersTabAuthors">0</span></button>
+            <button data-user-status="submit-author">随投稿申请 <span class="tab-count" id="usersTabSubmitAuthors">0</span></button>
             <button data-user-status="all">全部用户 <span class="tab-count" id="usersTabTotal">0</span></button>
             <button data-user-status="disabled">已禁用 <span class="tab-count" id="usersTabDisabled">0</span></button>
           </div>
@@ -1629,6 +1630,7 @@ function render(status) {
     total: status.usersCount ?? 0,
     pending: status.usersPending ?? 0,
     authorRequests: status.authorRequestsPending ?? 0,
+    submissionAuthorRequests: status.submissionAuthorRequestsPending ?? 0,
   });
   $('storageSub').textContent = formatStorage(used) + ' 已用 / ' + formatStorage(limit);
   $('uploadLimitHint').textContent = formatStorage(limit);
@@ -3125,6 +3127,12 @@ function updateUserStats(counts) {
   const total = counts && counts.total != null ? counts.total : '–';
   const pending = counts && counts.pending != null ? counts.pending : '–';
   const authorRequests = counts && counts.authorRequests != null ? counts.authorRequests : '–';
+  const submissionAuthorRequests = counts && counts.submissionAuthorRequests != null
+    ? Number(counts.submissionAuthorRequests || 0)
+    : 0;
+  const manualAuthorRequests = authorRequests === '–'
+    ? '–'
+    : Math.max(0, Number(authorRequests || 0) - submissionAuthorRequests);
   const disabled = counts && counts.disabled != null ? counts.disabled : '–';
   $('usersStatTotal').textContent = total;
   $('usersStatPending').textContent = pending;
@@ -3134,11 +3142,13 @@ function updateUserStats(counts) {
   const setCount = (id, value) => {
     const el = $(id);
     if (!el) return;
-    if (value == null) el.textContent = '0';
-    else el.textContent = Number(value) > 99 ? '99+' : String(value);
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) el.textContent = '0';
+    else el.textContent = numeric > 99 ? '99+' : String(numeric);
   };
   setCount('usersTabPending', pending);
-  setCount('usersTabAuthors', authorRequests);
+  setCount('usersTabAuthors', manualAuthorRequests);
+  setCount('usersTabSubmitAuthors', submissionAuthorRequests);
   setCount('usersTabTotal', total);
   if (counts && counts.disabled != null) setCount('usersTabDisabled', counts.disabled);
   const badge = $('usersNavBadge');
@@ -3524,7 +3534,7 @@ function renderAuthorRequests(requests) {
   list.innerHTML = '';
   $('userEmpty').style.display = requests.length ? 'none' : 'block';
   if (!requests.length) {
-    $('userEmpty').innerHTML = '<b>没有待处理的作者申请</b>用户绑定或新增作者后会出现在这里。';
+    $('userEmpty').innerHTML = '<b>没有待处理的作者申请</b>用户中心提交的绑定/重置申请会出现在这里；随投稿创建的申请在“随投稿申请”标签。';
     return;
   }
   requests.forEach(item => {
@@ -3575,6 +3585,139 @@ async function reviewAuthorRequest(id, action) {
     await loadUsers();
     await refresh(true);
   } catch (error) { toast(error.message, 'bad'); }
+}
+
+// Requests created automatically with a theme submission live in their own tab.
+// They pile up when a submission is rejected or withdrawn before review, so the
+// tab offers select-all, batch approve/reject and one-click clear (= reject all).
+let autoAuthorRequestsCache = [];
+
+function selectedAutoAuthorRequestIds() {
+  return Array.from(document.querySelectorAll('#userList input[data-auto-request]:checked'))
+    .map(input => input.dataset.autoRequest)
+    .filter(Boolean);
+}
+
+function renderAutoAuthorRequests(requests) {
+  autoAuthorRequestsCache = requests.slice();
+  const list = $('userList');
+  list.innerHTML = '';
+  $('userEmpty').style.display = requests.length ? 'none' : 'block';
+  if (!requests.length) {
+    $('userEmpty').innerHTML = '<b>没有随投稿创建的作者申请</b>首次投稿会自动创建作者身份；投稿被拒绝或撤回后未处理的申请会出现在这里。';
+    return;
+  }
+  const toolbar = document.createElement('div');
+  toolbar.className = 'directory-toolbar';
+  toolbar.innerHTML = `
+    <label class="row" style="gap:8px;align-items:center;font-size:13px">
+      <input type="checkbox" id="autoAuthorSelectAll">
+      <span>全选</span>
+    </label>
+    <span class="hint" style="margin:0">共 ${requests.length} 个随投稿申请；与待审核投稿绑定的申请会随该投稿一并审核，不在此列出。</span>
+    <div class="row" style="margin-left:auto">
+      <button class="small" id="autoAuthorApprove" type="button">批量通过</button>
+      <button class="small reject" id="autoAuthorReject" type="button">批量拒绝</button>
+      <button class="small reject" id="autoAuthorClear" type="button">一键清空</button>
+    </div>`;
+  list.appendChild(toolbar);
+  const selectAll = toolbar.querySelector('#autoAuthorSelectAll');
+  selectAll.addEventListener('change', () => {
+    list.querySelectorAll('input[data-auto-request]').forEach(input => {
+      input.checked = selectAll.checked;
+    });
+  });
+  toolbar.querySelector('#autoAuthorApprove').addEventListener('click', () => {
+    bulkReviewAuthorRequests(selectedAutoAuthorRequestIds(), 'approve');
+  });
+  toolbar.querySelector('#autoAuthorReject').addEventListener('click', () => {
+    bulkReviewAuthorRequests(selectedAutoAuthorRequestIds(), 'reject');
+  });
+  toolbar.querySelector('#autoAuthorClear').addEventListener('click', clearAllAutoAuthorRequests);
+  requests.forEach(item => {
+    const card = document.createElement('div');
+    card.className = 'pending-card user-card';
+    const kind = ({ bind: '绑定已有作者', new: '新增作者', reset: '重置作者 ID' })[item.kind] || item.kind;
+    const initial = String(item.displayName || item.userDisplayName || 'A').trim().slice(0, 1).toUpperCase() || 'A';
+    const avatar = item.avatarUrl
+      ? `<img class="author-avatar" src="${escapeHtml(item.avatarUrl)}" alt="">`
+      : `<span class="author-avatar fallback">${escapeHtml(initial)}</span>`;
+    card.innerHTML = `<div class="pending-body">
+      <label class="row" style="gap:8px;align-items:center;margin-bottom:10px;font-size:13px">
+        <input type="checkbox" data-auto-request="${escapeHtml(item.id)}">
+        <span>选择</span>
+      </label>
+      <div class="section-head" style="margin:0 0 8px"><div><h4 style="margin:0">${escapeHtml(kind)}</h4>
+      <p class="hint" style="margin:4px 0 0">${avatar} ${escapeHtml(item.userDisplayName || item.username)} · @${escapeHtml(item.username)}</p></div>${userPill(item.status)}</div>
+      <div class="meta">
+        <div class="kv"><span>作者名称</span><b>${escapeHtml(item.displayName || '–')}</b></div>
+        <div class="kv"><span>作者 hash</span><b class="author-fp">${escapeHtml(item.authorHash || '–')}</b></div>
+        <div class="kv"><span>创建时间</span><b>${escapeHtml(formatTime(item.createdAt))}</b></div>
+        ${item.note && item.note !== '由投稿自动创建' ? `<div class="kv"><span>申请说明</span><b>${escapeHtml(item.note)}</b></div>` : ''}
+        ${item.lastRevokeReason ? `<div class="kv"><span>上次撤销原因</span><b>${escapeHtml(item.lastRevokeReason)}</b></div>` : ''}
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="primary" data-action="approve">通过</button>
+        <button class="reject" data-action="reject">拒绝</button>
+      </div>
+    </div>`;
+    card.querySelector('[data-action="approve"]').addEventListener('click', () => reviewAuthorRequest(item.id, 'approve'));
+    card.querySelector('[data-action="reject"]').addEventListener('click', () => reviewAuthorRequest(item.id, 'reject'));
+    list.appendChild(card);
+  });
+}
+
+async function bulkReviewAuthorRequests(ids, action, presetReason) {
+  if (!ids.length) {
+    toast('请先选择要处理的申请', 'bad');
+    return;
+  }
+  let reason = presetReason;
+  if (action === 'reject' && reason == null) {
+    reason = await askReason({
+      title: '拒绝所选作者申请',
+      hint: '拒绝原因会发送到每个用户邮箱，并写入操作日志。',
+      placeholder: '例如：随投稿创建的作者申请未通过审核',
+      confirmText: '全部拒绝',
+    });
+    if (reason === null) return;
+  } else if (action === 'approve' && !confirm(`通过所选的 ${ids.length} 个作者申请？`)) {
+    return;
+  }
+  let approved = 0;
+  let rejected = 0;
+  let failed = 0;
+  for (let index = 0; index < ids.length; index += 100) {
+    const chunk = ids.slice(index, index + 100);
+    const body = { action, ids: chunk };
+    if (action === 'reject') body.reason = reason;
+    try {
+      const data = await api('/author-requests/bulk', { method: 'POST', body: JSON.stringify(body) });
+      approved += Number(data.approved || 0);
+      rejected += Number(data.rejected || 0);
+      failed += (data.failed || []).length;
+    } catch (_) {
+      failed += chunk.length;
+    }
+  }
+  const processed = approved + rejected;
+  toast(failed ? `已处理 ${processed} 个申请，失败 ${failed} 个` : `已处理 ${processed} 个申请`, failed ? 'bad' : undefined);
+  await loadUsers();
+  await refresh(true);
+}
+
+async function clearAllAutoAuthorRequests() {
+  const ids = autoAuthorRequestsCache.map(item => item.id);
+  if (!ids.length) return;
+  const reason = await askReason({
+    title: '一键清空随投稿申请',
+    hint: '清空等同于全部拒绝：对应的作者许可会被撤销，用户需要重新申请。拒绝原因会发送到每个用户邮箱。',
+    placeholder: '例如：投稿已撤回，随投稿创建的作者申请一并关闭',
+    confirmText: '继续',
+  });
+  if (reason === null) return;
+  if (!confirmTwice(`清空 ${ids.length} 个随投稿申请？`, '全部拒绝后无法撤销，再次确认清空？')) return;
+  await bulkReviewAuthorRequests(ids, 'reject', reason);
 }
 
 let auditOffset = 0;
@@ -3761,9 +3904,14 @@ $('auditNext').addEventListener('click', () => loadAudit(auditOffset + AUDIT_PAG
 
 async function loadUsers() {
   try {
-    if (userStatus === 'author') {
+    if (userStatus === 'author' || userStatus === 'submit-author') {
       const data = await api('/author-requests?status=pending');
-      renderAuthorRequests(data.requests || []);
+      const requests = data.requests || [];
+      if (userStatus === 'author') {
+        renderAuthorRequests(requests.filter(item => !item.autoCreated));
+      } else {
+        renderAutoAuthorRequests(requests.filter(item => item.autoCreated));
+      }
       const counts = await api('/users?status=all');
       updateUserStats(counts.counts || {});
       loadAudit();
@@ -3786,7 +3934,7 @@ $('userSearch').addEventListener('input', () => {
   loadUsers.timer = setTimeout(loadUsers, 250);
 });
 $('userRoleFilter').addEventListener('change', () => {
-  if (userStatus !== 'author') renderUsers(userItems);
+  if (userStatus !== 'author' && userStatus !== 'submit-author') renderUsers(userItems);
 });
 document.querySelectorAll('[data-user-status]').forEach(button => {
   button.addEventListener('click', () => setUserStatus(button.dataset.userStatus));
@@ -5470,7 +5618,7 @@ const PAGE_GUIDES = {
   users: {
     title: '用户与作者',
     what: '统一管理注册用户、审核状态、作者身份和账号权限。',
-    abilities: ['按状态/角色/关键词筛选用户', '通过、拒绝、禁用、启用或删除账号', '绑定作者、重置作者 ID、设置管理员', '查看管理员操作日志'],
+    abilities: ['按状态/角色/关键词筛选用户', '通过、拒绝、禁用、启用或删除账号', '绑定作者、重置作者 ID、设置管理员', '作者申请分“作者申请 / 随投稿申请”两个标签，可批量通过、拒绝或一键清空', '查看管理员操作日志'],
     steps: ['用筛选栏定位账号', '点击“详情”进入二级详情页', '在详情页执行审核或作者操作'],
   },
   'user-detail': {
