@@ -48,7 +48,7 @@ async function api(base, route, body) {
   return value;
 }
 async function until(check, name) {
-  for (let i=0;i<100;i++) { try { if(await check()) return; } catch {} await delay(200); }
+  for (let i=0;i<200;i++) { try { if(await check()) return; } catch {} await delay(200); }
   throw Error('Timed out: '+name);
 }
 (async () => {
@@ -62,6 +62,7 @@ async function until(check, name) {
   fs.writeFileSync(path.join(data,'previews/11010-01-v1.png'),Buffer.from('image'));
   fs.writeFileSync(path.join(data,'meta/11010-01.json'),JSON.stringify({id:'11010-01',version:1,name:'handover fixture',author:'test',package:'themes/11010-01-v1.sukisu',preview:'previews/11010-01-v1.png',formatVersion:1}));
   fs.writeFileSync(env.THEME_STORAGE_ENV,'THEME_STORAGE_ROOT='+data.replace(/\\/g,'/')+'\nTHEME_STORAGE_LIMIT_BYTES=1073741824\n');
+  fs.writeFileSync(env.THEME_ACCOUNT_ENV,'ACCOUNT_URL='+a+'/account/\nGITHUB_CALLBACK_URL='+a+'/api/auth/github/callback\n');
   fs.writeFileSync(env.THEME_NETWORK_ENV,'ADMIN_BIND=127.0.0.1\nADMIN_PORT='+aPort+'\n');
   const oldMaster=crypto.randomBytes(32).toString('hex');fs.writeFileSync(env.THEME_TOKEN_ENV,'THEME_STORE_TOKEN='+oldMaster+'\n');
   execFileSync(binary,['migrate-db'],{cwd:repo,env,windowsHide:true,stdio:'pipe'});
@@ -96,8 +97,13 @@ async function until(check, name) {
   const sites=await api(b,'/sites');assert.ok(sites.replica);assert.equal(sites.writerId,configs[0].nodeId);
   assert.ok(!JSON.stringify(sites).includes(configs[0].secret));
   await api(a,'/sites/transfer',{targetId:configs[1].nodeId});
+  await until(async()=> (await (await request(b,'/_site/state',undefined,headers)).json()).mode==='writer','B writer');
   let state=await (await request(b,'/_site/state',undefined,headers)).json();assert.equal(state.mode,'writer');assert.equal(state.epoch,2);
+  await until(async()=> (await (await request(a,'/_site/state',undefined,headers)).json()).mode==='follower','A follower');
   const oldState=await (await request(a,'/_site/state',undefined,headers)).json();assert.equal(oldState.mode,'follower');assert.equal(oldState.ready,false);
+  const authB=await api(b,'/auth-settings');
+  assert.equal(authB.githubCallback,b+'/api/auth/github/callback');
+  assert.equal(authB.accountUrl,b+'/account/');
   assert.equal((await request(a,'/catalog.json',undefined,tokenHeader(rotated.accessToken))).status,200);
   const downloaded=await request(b,'/themes/11010-01-v1.sukisu',undefined,{...tokenHeader(rotated.accessToken),Range:'bytes=0-'+(fixture.length-1)});
   assert.equal(downloaded.status,206);assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()),fixture);
@@ -110,8 +116,17 @@ async function until(check, name) {
   assert.equal((await request(a,'/catalog.json',undefined,tokenHeader(personal.accessToken))).status,200);
   assert.equal((await request(a,'/account/api/access/revoke',{id:personal.id},{},true)).status,200);
   assert.equal((await request(b,'/catalog.json',undefined,tokenHeader(personal.accessToken))).status,401);
-  await api(b,'/sites/transfer',{targetId:configs[0].nodeId});
+  // A is a follower now; the request is forwarded to the current writer.
+  // Use the forced path: it kills B's writer without waiting for a drain and
+  // must still finish with maintenance automatically disabled on the new writer.
+  await api(a,'/sites/transfer',{targetId:configs[0].nodeId,force:true});
+  await until(async()=> (await (await request(a,'/_site/state',undefined,headers)).json()).mode==='writer','A writer again');
+  await until(async()=> (await (await request(b,'/_site/state',undefined,headers)).json()).mode==='follower','B follower again');
   state=await (await request(a,'/_site/state',undefined,headers)).json();assert.equal(state.mode,'writer');assert.equal(state.epoch,3);
+  const authA=await api(a,'/auth-settings');
+  assert.equal(authA.githubCallback,a+'/api/auth/github/callback');
+  assert.equal(authA.accountUrl,a+'/account/');
+  await until(async()=> (await api(a,'/maintenance')).enabled===false,'maintenance off after forced handover');
   assert.equal((await request(b,'/_site/activate',duplicate,headers)).status,503);
   await stop(follower);follower=start(['site',path.join(root,'site-1.json')],env,'site-b-restart');follower.site={base:b,secret:configs[0].secret};
   await until(async()=> (await request(b,'/api/session',undefined,{},true)).ok,'follower restart');

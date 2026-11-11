@@ -4,6 +4,7 @@
 //! be activated. There is deliberately no timeout-based promotion.
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -129,6 +130,53 @@ pub async fn drain_child(State(state): State<AppState>, headers: HeaderMap) -> R
     state.flush_downloads().await;
     STOP.notify_one();
     Json(json!({"ok":true})).into_response()
+}
+
+/// Supervisor-only maintenance switch. A handover turns maintenance on before
+/// the old writer stops and off once the new writer has started; there is no
+/// guaranteed admin session inside the child process for that window.
+pub async fn internal_maintenance(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let expected = std::env::var("SUKISU_SITE_INTERNAL").unwrap_or_default();
+    let provided = headers
+        .get("X-Sukisu-Site-Internal")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if expected.is_empty() || !crate::api::token_matches(&expected, provided) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let enabled = serde_json::from_slice::<Value>(&body)
+        .ok()
+        .and_then(|value| value.get("enabled").and_then(Value::as_bool));
+    let Some(enabled) = enabled else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"ok":false,"error":"缺少维护状态"})),
+        )
+            .into_response();
+    };
+    let previous = state.maintenance.swap(enabled, Ordering::Relaxed);
+    if let Err(error) = config::set_maintenance_enabled(&state.paths, enabled) {
+        state.maintenance.store(previous, Ordering::Relaxed);
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"ok":false,"error":error.to_string()})),
+        )
+            .into_response();
+    }
+    if let Err(error) = crate::catalog::rebuild_catalog(&state.store, &state.paths).await {
+        state.maintenance.store(previous, Ordering::Relaxed);
+        let _ = config::set_maintenance_enabled(&state.paths, previous);
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"ok":false,"error":error.to_string()})),
+        )
+            .into_response();
+    }
+    Json(json!({"ok":true,"enabled":enabled})).into_response()
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -751,7 +799,10 @@ fn checkpoint(c: &SiteConfig, final_copy: bool) -> Result<Snapshot> {
     }
     prune(c)?;
     let estimate = directory_bytes(&source.root)?.saturating_add(directory_bytes(&source.db_dir)?);
-    anyhow::ensure!(estimate <= c.quota_bytes, "完整源数据超过站点单份配额");
+    anyhow::ensure!(
+        estimate <= c.quota_bytes,
+        "完整源数据超过站点单份配额；请在「完整站点与写入切换」提高本机单份副本上限"
+    );
     capacity(c, estimate.saturating_mul(2))?;
     let id = random_hex(16);
     let mut files = BTreeMap::new();
@@ -805,6 +856,14 @@ struct Children {
     edge_url: Option<String>,
     core_key: String,
 }
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TransferEvent {
+    at: u64,
+    phase: String,
+    detail: String,
+}
+
 struct Host {
     file: PathBuf,
     config: RwLock<SiteConfig>,
@@ -815,6 +874,33 @@ struct Host {
     snapshot: RwLock<Option<Snapshot>>,
     replica: RwLock<Option<Snapshot>>,
     error: RwLock<Option<String>>,
+    /// Handover progress shown to the admin page. Cleared when a handover
+    /// finishes; a failure keeps its reason visible for the next attempt.
+    transfer_phase: RwLock<Option<String>>,
+    /// Set while a transfer/activation task owns the handover pipeline so a
+    /// second click cannot overwrite its state.
+    transferring: AtomicBool,
+    /// Set by the admin while a drain is running to skip the remaining wait
+    /// and terminate the old child immediately.
+    transfer_force_requested: AtomicBool,
+    /// Transfer id currently being pulled by a target node.
+    activation: RwLock<Option<String>>,
+    /// Admin session hash authorized to inspect this target during handover.
+    handover_actor: RwLock<Option<String>>,
+    /// Byte progress of the snapshot currently being pulled, if any.
+    transfer_done: AtomicU64,
+    transfer_total: AtomicU64,
+    /// Step index (0–7) of the current handover for the progress bar.
+    transfer_step: AtomicU8,
+    transfer_started_at: AtomicU64,
+    /// Unix second when the run stopped being "running" (success or failure).
+    transfer_ended_at: AtomicU64,
+    transfer_files: AtomicU32,
+    transfer_files_done: AtomicU32,
+    transfer_chunks: AtomicU32,
+    transfer_source: RwLock<Option<String>>,
+    transfer_error: RwLock<Option<String>>,
+    transfer_events: RwLock<Vec<TransferEvent>>,
 }
 
 fn authenticated(c: &SiteConfig, headers: &HeaderMap) -> bool {
@@ -829,7 +915,95 @@ fn endpoint(c: &SiteConfig, id: &str, path: &str) -> Result<reqwest::Url> {
     distribution::endpoint(&c.peer(id)?.base_url, path)
 }
 fn state_json(c: &SiteConfig, ready: bool) -> Value {
-    json!({"ok":true,"managed":true,"clusterId":c.cluster_id,"nodeId":c.node_id,"writerId":c.writer_id,"epoch":c.epoch,"mode":c.mode,"ready":ready,"transferId":c.transfer_id,"finalSnapshot":c.final_snapshot})
+    json!({"ok":true,"managed":true,"clusterId":c.cluster_id,"nodeId":c.node_id,"writerId":c.writer_id,"epoch":c.epoch,"mode":c.mode,"ready":ready,"transferId":c.transfer_id,"finalSnapshot":c.final_snapshot,"transferActor":c.transfer_actor})
+}
+fn handover_step(phase: &str) -> u8 {
+    if phase.contains("完成") {
+        7
+    } else if phase.contains("启动业务") {
+        6
+    } else if phase.contains("切换公开地址") {
+        5
+    } else if phase.contains("拉取") || phase.contains("等待本机请求") {
+        4
+    } else if phase.contains("排空")
+        || phase.contains("停止旧业务")
+        || phase.contains("强制终止")
+        || phase.contains("维护模式")
+    {
+        2
+    } else if phase.contains("检查") || phase.contains("准备恢复") {
+        1
+    } else if phase.contains("最终副本")
+        || phase.contains("请求目标")
+        || phase.contains("通知目标")
+        || phase.contains("准备接管")
+        || phase.contains("等待其他同步")
+    {
+        3
+    } else {
+        0
+    }
+}
+
+/// Flat progress fields shared by the public health endpoint and the admin
+/// site panel. Events carry only phase text and timestamps, never secrets.
+async fn transfer_progress(host: &Host) -> serde_json::Map<String, Value> {
+    let mut map = serde_json::Map::new();
+    map.insert(
+        "transferring".into(),
+        json!(host.transferring.load(Ordering::SeqCst)),
+    );
+    map.insert(
+        "transferPhase".into(),
+        json!(host.transfer_phase.read().await.clone()),
+    );
+    map.insert(
+        "transferStep".into(),
+        json!(host.transfer_step.load(Ordering::SeqCst)),
+    );
+    map.insert(
+        "transferStartedAt".into(),
+        json!(host.transfer_started_at.load(Ordering::SeqCst)),
+    );
+    map.insert(
+        "transferEndedAt".into(),
+        json!(host.transfer_ended_at.load(Ordering::SeqCst)),
+    );
+    map.insert(
+        "transferSource".into(),
+        json!(host.transfer_source.read().await.clone()),
+    );
+    map.insert(
+        "transferFiles".into(),
+        json!(host.transfer_files.load(Ordering::SeqCst)),
+    );
+    map.insert(
+        "transferFilesDone".into(),
+        json!(host.transfer_files_done.load(Ordering::SeqCst)),
+    );
+    map.insert(
+        "transferChunks".into(),
+        json!(host.transfer_chunks.load(Ordering::SeqCst)),
+    );
+    map.insert(
+        "transferDoneBytes".into(),
+        json!(host.transfer_done.load(Ordering::SeqCst)),
+    );
+    map.insert(
+        "transferTotalBytes".into(),
+        json!(host.transfer_total.load(Ordering::SeqCst)),
+    );
+    map.insert(
+        "transferError".into(),
+        json!(host.transfer_error.read().await.clone()),
+    );
+    map.insert(
+        "transferEvents".into(),
+        serde_json::to_value(host.transfer_events.read().await.clone())
+            .unwrap_or_else(|_| json!([])),
+    );
+    map
 }
 fn unavailable(message: &str) -> Response {
     (
@@ -840,6 +1014,77 @@ fn unavailable(message: &str) -> Response {
 }
 
 impl Host {
+    async fn set_phase(&self, value: Option<String>) {
+        *self.transfer_phase.write().await = value;
+    }
+    async fn record_event(&self, phase: &str, detail: &str) {
+        let mut events = self.transfer_events.write().await;
+        events.push(TransferEvent {
+            at: unix_now(),
+            phase: phase.to_string(),
+            detail: detail.to_string(),
+        });
+        if events.len() > 120 {
+            let remove = events.len() - 120;
+            events.drain(0..remove);
+        }
+    }
+    /// Record an executor step, its index and a timestamped history entry.
+    async fn enter_phase(&self, phase: &str, step: u8, detail: impl Into<String>) {
+        let detail = detail.into();
+        *self.transfer_phase.write().await = Some(phase.to_string());
+        self.transfer_step.store(step, Ordering::SeqCst);
+        self.record_event(phase, &detail).await;
+    }
+    async fn start_progress(&self, source: Option<String>) {
+        self.transfer_started_at.store(unix_now(), Ordering::SeqCst);
+        self.transfer_ended_at.store(0, Ordering::SeqCst);
+        self.transfer_step.store(0, Ordering::SeqCst);
+        self.transfer_files.store(0, Ordering::SeqCst);
+        self.transfer_files_done.store(0, Ordering::SeqCst);
+        self.transfer_chunks.store(0, Ordering::SeqCst);
+        self.transfer_done.store(0, Ordering::SeqCst);
+        self.transfer_total.store(0, Ordering::SeqCst);
+        *self.transfer_source.write().await = source;
+        *self.transfer_error.write().await = None;
+        self.transfer_events.write().await.clear();
+    }
+    async fn finish_progress(&self) {
+        *self.transfer_phase.write().await = None;
+        *self.transfer_error.write().await = None;
+        self.transfer_step.store(7, Ordering::SeqCst);
+        self.transfer_ended_at.store(unix_now(), Ordering::SeqCst);
+        self.record_event("交接完成", "新写入节点已启动业务进程").await;
+    }
+    async fn fail_phase(&self, error: &str) {
+        let message = format!("交接失败：{error}");
+        *self.transfer_phase.write().await = Some(message.clone());
+        *self.transfer_error.write().await = Some(error.to_string());
+        self.transfer_ended_at.store(unix_now(), Ordering::SeqCst);
+        self.record_event(&message, error).await;
+    }
+    async fn clear_requested_phase(&self) {
+        let requested = {
+            let mut phase = self.transfer_phase.write().await;
+            if phase.as_deref() == Some("已请求当前写入节点执行交接") {
+                *phase = None;
+                true
+            } else {
+                false
+            }
+        };
+        if requested {
+            self.transfer_step.store(7, Ordering::SeqCst);
+            self.transfer_ended_at.store(unix_now(), Ordering::SeqCst);
+            self.record_event("已跟随当前写入节点", "交接已完成，本机开始同步新副本")
+                .await;
+        }
+    }
+    fn begin_transfer(&self) -> bool {
+        self.transferring
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    }
     async fn core_ready(&self) -> bool {
         let mut children = self.children.lock().await;
         let alive = children
@@ -852,54 +1097,213 @@ impl Host {
         }
         alive
     }
+    /// Retry a persisted handover. Callers must hold `operation` and set
+    /// `transferring`; activation is acknowledged asynchronously by the target
+    /// and this node waits until the target reports itself as a ready writer.
     async fn resume_transfer(&self) -> Result<()> {
         let mut c = self.config.read().await.clone();
         anyhow::ensure!(c.mode == "fenced", "本节点没有未完成交接");
+        if self.transfer_started_at.load(Ordering::SeqCst) == 0 {
+            self.start_progress(Some(c.writer_id.clone())).await;
+        } else {
+            *self.transfer_error.write().await = None;
+            self.transfer_ended_at.store(0, Ordering::SeqCst);
+            self.record_event("交接重试", "继续使用已生成的最终副本").await;
+        }
         if c.final_snapshot.is_none() {
+            self.enter_phase("正在补生成最终副本", 3, "检查数据库与主题树")
+                .await;
             let snapshot = self.make_checkpoint(true).await?;
             c.final_snapshot = Some(snapshot.id);
             c.epoch = c.epoch.checked_add(1).context("代次溢出")?;
             self.save(c.clone()).await?;
         }
-        let reply=self.client.post(endpoint(&c,&c.writer_id,"_site/activate")?).header(KEY,&c.secret)
-            .json(&json!({"sourceId":c.node_id,"epoch":c.epoch,"snapshotId":c.final_snapshot,"transferId":c.transfer_id}))
-            .timeout(Duration::from_secs(1800)).send().await?;
-        anyhow::ensure!(
-            reply.status().is_success(),
-            "交接尚未完成；旧节点保持停止写入"
-        );
+        self.enter_phase("正在请求目标节点接管", 3, "等待目标节点确认")
+            .await;
+        let payload = json!({"sourceId":c.node_id,"epoch":c.epoch,"snapshotId":c.final_snapshot,"transferId":c.transfer_id});
+        // A lost or timed-out reply is harmless: an already-active target
+        // answers the duplicate request and the state poll below decides.
+        let accepted = self
+            .client
+            .post(endpoint(&c, &c.writer_id, "_site/activate")?)
+            .header(KEY, &c.secret)
+            .json(&payload)
+            .timeout(Duration::from_secs(120))
+            .send()
+            .await
+            .map(|reply| reply.status().is_success())
+            .unwrap_or(false);
+        let target = c.writer_id.clone();
+        let transfer = c.transfer_id.clone().context("缺少交接编号")?;
+        self.await_writer(&c, &target, c.epoch, &transfer, accepted)
+            .await?;
         c.mode = "follower".into();
         c.transfer_actor = None;
         self.save(c).await?;
         self.start_edge().await?;
+        *self.handover_actor.write().await = None;
+        self.finish_progress().await;
         Ok(())
+    }
+    /// Wait until the target is the ready writer of the new epoch. While
+    /// waiting, mirror the target's phase so the old node shows real progress.
+    async fn await_writer(
+        &self,
+        c: &SiteConfig,
+        target: &str,
+        epoch: u64,
+        transfer: &str,
+        accepted: bool,
+    ) -> Result<()> {
+        let mut accepted = accepted;
+        let mut unreachable = 0u32;
+        let mut last_target_phase: Option<String> = None;
+        for i in 0..10800 {
+            if let Ok(state) = self.peer_json(c, target, "_site/state").await {
+                if state["mode"] == "writer"
+                    && state["ready"] == true
+                    && state["writerId"] == target
+                    && state["epoch"].as_u64() == Some(epoch)
+                    && state["transferId"].as_str() == Some(transfer)
+                {
+                    return Ok(());
+                }
+            }
+            let mut health_seen = false;
+            if let Ok(request) = endpoint(c, target, "site-health") {
+                if let Ok(response) = self
+                    .client
+                    .get(request)
+                    .timeout(Duration::from_secs(5))
+                    .send()
+                    .await
+                {
+                    if let Ok(health) =
+                        distribution::bounded_json::<Value>(response, 8192).await
+                    {
+                        health_seen = true;
+                        if health["transferring"] == true {
+                            accepted = true;
+                        }
+                        if let Some(phase) = health["transferPhase"]
+                            .as_str()
+                            .filter(|value| !value.is_empty())
+                        {
+                            if phase.starts_with("交接失败") {
+                                anyhow::bail!("目标节点交接失败：{phase}");
+                            }
+                            if last_target_phase.as_deref() != Some(phase) {
+                                self.record_event(&format!("目标节点：{phase}"), &format!("代次 {epoch}"))
+                                    .await;
+                                last_target_phase = Some(phase.to_string());
+                            }
+                            self.transfer_step
+                                .store(handover_step(phase), Ordering::SeqCst);
+                            self.transfer_done.store(
+                                health["transferDoneBytes"].as_u64().unwrap_or(0),
+                                Ordering::SeqCst,
+                            );
+                            self.transfer_total.store(
+                                health["transferTotalBytes"].as_u64().unwrap_or(0),
+                                Ordering::SeqCst,
+                            );
+                            self.transfer_files.store(
+                                health["transferFiles"]
+                                    .as_u64()
+                                    .unwrap_or(0)
+                                    .min(u32::MAX as u64) as u32,
+                                Ordering::SeqCst,
+                            );
+                            self.transfer_files_done.store(
+                                health["transferFilesDone"]
+                                    .as_u64()
+                                    .unwrap_or(0)
+                                    .min(u32::MAX as u64) as u32,
+                                Ordering::SeqCst,
+                            );
+                            self.transfer_chunks.store(
+                                health["transferChunks"]
+                                    .as_u64()
+                                    .unwrap_or(0)
+                                    .min(u32::MAX as u64) as u32,
+                                Ordering::SeqCst,
+                            );
+                            self.set_phase(Some(format!("等待目标节点接管：{phase}")))
+                                .await;
+                        }
+                    }
+                }
+            }
+            if health_seen {
+                unreachable = 0;
+            } else {
+                unreachable += 1;
+                if unreachable == 15 || unreachable % 60 == 0 {
+                    self.record_event(
+                        "等待目标节点恢复连接",
+                        &format!("已等待 {} 秒", unreachable * 2),
+                    )
+                    .await;
+                }
+            }
+            // A lost activate reply is harmless when the target is already
+            // pulling. If it never accepted, fail visibly instead of leaving
+            // the old writer fenced for hours; the worker retries on schedule.
+            if !accepted && i >= 15 {
+                anyhow::bail!("目标节点未接受交接；本节点保持停止写入，请检查目标节点状态后重试");
+            }
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+        anyhow::bail!("目标节点长时间未完成接管；本节点保持停止写入，可在目标恢复后重试")
     }
     async fn follow_writer(&self) -> Result<()> {
         let mut c = self.config.read().await.clone();
         let previous = self.peer_json(&c, &c.writer_id, "_site/state").await?;
         if previous["epoch"].as_u64() == Some(c.epoch) && previous["writerId"] == c.writer_id {
+            *self.handover_actor.write().await = None;
+            self.clear_requested_phase().await;
             return Ok(());
         }
-        let writer = previous["writerId"].as_str().context("缺少写入节点")?;
-        anyhow::ensure!(
-            previous["mode"] == "follower" && previous["epoch"].as_u64() == Some(c.epoch + 1),
-            "缺少原写入节点的交接证明"
-        );
-        let next = self.peer_json(&c, writer, "_site/state").await?;
-        anyhow::ensure!(
-            next["mode"] == "writer"
-                && next["writerId"] == writer
-                && next["epoch"] == previous["epoch"]
-                && next["transferId"] == previous["transferId"]
-                && next["finalSnapshot"] == previous["finalSnapshot"],
-            "写入节点交接证明不一致"
-        );
+        let epoch = previous["epoch"].as_u64().context("缺少写入代次")?;
+        // A follower that was offline across several handovers may jump
+        // straight to the current writer; it never had write authority, so
+        // replaying every intermediate epoch is not required.
+        anyhow::ensure!(epoch > c.epoch, "缺少原写入节点的交接证明");
+        let (writer, proof) = if previous["mode"] == "writer" {
+            // The same node is the writer again after one or more handovers.
+            anyhow::ensure!(
+                previous["writerId"] == c.writer_id,
+                "写入节点交接证明不一致"
+            );
+            (c.writer_id.clone(), previous)
+        } else {
+            anyhow::ensure!(
+                previous["mode"] == "follower",
+                "缺少原写入节点的交接证明"
+            );
+            let writer = previous["writerId"]
+                .as_str()
+                .context("缺少写入节点")?
+                .to_string();
+            let next = self.peer_json(&c, &writer, "_site/state").await?;
+            anyhow::ensure!(
+                next["mode"] == "writer"
+                    && next["writerId"] == writer
+                    && next["epoch"].as_u64() == Some(epoch)
+                    && next["transferId"] == previous["transferId"]
+                    && next["finalSnapshot"] == previous["finalSnapshot"],
+                "写入节点交接证明不一致"
+            );
+            (writer, next)
+        };
         self.stop_edge().await?;
-        c.writer_id = writer.into();
-        c.epoch += 1;
-        c.transfer_id = next["transferId"].as_str().map(str::to_string);
-        c.final_snapshot = next["finalSnapshot"].as_str().map(str::to_string);
+        c.writer_id = writer;
+        c.epoch = epoch;
+        c.transfer_id = proof["transferId"].as_str().map(str::to_string);
+        c.final_snapshot = proof["finalSnapshot"].as_str().map(str::to_string);
         self.save(c).await?;
+        *self.handover_actor.write().await = None;
+        self.clear_requested_phase().await;
         self.start_edge().await
     }
     async fn save(&self, c: SiteConfig) -> Result<()> {
@@ -991,9 +1395,19 @@ impl Host {
     }
     async fn admin(&self, headers: &HeaderMap) -> Result<()> {
         let c = self.config.read().await.clone();
+        let token = crate::auth::session_token(headers, crate::auth::ADMIN_SESSION_COOKIE)
+            .unwrap_or_default();
+        // A target may still be pulling the final copy or may have failed
+        // while the old writer is fenced. Let the initiating admin reach the
+        // local panel (for example to raise its copy quota) in that window.
+        if c.mode != "writer" || self.transferring.load(Ordering::SeqCst) {
+            if let Some(actor) = self.handover_actor.read().await.as_deref() {
+                if actor == crate::accounts::hash_token(&token).as_str() {
+                    return Ok(());
+                }
+            }
+        }
         if c.mode == "fenced" {
-            let token = crate::auth::session_token(headers, crate::auth::ADMIN_SESSION_COOKIE)
-                .unwrap_or_default();
             anyhow::ensure!(
                 c.transfer_actor.as_deref() == Some(&crate::accounts::hash_token(&token)),
                 "交接恢复需要原管理员会话"
@@ -1148,6 +1562,12 @@ impl Host {
         };
         atomic(&distribution_file, &serde_json::to_vec(&dist)?)?;
         let core_key = random_hex(32);
+        // Publish the new key before the lease so the heartbeat can never
+        // overwrite it with a stale/empty key between these two steps.
+        {
+            let mut children = self.children.lock().await;
+            children.core_key = core_key.clone();
+        }
         let lease = runtime.join("lease.json");
         write_lease(&c, &lease, &core_key)?;
         let mut cmd = Command::new(std::env::current_exe()?);
@@ -1224,6 +1644,62 @@ impl Host {
         children.core = None;
         children.core_url = None;
         Ok(())
+    }
+    /// Immediately terminate the child without a drain. Used only by an
+    /// explicit forced migration; SQLite still recovers consistently, but an
+    /// in-flight upload may be left behind as staging garbage.
+    async fn kill_core(&self) -> Result<()> {
+        let mut children = self.children.lock().await;
+        if let Some(mut child) = children.core.take() {
+            let _ = child.start_kill();
+            let _ = tokio::time::timeout(Duration::from_secs(10), child.wait()).await;
+        }
+        children.core_url = None;
+        Ok(())
+    }
+    /// Toggle the maintenance page inside the child business process and
+    /// persist the same state in its runtime config for the next start.
+    async fn core_maintenance(&self, enabled: bool) -> Result<()> {
+        let (base, key) = {
+            let children = self.children.lock().await;
+            (children.core_url.clone(), children.core_key.clone())
+        };
+        if let Some(base) = base {
+            let reply = self
+                .client
+                .post(format!("{base}/_site/maintenance"))
+                .header("X-Sukisu-Site-Internal", key)
+                .json(&json!({"enabled": enabled}))
+                .timeout(Duration::from_secs(30))
+                .send()
+                .await?;
+            anyhow::ensure!(
+                reply.status().is_success(),
+                "业务进程拒绝维护状态切换（HTTP {}）",
+                reply.status().as_u16()
+            );
+        }
+        let c = self.config.read().await.clone();
+        let file = c.data_dir.join("runtime/config.env");
+        if file.exists() {
+            config::set_env_key(&file, "MAINTENANCE", if enabled { "1" } else { "0" })?;
+        }
+        Ok(())
+    }
+    /// Abort a child stuck in draining and bring the writer service back up.
+    async fn restart_core(&self) {
+        {
+            let mut children = self.children.lock().await;
+            if let Some(child) = children.core.as_mut() {
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+            }
+            children.core = None;
+            children.core_url = None;
+        }
+        if let Err(error) = self.start_core().await {
+            *self.error.write().await = Some(error.to_string());
+        }
     }
     async fn start_edge(&self) -> Result<()> {
         let c = self.config.read().await.clone();
@@ -1304,7 +1780,26 @@ impl Host {
             .values()
             .map(|f| f.size)
             .try_fold(0u64, |n, v| n.checked_add(v).context("副本大小溢出"))?;
-        anyhow::ensure!(bytes <= c.quota_bytes, "副本超过本节点配额");
+        anyhow::ensure!(
+            bytes <= c.quota_bytes,
+            "副本超过本节点配额；请在「完整站点与写入切换」提高本机单份副本上限"
+        );
+        self.transfer_done.store(0, Ordering::SeqCst);
+        self.transfer_total.store(bytes, Ordering::SeqCst);
+        self.transfer_files.store(
+            snapshot.files.len().min(u32::MAX as usize) as u32,
+            Ordering::SeqCst,
+        );
+        self.transfer_files_done.store(0, Ordering::SeqCst);
+        let chunks: u64 = snapshot
+            .files
+            .values()
+            .map(|file| file.chunks.len() as u64)
+            .sum();
+        self.transfer_chunks.store(
+            chunks.min(u32::MAX as u64) as u32,
+            Ordering::SeqCst,
+        );
         prune(&c)?;
         capacity(&c, bytes.saturating_mul(2))?;
         snapshot_file(&c, id)?;
@@ -1352,6 +1847,8 @@ impl Host {
                     data
                 };
                 written += buffer.len() as u64;
+                self.transfer_done
+                    .fetch_add(buffer.len() as u64, Ordering::SeqCst);
                 output.write_all(&buffer).await?;
             }
             anyhow::ensure!(written == file.size, "同步文件长度不符");
@@ -1360,6 +1857,7 @@ impl Host {
             let target = destination.join(name);
             private_dir(target.parent().unwrap())?;
             tokio::fs::rename(destination.join(".file-building"), target).await?;
+            self.transfer_files_done.fetch_add(1, Ordering::SeqCst);
         }
         for name in DBS {
             let file = destination.join("db").join(name);
@@ -1383,8 +1881,229 @@ impl Host {
             &c.data_dir.join("replica.json"),
             &serde_json::to_vec(&snapshot)?,
         )?;
+        self.transfer_done.store(bytes, Ordering::SeqCst);
+        self.transfer_files_done.store(
+            snapshot.files.len().min(u32::MAX as usize) as u32,
+            Ordering::SeqCst,
+        );
         *self.replica.write().await = Some(snapshot.clone());
         Ok((snapshot, destination))
+    }
+
+    /// Run a handover from this writer. Callers hold `operation` and have set
+    /// `transferring`; this function never blocks an HTTP request on the whole
+    /// final-copy transfer because the target acknowledges activation first.
+    async fn perform_transfer(
+        &self,
+        target_id: String,
+        actor: Option<String>,
+        force: bool,
+    ) -> Result<()> {
+        let mut c = self.config.read().await.clone();
+        anyhow::ensure!(
+            c.mode == "writer" && c.writer_id == c.node_id,
+            "交接状态已变化，请刷新后重试"
+        );
+        anyhow::ensure!(
+            target_id != c.node_id && c.peer(&target_id).is_ok(),
+            "目标节点无效"
+        );
+        self.start_progress(Some(target_id.clone())).await;
+        self.enter_phase("正在检查站点状态", 1, format!("目标节点：{target_id}"))
+            .await;
+        let peer = self.peer_json(&c, &target_id, "_site/state").await?;
+        anyhow::ensure!(
+            peer["clusterId"] == c.cluster_id
+                && peer["writerId"] == c.writer_id
+                && peer["epoch"]
+                    .as_u64()
+                    .is_some_and(|epoch| epoch <= c.epoch)
+                && peer["mode"] == "follower",
+            "目标节点身份或代次不一致"
+        );
+        for member in c
+            .peers
+            .iter()
+            .filter(|p| p.id != c.node_id && p.id != target_id)
+        {
+            match self.peer_json(&c, &member.id, "_site/state").await {
+                Ok(state) => {
+                    anyhow::ensure!(
+                        state["clusterId"] == c.cluster_id
+                            && state["writerId"] == c.writer_id
+                            && state["mode"] == "follower"
+                            && state["epoch"]
+                                .as_u64()
+                                .is_some_and(|epoch| epoch <= c.epoch),
+                        format!("站点 {} 状态异常，请先检查该节点", member.name)
+                    );
+                    if state["epoch"].as_u64() != Some(c.epoch) {
+                        tracing::warn!(site = %member.id, "站点代次落后，交接后将自动追上");
+                    }
+                }
+                Err(error) => {
+                    // The old writer is the only node that can produce the
+                    // final copy. An offline follower cannot write on its own
+                    // and will follow the new writer as soon as it returns.
+                    tracing::warn!(site = %member.id, %error, "站点暂时不可达，交接后恢复时将自动跟随");
+                }
+            }
+        }
+        self.enter_phase(
+            "正在开启维护模式",
+            2,
+            "迁移期间暂停对外服务；完成后自动关闭",
+        )
+        .await;
+        if let Err(error) = self.core_maintenance(true).await {
+            self.record_event("维护模式开启失败", &error.to_string())
+                .await;
+        }
+        let (base, key) = {
+            let children = self.children.lock().await;
+            (
+                children.core_url.clone().context("写入服务不可用")?,
+                children.core_key.clone(),
+            )
+        };
+        let mut gate = None;
+        if force {
+            // Do not wait for the traffic gate: a long upload or download can
+            // otherwise delay a forced migration indefinitely. The old child is
+            // terminated immediately; maintenance was requested beforehand so
+            // new browser requests get a maintenance page instead of a reset.
+            self.enter_phase(
+                "正在强制终止业务进程",
+                2,
+                "不等待在途请求，立即停止旧写入进程",
+            )
+            .await;
+            self.kill_core().await?;
+        } else {
+            self.enter_phase(
+                "正在等待业务请求排空",
+                2,
+                "维护模式已开启，等待在途请求与后台任务结束",
+            )
+            .await;
+            gate = Some(self.gate.write().await);
+            let wait_force = async {
+                while !self.transfer_force_requested.load(Ordering::SeqCst) {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                }
+            };
+            let drained = tokio::select! {
+                reply = self
+                    .client
+                    .post(format!("{base}/_site/drain"))
+                    .header("X-Sukisu-Site-Internal", &key)
+                    .timeout(Duration::from_secs(1800))
+                    .send() => Some(reply),
+                _ = wait_force => None,
+            };
+            if drained.is_none() {
+                // The admin explicitly asked to stop waiting for the drain.
+                // Kill the child now; the final copy is still taken afterwards.
+                self.enter_phase(
+                    "正在强制终止业务进程",
+                    2,
+                    "收到强制迁移请求，立即停止旧写入进程",
+                )
+                .await;
+                drop(gate);
+                gate = None;
+                self.kill_core().await?;
+            } else {
+                if !matches!(&drained, Some(Ok(reply)) if reply.status().is_success()) {
+                    // A background job never finished draining. Restart the child so
+                    // maintenance starts again instead of leaving the site half-drained.
+                    self.enter_phase("排空超时，正在重启业务进程", 2, "取消本次交接")
+                        .await;
+                    drop(gate);
+                    self.restart_core().await;
+                    anyhow::bail!("业务服务未完成排空，取消节点交接");
+                }
+                self.enter_phase("正在停止旧业务进程", 2, "等待业务进程退出")
+                    .await;
+                if let Err(error) = self.stop_core().await {
+                    drop(gate);
+                    self.restart_core().await;
+                    return Err(error);
+                }
+            }
+        }
+        c.mode = "fenced".into();
+        c.writer_id = target_id.clone();
+        c.transfer_id = Some(random_hex(16));
+        c.final_snapshot = None;
+        c.transfer_actor = actor;
+        self.save(c.clone()).await?;
+        // The durable fence is written before the activation request. A crash
+        // or lost reply therefore never restarts the old writer automatically.
+        // Release the gate now: the final checkpoint and the target's pull can
+        // take a long time, and fenced requests should fail fast with 503.
+        drop(gate);
+        let lease = c.data_dir.join("runtime/lease.json");
+        write_lease(&c, &lease, &key)?;
+        self.enter_phase(
+            "正在生成最终副本（数据库与全部主题）",
+            3,
+            "五个数据库 + 完整资源树 + 配置",
+        )
+        .await;
+        let snapshot = self.make_checkpoint(true).await?;
+        c.epoch = c.epoch.checked_add(1).context("代次溢出")?;
+        c.final_snapshot = Some(snapshot.id.clone());
+        self.save(c.clone()).await?;
+        self.transfer_total.store(
+            snapshot.files.values().map(|file| file.size).sum(),
+            Ordering::SeqCst,
+        );
+        self.transfer_files.store(
+            snapshot.files.len().min(u32::MAX as usize) as u32,
+            Ordering::SeqCst,
+        );
+        self.transfer_chunks.store(
+            snapshot
+                .files
+                .values()
+                .map(|file| file.chunks.len() as u64)
+                .sum::<u64>()
+                .min(u32::MAX as u64) as u32,
+            Ordering::SeqCst,
+        );
+        self.transfer_files_done.store(
+            snapshot.files.len().min(u32::MAX as usize) as u32,
+            Ordering::SeqCst,
+        );
+        self.enter_phase("正在通知目标节点接管", 3, format!("目标节点：{target_id}"))
+            .await;
+        let payload =
+            json!({"sourceId":c.node_id,"epoch":c.epoch,"snapshotId":snapshot.id,"transferId":c.transfer_id});
+        let reply = self
+            .client
+            .post(endpoint(&c, &target_id, "_site/activate")?)
+            .header(KEY, &c.secret)
+            .json(&payload)
+            .timeout(Duration::from_secs(120))
+            .send()
+            .await?;
+        anyhow::ensure!(
+            reply.status().is_success(),
+            "目标节点未接受交接；本节点保持停止写入，可在目标恢复后重试"
+        );
+        let transfer = c.transfer_id.clone().context("缺少交接编号")?;
+        self.await_writer(&c, &target_id, c.epoch, &transfer, true)
+            .await?;
+        self.enter_phase("交接完成，正在切换为跟随节点", 7, "开始同步新写入节点")
+            .await;
+        c.mode = "follower".into();
+        c.transfer_actor = None;
+        self.save(c).await?;
+        self.start_edge().await?;
+        *self.handover_actor.write().await = None;
+        self.finish_progress().await;
+        Ok(())
     }
 }
 
@@ -1436,8 +2155,14 @@ async fn host_state(State(host): State<Arc<Host>>, headers: HeaderMap) -> Respon
     Json(state_json(&c, ready)).into_response()
 }
 async fn health(State(host): State<Arc<Host>>) -> Json<Value> {
-    let c = host.config.read().await;
-    Json(json!({"ok":true,"nodeId":c.node_id,"writerId":c.writer_id,"mode":c.mode,"epoch":c.epoch}))
+    let c = host.config.read().await.clone();
+    let mut body = json!({"ok":true,"nodeId":c.node_id,"writerId":c.writer_id,"mode":c.mode,"epoch":c.epoch});
+    if let Some(object) = body.as_object_mut() {
+        for (key, value) in transfer_progress(&host).await {
+            object.insert(key, value);
+        }
+    }
+    Json(body)
 }
 async fn shutdown_host(State(host): State<Arc<Host>>, headers: HeaderMap) -> Response {
     if !authenticated(&*host.config.read().await, &headers) {
@@ -1529,9 +2254,15 @@ async fn sites(State(host): State<Arc<Host>>, headers: HeaderMap) -> Response {
         };
         nodes.push(json!({"id":peer.id,"name":peer.name,"baseUrl":peer.base_url,"reachable":value.is_ok(),"state":value.ok()}));
     }
-    Json(json!({"ok":true,"managed":true,"nodeId":c.node_id,"writerId":c.writer_id,"epoch":c.epoch,"mode":c.mode,"nodes":nodes,"syncIntervalSecs":c.sync_interval_secs,"quotaBytes":c.quota_bytes,
+    let mut body = json!({"ok":true,"managed":true,"nodeId":c.node_id,"writerId":c.writer_id,"epoch":c.epoch,"mode":c.mode,"nodes":nodes,"syncIntervalSecs":c.sync_interval_secs,"quotaBytes":c.quota_bytes,
         "snapshot":host.snapshot.read().await.as_ref().map(|s|json!({"id":s.id,"createdAt":s.created_at,"final":s.final_copy,"files":s.files.len()})),
-        "replica":host.replica.read().await.as_ref().map(|s|json!({"id":s.id,"createdAt":s.created_at,"files":s.files.len()})),"error":*host.error.read().await})).into_response()
+        "replica":host.replica.read().await.as_ref().map(|s|json!({"id":s.id,"createdAt":s.created_at,"files":s.files.len()})),"error":*host.error.read().await});
+    if let Some(object) = body.as_object_mut() {
+        for (key, value) in transfer_progress(&host).await {
+            object.insert(key, value);
+        }
+    }
+    Json(body).into_response()
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1547,7 +2278,11 @@ async fn local_settings(
     if !csrf(&headers) || host.admin(&headers).await.is_err() {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    let _operation = host.operation.lock().await;
+    let _operation = match tokio::time::timeout(Duration::from_secs(5), host.operation.lock()).await
+    {
+        Ok(guard) => guard,
+        Err(_) => return unavailable("同步或交接正在进行中，请稍后重试"),
+    };
     let mut c = host.config.read().await.clone();
     if !(10..=3600).contains(&body.sync_interval_secs)
         || body.quota_bytes < 256 * 1024 * 1024
@@ -1573,7 +2308,11 @@ async fn sync_now(State(host): State<Arc<Host>>, headers: HeaderMap) -> Response
     if !csrf(&headers) || host.admin(&headers).await.is_err() {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    let _operation = host.operation.lock().await;
+    let _operation = match tokio::time::timeout(Duration::from_secs(5), host.operation.lock()).await
+    {
+        Ok(guard) => guard,
+        Err(_) => return unavailable("同步或交接正在进行中，请稍后重试"),
+    };
     let c = host.config.read().await.clone();
     let result = if c.mode == "writer" {
         host.make_checkpoint(false).await.map(|_| ())
@@ -1607,6 +2346,10 @@ async fn latest(State(host): State<Arc<Host>>, headers: HeaderMap) -> Response {
 #[serde(rename_all = "camelCase")]
 struct Transfer {
     target_id: String,
+    /// Stop the old writer without waiting for in-flight requests. The target
+    /// still pulls a consistent final copy after the old process has exited.
+    #[serde(default)]
+    force: bool,
 }
 async fn transfer(
     State(host): State<Arc<Host>>,
@@ -1616,13 +2359,141 @@ async fn transfer(
     if !csrf(&headers) || host.admin(&headers).await.is_err() {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    let _operation = host.operation.lock().await;
-    let mut c = host.config.read().await.clone();
-    if c.mode == "fenced" && c.writer_id == body.target_id {
-        return match host.resume_transfer().await {
-            Ok(()) => Json(json!({"ok":true})).into_response(),
-            Err(e) => unavailable(&e.to_string()),
+    let c = host.config.read().await.clone();
+    if host.transferring.load(Ordering::SeqCst) {
+        // A normal handover may be stuck waiting for a drain. A forced request
+        // during the first two steps tells the running task to stop waiting
+        // and kill the old child immediately; later steps have no child left.
+        if body.force
+            && c.mode == "writer"
+            && c.writer_id == c.node_id
+            && host.transfer_step.load(Ordering::SeqCst) <= 2
+        {
+            host.transfer_force_requested.store(true, Ordering::SeqCst);
+            host.record_event("收到强制迁移请求", "将立即终止排空并生成最终副本")
+                .await;
+            return Json(json!({"ok":true,"accepted":true,"message":"正在强制终止当前排空并继续交接"}))
+                .into_response();
+        }
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"ok":false,"error":"交接正在进行中，请等待当前交接完成"})),
+        )
+            .into_response();
+    }
+    if c.mode == "follower" {
+        // Every site exposes the panel; a follower asks the current writer to
+        // run the handover instead of making the admin open the writer's URL.
+        if c.writer_id == c.node_id {
+            return unavailable("本机站点配置的写入节点无效，请检查 site.json");
+        }
+        host.start_progress(Some(body.target_id.clone())).await;
+        host.enter_phase("正在确认当前写入节点", 1, "检查写入节点状态")
+            .await;
+        let writer = match c.peer(&c.writer_id) {
+            Ok(peer) => peer.base_url.trim_end_matches('/').to_string(),
+            Err(_) => {
+                host.fail_phase("当前写入节点不在站点列表中").await;
+                return unavailable("当前写入节点不在站点列表中");
+            }
         };
+        match host.peer_json(&c, &c.writer_id, "_site/state").await {
+            Ok(state) if state["mode"] == "writer" && state["ready"] == true => {}
+            Ok(_) => {
+                let message = "当前写入节点不可用，请等待其恢复后重试";
+                host.fail_phase(message).await;
+                return unavailable(message);
+            }
+            Err(error) => {
+                let message = format!("无法确认当前写入节点：{error}");
+                host.fail_phase(&message).await;
+                return unavailable(&message);
+            }
+        }
+        let mut request = host
+            .client
+            .post(format!("{writer}/admin/api/sites/transfer"))
+            .header(config::CSRF_HEADER, config::CSRF_VALUE)
+            .json(&json!({"targetId": body.target_id, "force": body.force}))
+            .timeout(Duration::from_secs(60));
+        for name in ["cookie", "authorization"] {
+            if let Some(value) = headers.get(name) {
+                request = request.header(name, value.clone());
+            }
+        }
+        let reply = match request.send().await {
+            Ok(reply) => reply,
+            Err(error) => {
+                let message = format!("无法连接当前写入节点：{error}");
+                host.fail_phase(&message).await;
+                return unavailable(&message);
+            }
+        };
+        let status = StatusCode::from_u16(reply.status().as_u16())
+            .unwrap_or(StatusCode::BAD_GATEWAY);
+        let bytes = match reply.bytes().await {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                let message = format!("读取写入节点响应失败：{error}");
+                host.fail_phase(&message).await;
+                return unavailable(&message);
+            }
+        };
+        if status.is_success() {
+            host.enter_phase(
+                "已请求当前写入节点执行交接",
+                0,
+                "等待写入节点开始处理",
+            )
+            .await;
+        } else {
+            let detail = serde_json::from_slice::<Value>(&bytes)
+                .ok()
+                .and_then(|value| value["error"].as_str().map(str::to_string))
+                .unwrap_or_else(|| format!("写入节点返回 {}", status.as_u16()));
+            host.fail_phase(&detail).await;
+        }
+        return Response::builder()
+            .status(status)
+            .header("Content-Type", "application/json")
+            .header("Cache-Control", "no-store")
+            .body(Body::from(bytes))
+            .unwrap_or_else(|_| unavailable("交接请求失败"));
+    }
+    if c.mode == "fenced" {
+        if c.writer_id != body.target_id {
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({"ok":false,"error":"只能重试当前未完成的交接"})),
+            )
+                .into_response();
+        }
+        if !host.begin_transfer() {
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({"ok":false,"error":"交接正在进行中，请等待目标节点接管"})),
+            )
+                .into_response();
+        }
+        host.start_progress(Some(body.target_id.clone())).await;
+        host.enter_phase("正在准备恢复交接", 0, "重试未完成的交接")
+            .await;
+        let task = host.clone();
+        tokio::spawn(async move {
+            let _operation = task.operation.lock().await;
+            let current = task.config.read().await.clone();
+            let result = if current.mode == "fenced" {
+                task.resume_transfer().await
+            } else {
+                Ok(())
+            };
+            if let Err(error) = result {
+                task.fail_phase(&error.to_string()).await;
+            }
+            task.transferring.store(false, Ordering::SeqCst);
+        });
+        return Json(json!({"ok":true,"accepted":true,"message":"已开始恢复交接，请等待目标节点接管"}))
+            .into_response();
     }
     if c.mode != "writer"
         || c.writer_id != c.node_id
@@ -1635,40 +2506,52 @@ async fn transfer(
         )
             .into_response();
     }
-    let result:Result<()>=async {
-        let peer=host.peer_json(&c,&body.target_id,"_site/state").await?;
-        anyhow::ensure!(peer["clusterId"]==c.cluster_id && peer["writerId"]==c.writer_id && peer["epoch"].as_u64()==Some(c.epoch) && peer["mode"]=="follower","目标节点身份或代次不一致");
-        for member in c.peers.iter().filter(|p|p.id!=c.node_id){
-            let state=host.peer_json(&c,&member.id,"_site/state").await?;
-            anyhow::ensure!(state["clusterId"]==c.cluster_id && state["epoch"].as_u64()==Some(c.epoch) && state["writerId"]==c.writer_id && state["mode"]=="follower","所有站点必须先确认当前代次，不能跳过未跟随完成的成员");
-        }
-        let _gate=host.gate.write().await;
-        let children=host.children.lock().await;let base=children.core_url.clone().context("写入进程不可用")?;let key=children.core_key.clone();drop(children);
-        let drained=host.client.post(format!("{base}/_site/drain")).header("X-Sukisu-Site-Internal",&key).timeout(Duration::from_secs(1800)).send().await?;
-        anyhow::ensure!(drained.status().is_success(),"业务服务未完成排空，取消节点交接");
-        // Existing proxied response streams hold the read gate through body completion.
-        host.stop_core().await?;
-        c.mode="fenced".into();c.writer_id=body.target_id.clone();c.transfer_id=Some(random_hex(16));c.final_snapshot=None;
-        c.transfer_actor=crate::auth::session_token(&headers,crate::auth::ADMIN_SESSION_COOKIE).map(|v|crate::accounts::hash_token(&v));
-        host.save(c.clone()).await?;
-        let snapshot=host.make_checkpoint(true).await?;
-        c.epoch=c.epoch.checked_add(1).context("代次溢出")?;c.final_snapshot=Some(snapshot.id.clone());
-        host.save(c.clone()).await?;
-        // The durable fence is written before the activation request. A crash or
-        // lost reply therefore never restarts the old writer automatically.
-        let lease=c.data_dir.join("runtime/lease.json");write_lease(&c,&lease,&key)?;
-        let payload=json!({"sourceId":c.node_id,"epoch":c.epoch,"snapshotId":snapshot.id,"transferId":c.transfer_id});
-        let reply=host.client.post(endpoint(&c,&body.target_id,"_site/activate")?).header(KEY,&c.secret).json(&payload).timeout(Duration::from_secs(1800)).send().await?;
-        anyhow::ensure!(reply.status().is_success(),"目标节点未完成接管，旧节点保持停止写入；请查看目标日志并重试交接恢复");
-        c.mode="follower".into();c.transfer_actor=None;host.save(c).await?;host.start_edge().await?;Ok(())
-    }.await;
-    match result {
-        Ok(()) => Json(json!({"ok":true,"message":"写入节点已切换"})).into_response(),
-        Err(e) => {
-            *host.error.write().await = Some(e.to_string());
-            unavailable(&e.to_string())
-        }
+    if !host.begin_transfer() {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"ok":false,"error":"交接正在进行中，请等待当前交接完成"})),
+        )
+            .into_response();
     }
+    let actor = crate::auth::session_token(&headers, crate::auth::ADMIN_SESSION_COOKIE)
+        .map(|token| crate::accounts::hash_token(&token));
+    // Keep the initiating session able to inspect/force the handover even when
+    // a stuck business child makes the normal admin check fail.
+    *host.handover_actor.write().await = actor.clone();
+    host.start_progress(Some(body.target_id.clone())).await;
+    host.transfer_force_requested
+        .store(body.force, Ordering::SeqCst);
+    host.enter_phase(
+        "正在等待其他同步任务结束",
+        0,
+        "获得交接锁后开始排空业务",
+    )
+    .await;
+    let target = body.target_id.clone();
+    let force = body.force;
+    let task = host.clone();
+    tokio::spawn(async move {
+        let _operation = task.operation.lock().await;
+        let current = task.config.read().await.clone();
+        let result = if current.mode == "writer" && current.writer_id == current.node_id {
+            task.perform_transfer(target, actor, force).await
+        } else if current.mode == "fenced" {
+            task.resume_transfer().await
+        } else {
+            Ok(())
+        };
+        match result {
+            Ok(()) => {
+                if task.config.read().await.mode != "fenced" {
+                    task.set_phase(None).await;
+                }
+            }
+            Err(error) => task.fail_phase(&error.to_string()).await,
+        }
+        task.transferring.store(false, Ordering::SeqCst);
+    });
+    Json(json!({"ok":true,"accepted":true,"message":"已开始交接，页面会自动更新进度"}))
+        .into_response()
 }
 
 #[derive(Deserialize)]
@@ -1688,24 +2571,91 @@ async fn activate(
     if !authenticated(&c, &headers) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    let _operation = host.operation.lock().await;
-    let _gate = host.gate.write().await;
-    let result: Result<()> = async {
-        let mut c = host.config.read().await.clone();
+    if c.mode == "writer"
+        && c.epoch == body.epoch
+        && c.transfer_id.as_deref() == Some(body.transfer_id.as_str())
+    {
+        return Json(json!({"ok":true})).into_response();
+    }
+    if host.transferring.load(Ordering::SeqCst) {
+        if host.activation.read().await.as_deref() == Some(body.transfer_id.as_str()) {
+            return (
+                StatusCode::ACCEPTED,
+                Json(json!({"ok":true,"accepted":true,"message":"目标节点正在接管"})),
+            )
+                .into_response();
+        }
+        return unavailable("目标节点正在处理其他交接");
+    }
+    if c.mode != "follower" || c.writer_id != body.source_id || body.epoch <= c.epoch {
+        return unavailable("不接受过期或非当前写入节点的接管请求");
+    }
+    let source = match host.peer_json(&c, &body.source_id, "_site/state").await {
+        Ok(value) => value,
+        Err(error) => return unavailable(&format!("无法确认旧写入节点：{error}")),
+    };
+    if !(source["mode"] == "fenced"
+        && source["ready"] == false
+        && source["writerId"] == c.node_id
+        && source["epoch"].as_u64() == Some(body.epoch)
+        && source["finalSnapshot"] == body.snapshot_id
+        && source["transferId"] == body.transfer_id)
+    {
+        return unavailable("旧节点尚未持久隔离或交接凭据不匹配");
+    }
+    if !host.begin_transfer() {
+        return unavailable("目标节点正在处理其他交接");
+    }
+    *host.handover_actor.write().await = source["transferActor"].as_str().map(str::to_string);
+    *host.activation.write().await = Some(body.transfer_id.clone());
+    host.start_progress(Some(body.source_id.clone())).await;
+    host.enter_phase(
+        "正在准备接管：等待本机同步任务结束",
+        3,
+        "校验交接凭据已通过",
+    )
+    .await;
+    let task = host.clone();
+    tokio::spawn(async move {
+        let _operation = task.operation.lock().await;
+        let result = task.finish_activation(body).await;
+        if let Err(error) = result {
+            task.fail_phase(&error.to_string()).await;
+        }
+        task.transferring.store(false, Ordering::SeqCst);
+        *task.activation.write().await = None;
+    });
+    (
+        StatusCode::ACCEPTED,
+        Json(json!({"ok":true,"accepted":true,"message":"已接受交接，正在拉取最终副本"})),
+    )
+        .into_response()
+}
+
+impl Host {
+    /// Pull the final snapshot in the background so a long transfer never
+    /// depends on an HTTP request staying open between the two nodes.
+    async fn finish_activation(&self, body: Activate) -> Result<()> {
+        let mut c = self.config.read().await.clone();
         if c.mode == "writer"
             && c.epoch == body.epoch
-            && c.transfer_id.as_deref() == Some(&body.transfer_id)
+            && c.transfer_id.as_deref() == Some(body.transfer_id.as_str())
         {
-            if !host.core_ready().await {
-                host.start_core().await?;
+            if !self.core_ready().await {
+                self.start_core().await?;
             }
+            if let Err(error) = self.core_maintenance(false).await {
+                self.record_event("关闭维护模式失败", &error.to_string())
+                    .await;
+            }
+            self.set_phase(None).await;
             return Ok(());
         }
         anyhow::ensure!(
-            c.mode == "follower" && c.writer_id == body.source_id && body.epoch == c.epoch + 1,
-            "不接受过期、跳代或非当前写入节点的接管请求"
+            c.mode == "follower" && c.writer_id == body.source_id && body.epoch > c.epoch,
+            "接管状态已变化"
         );
-        let source = host.peer_json(&c, &body.source_id, "_site/state").await?;
+        let source = self.peer_json(&c, &body.source_id, "_site/state").await?;
         anyhow::ensure!(
             source["mode"] == "fenced"
                 && source["ready"] == false
@@ -1715,39 +2665,134 @@ async fn activate(
                 && source["transferId"] == body.transfer_id,
             "旧节点尚未持久隔离或交接凭据不匹配"
         );
-        let (snapshot, directory) = host
+        self.enter_phase(
+            "正在拉取最终副本（数据库与全部主题）",
+            4,
+            "从旧写入节点读取最终快照",
+        )
+        .await;
+        let source_base = c.peer(&body.source_id)?.base_url.clone();
+        let (snapshot, directory) = self
             .sync_from(&body.source_id, &body.snapshot_id, true)
             .await?;
-        anyhow::ensure!(snapshot.epoch == c.epoch, "最终副本代次不匹配");
-        host.stop_edge().await?;
-        c.active_dir = Some(directory);
+        // A lagging target may skip intermediate epochs: the final snapshot
+        // is a complete copy and is verified by sync_from itself.
+        anyhow::ensure!(snapshot.final_copy, "最终副本标记丢失");
+        self.enter_phase(
+            "正在等待本机请求结束后切换",
+            4,
+            "释放流量入口并停止资源同步",
+        )
+        .await;
+        // Only hold the traffic gate across the actual switch, not the pull.
+        let _gate = self.gate.write().await;
+        self.stop_edge().await?;
+        self.enter_phase("正在切换公开地址与认证回调", 5, "重写站点 URL 与 GitHub 回调")
+            .await;
+        let new_base = c.peer(&c.node_id)?.base_url.clone();
+        rebase_activation_config(&directory, &source_base, &new_base)?;
+        c.active_dir = Some(directory.clone());
         c.seed = None;
         c.writer_id = c.node_id.clone();
         c.epoch = body.epoch;
         c.mode = "writer".into();
         c.transfer_id = Some(body.transfer_id);
         c.final_snapshot = Some(body.snapshot_id);
-        host.save(c.clone()).await?;
-        if let Some(dir) = &c.active_dir {
-            let source = dir.join("config/config.env");
-            if source.exists() {
-                atomic(
-                    &c.data_dir.join("runtime/config.env"),
-                    &std::fs::read(source)?,
-                )?;
-            }
+        self.save(c.clone()).await?;
+        let source = directory.join("config/config.env");
+        if source.exists() {
+            atomic(
+                &c.data_dir.join("runtime/config.env"),
+                &std::fs::read(source)?,
+            )?;
         }
-        host.start_core().await?;
+        let runtime_config = c.data_dir.join("runtime/config.env");
+        if runtime_config.exists() {
+            config::set_env_key(&runtime_config, "MAINTENANCE", "1")?;
+        }
+        self.enter_phase(
+            "正在启动业务进程",
+            6,
+            "维护模式已开启，等待健康检查通过",
+        )
+        .await;
+        self.start_core().await?;
+        if let Err(error) = self.core_maintenance(false).await {
+            self.record_event("关闭维护模式失败", &error.to_string())
+                .await;
+            *self.error.write().await = Some(format!("自动关闭维护模式失败：{error}"));
+        }
+        *self.handover_actor.write().await = None;
+        self.finish_progress().await;
         Ok(())
     }
-    .await;
-    match result {
-        Ok(()) => Json(json!({"ok":true})).into_response(),
-        Err(e) => {
-            *host.error.write().await = Some(e.to_string());
-            unavailable(&e.to_string())
-        }
+}
+
+/// Move the node-local public URLs and any same-origin GitHub callback to the
+/// new writer. A callback registered on a different host is intentionally left
+/// alone because it is an external registration, not this node's address.
+fn rebase_activation_config(dir: &Path, old_base: &str, new_base: &str) -> Result<()> {
+    let base = new_base.trim_end_matches('/');
+    let config_env = dir.join("config/config.env");
+    let mut old_public = String::new();
+    if config_env.is_file() {
+        let mut values = config::read_env(&config_env);
+        old_public = values
+            .get("PUBLIC_URL")
+            .cloned()
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        values.insert("PUBLIC_URL".into(), format!("{base}/"));
+        values.insert("ADMIN_URL".into(), format!("{base}/admin/"));
+        config::write_env_map(&config_env, &values)?;
     }
+    let rebase = |value: &str| {
+        rebase_url(value, old_base, new_base).or_else(|| {
+            if old_public.is_empty() {
+                None
+            } else {
+                rebase_url(value, &old_public, new_base)
+            }
+        })
+    };
+    let account_env = dir.join("config/account.env");
+    if account_env.is_file() {
+        let mut values = config::read_env(&account_env);
+        let current = values.get("ACCOUNT_URL").cloned().unwrap_or_default();
+        let account = if current.trim().is_empty() {
+            format!("{base}/account/")
+        } else {
+            rebase(&current).unwrap_or(current)
+        };
+        values.insert("ACCOUNT_URL".into(), account);
+        let callback = values.get("GITHUB_CALLBACK_URL").cloned().unwrap_or_default();
+        if !callback.trim().is_empty() {
+            if let Some(rebased) = rebase(&callback) {
+                values.insert("GITHUB_CALLBACK_URL".into(), rebased);
+            }
+        }
+        config::write_env_map(&account_env, &values)?;
+    }
+    Ok(())
+}
+
+fn rebase_url(value: &str, old_base: &str, new_base: &str) -> Option<String> {
+    let old = reqwest::Url::parse(old_base).ok()?;
+    let new = reqwest::Url::parse(new_base).ok()?;
+    let mut value = reqwest::Url::parse(value.trim()).ok()?;
+    // Ports may differ between the peer entry and an older PUBLIC_URL, so the
+    // host is what decides whether this URL belongs to the old site.
+    if !value
+        .host_str()?
+        .eq_ignore_ascii_case(old.host_str()?)
+    {
+        return None;
+    }
+    value.set_scheme(new.scheme()).ok()?;
+    value.set_host(Some(new.host_str()?)).ok()?;
+    value.set_port(new.port()).ok()?;
+    Some(value.to_string())
 }
 
 fn local_static(path: &str) -> Option<Response> {
@@ -1792,9 +2837,21 @@ fn local_static(path: &str) -> Option<Response> {
 }
 
 async fn proxy(State(host): State<Arc<Host>>, mut request: Request) -> Response {
+    let path = request.uri().path().to_string();
+    // The business child is stopped or being replaced during a handover, so
+    // its own maintenance guard cannot answer. Keep user-facing pages in
+    // maintenance until the new writer starts; admin, API, login and static
+    // assets stay reachable so the handover can be observed and recovered.
+    let handover_active = host.transferring.load(Ordering::SeqCst)
+        || host.config.read().await.mode == "fenced";
+    if handover_active
+        && !path.starts_with("/_site/")
+        && !crate::api::maintenance_path_exempt(&path)
+    {
+        return crate::api::maintenance_page_response();
+    }
     let guard = host.gate.clone().read_owned().await;
     let c = host.config.read().await.clone();
-    let path = request.uri().path().to_string();
     // A peer tells us which public site the browser used so verification and
     // password-reset emails can link back to that node instead of the writer.
     let forwarded_site = request
@@ -1914,6 +2971,22 @@ pub async fn run(file: &Path) -> Result<()> {
         snapshot: RwLock::new(snapshot),
         replica: RwLock::new(replica),
         error: RwLock::new(None),
+        transfer_phase: RwLock::new(None),
+        transferring: AtomicBool::new(false),
+        transfer_force_requested: AtomicBool::new(false),
+        activation: RwLock::new(None),
+        handover_actor: RwLock::new(None),
+        transfer_done: AtomicU64::new(0),
+        transfer_total: AtomicU64::new(0),
+        transfer_step: AtomicU8::new(0),
+        transfer_started_at: AtomicU64::new(0),
+        transfer_ended_at: AtomicU64::new(0),
+        transfer_files: AtomicU32::new(0),
+        transfer_files_done: AtomicU32::new(0),
+        transfer_chunks: AtomicU32::new(0),
+        transfer_source: RwLock::new(None),
+        transfer_error: RwLock::new(None),
+        transfer_events: RwLock::new(Vec::new()),
     });
     if host.config.read().await.mode == "writer" {
         host.start_core().await?;
@@ -1944,7 +3017,15 @@ pub async fn run(file: &Path) -> Result<()> {
                 let c = worker.config.read().await.clone();
                 let result: Result<()> = async {
                     if c.mode == "fenced" {
-                        return worker.resume_transfer().await;
+                        if !worker.begin_transfer() {
+                            return Ok(());
+                        }
+                        let result = worker.resume_transfer().await;
+                        worker.transferring.store(false, Ordering::SeqCst);
+                        if let Err(error) = &result {
+                            worker.fail_phase(&error.to_string()).await;
+                        }
+                        return result;
                     }
                     if c.mode == "writer" {
                         if !worker.core_ready().await {

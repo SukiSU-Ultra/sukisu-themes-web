@@ -990,9 +990,24 @@
     <section id="mirrors" class="page">
       <div class="section-head"><div><h3>分布式分发</h3><p>两台家宽服务器组成自建 CDN：主站统一写入，边缘节点同步主题并从本地磁盘分发。</p></div><button class="btn" id="mirrorsRefresh" type="button">重新检测</button></div>
       <div class="card"><h4>完整站点与写入切换</h4>
-        <p class="hint">两边都能访问网站和管理业务，单个写入节点可切换。其他站点保存私有数据库副本并转交业务请求。交接时先暂停业务、同步最终副本，再开放新节点。</p>
+        <p class="hint">两边都能访问网站和管理业务，单个写入节点可切换。任意站点都可以发起交接，请求会交给当前写入节点执行；交接时先暂停业务、同步最终副本（含全部数据库和主题），再开放新节点。目标站点即使尚未同步到最新代次也可以直接接管；暂时离线的跟随站点不会阻塞切换，恢复后会自动追上当前写入节点。交接期间自动开启维护模式，新写入节点启动后自动关闭。</p>
         <div class="row"><button id="sitesRefresh" type="button">刷新站点状态</button><button id="sitesSync" type="button">同步本机副本</button></div>
-        <p class="hint" id="sitesState" role="status">读取中…</p><div id="sitesNodes"></div>
+        <label class="check" style="margin-top:8px"><input id="sitesForce" type="checkbox"> 强制终止并立即迁移（迁移期间自动开启维护模式，完成后自动关闭）</label>
+        <p class="hint">强制模式不等待在途请求，直接结束旧写入进程，适合旧进程卡住或需要尽快恢复访问；尚未完成的上传可能需要重新提交。</p>
+        <p class="hint" id="sitesState" role="status">读取中…</p>
+        <div class="card hidden" id="sitesProgressCard" style="margin-top:12px">
+          <div class="row" style="justify-content:space-between;align-items:center">
+            <h4 style="margin:0">交接进度</h4><span class="pill" id="sitesProgressBadge">—</span>
+          </div>
+          <div id="sitesProgressSteps" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px"></div>
+          <div class="storage-bar" style="margin-top:10px"><i id="sitesProgressBar" style="width:0%"></i></div>
+          <p class="hint" id="sitesProgressLine" role="status"></p>
+          <div class="meta" id="sitesProgressMeta"></div>
+          <div class="hint" id="sitesProgressError" style="color:var(--bad)"></div>
+          <div class="row" id="sitesProgressActions"></div>
+          <details id="sitesProgressDetails" style="margin-top:8px"><summary>阶段记录</summary><div id="sitesProgressEvents"></div></details>
+        </div>
+        <div id="sitesNodes"></div>
         <div class="form-grid"><div><label for="siteInterval">本机副本同步间隔（秒）</label><input id="siteInterval" type="number" min="10" max="3600" value="60"></div><div><label for="siteQuota">本机单份副本上限（GiB）</label><input id="siteQuota" type="number" min="0.25" step="0.25" value="20"></div></div>
         <button id="saveSiteSettings" type="button">保存本机设置</button><p class="hint">同步间隔立即生效；新的业务/缓存容量上限在本机进程下次启动时应用。</p>
         <form id="sitesBootstrap"><h4>生成初始站点配置</h4><p class="hint">每行填写：名称 | HTTPS 根地址 | 本机私有数据目录。第一行是当前主站。生成后分别保存到各服务器，以 site 模式启动；不会自动部署。</p>
@@ -5614,24 +5629,187 @@ $('credentialRows').addEventListener('click', async event => {
   try { await api('/client-credentials/revoke', { method: 'POST', body: JSON.stringify({ id: button.dataset.credential }) }); await loadCredentials(); } catch(e) { toast(e.message, 'bad'); button.disabled = false; }
 });
 let sitesData;
+let sitesPollTimer = 0;
+function scheduleSitesPoll(active) {
+  clearTimeout(sitesPollTimer);
+  if (!active) return;
+  sitesPollTimer = setTimeout(() => {
+    if (currentPage === 'mirrors' && !document.hidden) loadSites().catch(() => {});
+  }, 3000);
+}
+function siteTransferProgress(data) {
+  if (!data.transferTotalBytes || !data.transferPhase || !data.transferPhase.includes('拉取最终副本')) return '';
+  return '（' + formatTransferBytes(data.transferDoneBytes || 0) + ' / ' + formatTransferBytes(data.transferTotalBytes) + '）';
+}
+function formatSiteDuration(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const rest = total % 60;
+  const pad = value => String(value).padStart(2, '0');
+  return hours > 0 ? hours + ':' + pad(minutes) + ':' + pad(rest) : minutes + ':' + pad(rest);
+}
+function siteAwaitingProgress(data) {
+  if (!data || !data.transferPhase || data.transferError) return false;
+  const started = Number(data.transferStartedAt) || 0;
+  return !started || Date.now() / 1000 - started < 3600;
+}
+const SITE_STEP_LABELS = ['准备', '检查', '排空', '最终副本', '拉取', '切换认证', '启动业务', '完成'];
+function renderSitesProgress(data) {
+  const card = $('sitesProgressCard');
+  const visible = !!data && (!!data.transferStartedAt || !!data.transferring || !!data.transferPhase);
+  card.classList.toggle('hidden', !visible);
+  if (!visible) return;
+  const failed = !!data.transferError;
+  const done = !failed && Number(data.transferStep || 0) >= 7;
+  const running = !failed && !done && (!!data.transferring || !!data.transferPhase);
+  const step = Math.max(0, Math.min(7, Number(data.transferStep || 0)));
+  const badge = $('sitesProgressBadge');
+  badge.textContent = failed ? '失败' : done ? '已完成交接' : running ? '进行中' : '已结束';
+  badge.className = 'pill ' + (failed ? 'bad' : done ? 'ok' : running ? 'warn' : '');
+  $('sitesProgressSteps').innerHTML = SITE_STEP_LABELS.map((label, index) => {
+    const state = index < step || done ? 'ok' : index === step ? (failed ? 'bad' : running ? 'warn' : '') : '';
+    return '<span class="pill ' + state + '">' + (index + 1) + ' ' + label + '</span>';
+  }).join('');
+  const total = Number(data.transferTotalBytes) || 0;
+  const doneBytes = Number(data.transferDoneBytes) || 0;
+  let percent = 0;
+  if (done) percent = 100;
+  else if (total > 0) percent = Math.min(100, Math.round(doneBytes / total * 100));
+  else percent = Math.round(step / 7 * 100);
+  const bar = $('sitesProgressBar');
+  bar.style.width = percent + '%';
+  bar.style.background = failed ? 'var(--bad)' : '';
+  const phase = data.transferPhase || (done ? '交接完成' : failed ? '交接失败' : '等待写入节点开始');
+  $('sitesProgressLine').textContent = (running ? '当前：' : '') + phase;
+  const peerId = data.transferSource || '';
+  const peer = (sitesData?.nodes || []).find(node => node.id === peerId);
+  const started = Number(data.transferStartedAt) || 0;
+  const ended = Number(data.transferEndedAt) || 0;
+  const endTime = ended > started ? ended : (running ? Date.now() / 1000 : 0);
+  const rows = [
+    ['交接对端', peer ? peer.name + '（' + peer.baseUrl + '）' : (peerId || '—')],
+    ['开始时间', started ? new Date(started * 1000).toLocaleString() : '—'],
+    ['已耗时', started && endTime ? formatSiteDuration(endTime - started) : '—'],
+    ['数据进度', total ? formatTransferBytes(doneBytes) + ' / ' + formatTransferBytes(total) + '（' + percent + '%）' : '—'],
+    ['文件 / 分块', (Number(data.transferFiles) || 0) ? ((Number(data.transferFilesDone) || 0) + ' / ' + data.transferFiles + ' 个文件 · ' + (Number(data.transferChunks) || 0) + ' 个分块') : '—'],
+    ['当前步骤', (step + 1) + ' / 8 · ' + SITE_STEP_LABELS[step]],
+  ];
+  $('sitesProgressMeta').innerHTML = rows.map(([key, value]) =>
+    '<div class="kv"><span>' + escapeHtml(key) + '</span><b>' + escapeHtml(String(value)) + '</b></div>').join('');
+  $('sitesProgressError').textContent = failed ? ('失败原因：' + data.transferError) : '';
+  $('sitesProgressError').classList.toggle('hidden', !failed);
+  const retry = failed && data.mode === 'fenced' && peerId;
+  const canForce = running && data.mode === 'writer' && step <= 2 && !!peerId;
+  $('sitesProgressActions').innerHTML = retry
+    ? '<button type="button" data-site-target="' + escapeHtml(peerId) + '">重试当前交接</button>'
+    : canForce
+      ? '<button type="button" data-site-force-target="' + escapeHtml(peerId) + '">强制终止并立即迁移</button>'
+      : '';
+  const events = Array.isArray(data.transferEvents) ? data.transferEvents.slice(-80) : [];
+  $('sitesProgressEvents').innerHTML = events.length
+    ? events.map(event => {
+        if (!event) return '';
+        const time = event.at ? new Date(event.at * 1000).toLocaleTimeString() : '';
+        return '<div class="hint">' + escapeHtml(time) + (event.phase ? ' · ' + escapeHtml(event.phase) : '') + (event.detail ? ' · ' + escapeHtml(event.detail) : '') + '</div>';
+      }).join('')
+    : '<p class="hint">暂无阶段记录</p>';
+  if (failed) $('sitesProgressDetails').open = true;
+}
+async function sitesRequest() {
+  // Unlike api(), do not redirect to login on 401: during a handover the old
+  // business process is stopped, so the admin check temporarily fails even
+  // though the browser session is fine.
+  const response = await fetch(API + '/sites', {
+    cache: 'no-store', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'SukiSUThemeAdmin' },
+  });
+  if (response.status === 401) return null;
+  if (!response.ok) throw new Error('HTTP ' + response.status);
+  return response.json();
+}
 async function loadSites() {
-  const data = await api('/sites'); sitesData = data;
+  let data = null, failure = null;
+  try { data = await sitesRequest(); }
+  catch (error) {
+    failure = error;
+  }
+  if (!data) {
+    // During handover the old writer's business process is stopped, so the
+    // admin-session check can fail on both sides. The public health endpoint
+    // still reports the mode and phase, which keeps the panel informative.
+    let health = null;
+    try { const response = await fetch('/site-health', { cache: 'no-store' }); if (response.ok) health = await response.json(); } catch (_) {}
+    if (health && health.mode) {
+      const label = { writer: '写入中', follower: '跟随中', fenced: '交接恢复中' }[health.mode] || health.mode;
+      $('sitesState').textContent = '本机：' + health.nodeId + ' · 写入节点：' + health.writerId + ' · 代次 ' + health.epoch + ' · ' + label + (health.transferPhase ? ' · ' + health.transferPhase + siteTransferProgress(health) : '');
+      $('sitesSync').disabled = true; $('saveSiteSettings').disabled = true;
+      $('siteInterval').disabled = true; $('siteQuota').disabled = true;
+      $('sitesNodes').querySelectorAll('button').forEach(button => { button.disabled = true; });
+      renderSitesProgress(health);
+      scheduleSitesPoll(!!health.transferring || siteAwaitingProgress(health));
+      return;
+    }
+    throw failure || new Error('登录已过期，请重新登录');
+  }
+  sitesData = data;
   $('sitesBootstrap').classList.toggle('hidden', !!data.managed);
-  $('sitesSync').disabled = !data.managed || data.mode === 'fenced'; $('saveSiteSettings').disabled = !data.managed;
-  $('siteInterval').disabled = !data.managed; $('siteQuota').disabled = !data.managed;
+  $('sitesSync').disabled = !data.managed || data.mode === 'fenced' || !!data.transferring; $('saveSiteSettings').disabled = !data.managed || !!data.transferring;
+  $('siteInterval').disabled = !data.managed || !!data.transferring; $('siteQuota').disabled = !data.managed || !!data.transferring;
   if (document.activeElement !== $('siteInterval')) $('siteInterval').value = data.syncIntervalSecs || 60;
   if (document.activeElement !== $('siteQuota')) $('siteQuota').value = (data.quotaBytes || 20*1024**3)/1024**3;
-  $('sitesState').textContent = data.managed ? '本机：' + data.nodeId + ' · 写入节点：' + data.writerId + ' · 代次 ' + data.epoch + ' · ' + ({writer:'写入中', follower:'跟随中', fenced:'交接恢复中'}[data.mode] || data.mode) + (data.replica ? ' · 最近副本 ' + new Date(data.replica.createdAt * 1000).toLocaleString() : '') + (data.error ? ' · ' + data.error : '') : '尚未启用完整站点。现有 edge 仅同步资源，可在下方生成完整站点配置。';
-  $('sitesNodes').innerHTML = (data.nodes || []).map(n => '<article class="card"><b>' + escapeHtml(n.name) + '</b><p class="hint">' + escapeHtml(n.baseUrl) + ' · ' + (n.reachable ? (n.state.mode === 'writer' ? '当前写入节点' : '可达') : '不可达') + '</p><button type="button" data-site-target="' + escapeHtml(n.id) + '"' + ((data.mode !== 'writer' && data.mode !== 'fenced') || n.id === data.nodeId || !n.reachable ? ' disabled' : '') + '>' + (data.mode === 'fenced' ? '重试当前交接' : '切换写入到此节点') + '</button></article>').join('');
+  const label = { writer: '写入中', follower: '跟随中', fenced: '交接恢复中' }[data.mode] || data.mode;
+  $('sitesState').textContent = data.managed ? '本机：' + data.nodeId + ' · 写入节点：' + data.writerId + ' · 代次 ' + data.epoch + ' · ' + label + (data.replica ? ' · 最近副本 ' + new Date(data.replica.createdAt * 1000).toLocaleString() : '') + (data.transferPhase ? ' · ' + data.transferPhase + siteTransferProgress(data) : '') + (data.error ? ' · ' + data.error : '') : '尚未启用完整站点。现有 edge 仅同步资源，可在下方生成完整站点配置。';
+  const fenced = data.mode === 'fenced';
+  const busy = !!data.transferring;
+  $('sitesNodes').innerHTML = (data.nodes || []).map(n => {
+    const retry = fenced && n.id === data.writerId;
+    const current = !fenced && n.id === data.writerId;
+    const localWriter = !fenced && data.mode === 'writer' && n.id === data.nodeId;
+    const enabled = n.reachable && !busy && (fenced ? retry : (!current && !localWriter));
+    const text = retry ? '重试当前交接' : (fenced ? '当前无法切换' : (current ? '当前写入节点' : (localWriter ? '本机节点' : '切换写入到此节点')));
+    return '<article class="card"><b>' + escapeHtml(n.name) + '</b><p class="hint">' + escapeHtml(n.baseUrl) + ' · ' + (n.reachable ? (n.state.mode === 'writer' ? '当前写入节点' : '可达') : '不可达') + '</p><button type="button" data-site-target="' + escapeHtml(n.id) + '"' + (enabled ? '' : ' disabled') + '>' + text + '</button></article>';
+  }).join('');
+  renderSitesProgress(data);
+  scheduleSitesPoll(busy || fenced || siteAwaitingProgress(data));
 }
-$('saveSiteSettings').addEventListener('click', async event => {const button=event.currentTarget;button.disabled=true;try{await api('/sites/settings',{method:'POST',body:JSON.stringify({syncIntervalSecs:Number($('siteInterval').value),quotaBytes:Math.round(Number($('siteQuota').value)*1024**3)})});await loadSites();toast('本机设置已保存');}catch(e){toast(e.message,'bad');}finally{button.disabled=!sitesData?.managed;}});
+async function startSiteTransfer(targetId, button) {
+  if (!targetId) return;
+  const force = !!$('sitesForce')?.checked;
+  const message = force
+    ? '将跳过等待在途请求，强制结束旧写入进程并立即迁移；迁移期间自动开启维护模式，完成后自动关闭。未完成的上传可能需要重新提交。确认继续？'
+    : '交接期间业务会短暂暂停并自动开启维护模式；旧节点停止写入，最终副本校验完成后新节点接管并关闭维护模式。确认切换？';
+  if (!confirm(message)) return;
+  if (button) button.disabled = true;
+  $('sitesState').textContent = '正在提交交接请求…';
+  try {
+    const result = await api('/sites/transfer', {method:'POST',body:JSON.stringify({targetId,force})});
+    toast(result.message || '已开始交接，请等待目标节点接管');
+  } catch(e) { toast(e.message, 'bad'); }
+  finally { await loadSites().catch(e => { $('sitesState').textContent = e.message; }); }
+}
+async function forceSiteTransfer(targetId, button) {
+  if (!targetId) return;
+  if (!confirm('将立即终止当前排空并强制迁移；未完成的上传可能需要重新提交。确认继续？')) return;
+  if (button) button.disabled = true;
+  try {
+    const result = await api('/sites/transfer', {method:'POST',body:JSON.stringify({targetId,force:true})});
+    toast(result.message || '正在强制终止当前排空');
+  } catch(e) { toast(e.message, 'bad'); if (button) button.disabled = false; }
+  finally { await loadSites().catch(() => {}); }
+}
+$('saveSiteSettings').addEventListener('click', async event => {const button=event.currentTarget;button.disabled=true;try{await api('/sites/settings',{method:'POST',body:JSON.stringify({syncIntervalSecs:Number($('siteInterval').value),quotaBytes:Math.round(Number($('siteQuota').value)*1024**3)})});await loadSites();toast('本机设置已保存');}catch(e){toast(e.message,'bad');}finally{button.disabled=!sitesData?.managed||!!sitesData?.transferring;}});
 $('sitesRefresh').addEventListener('click', () => loadSites().catch(e => toast(e.message, 'bad')));
-$('sitesSync').addEventListener('click', async event => { event.target.disabled = true; try { await api('/sites/sync', { method:'POST', body:'{}' }); await loadSites(); toast('副本同步完成'); } catch(e) { toast(e.message,'bad'); } finally { event.target.disabled = !sitesData?.managed || sitesData.mode === 'fenced'; } });
-$('sitesNodes').addEventListener('click', async event => {
+$('sitesSync').addEventListener('click', async event => { event.target.disabled = true; try { await api('/sites/sync', { method:'POST', body:'{}' }); await loadSites(); toast('副本同步完成'); } catch(e) { toast(e.message,'bad'); } finally { event.target.disabled = !sitesData?.managed || sitesData.mode === 'fenced' || !!sitesData?.transferring; } });
+$('sitesNodes').addEventListener('click', event => {
   const button = event.target.closest('[data-site-target]'); if (!button) return;
-  if (!confirm('交接期间暂停业务；旧节点停止写入，最终副本校验后新节点接管。确认切换？')) return;
-  button.disabled = true; $('sitesState').textContent = '正在排空请求并同步最终副本，请勿重复操作…';
-  try { await api('/sites/transfer', {method:'POST',body:JSON.stringify({targetId:button.dataset.siteTarget})}); toast('写入节点已切换'); } catch(e) { toast(e.message, 'bad'); } finally { await loadSites().catch(e => { $('sitesState').textContent = e.message; }); }
+  startSiteTransfer(button.dataset.siteTarget, button);
+});
+$('sitesProgressActions').addEventListener('click', event => {
+  const force = event.target.closest('[data-site-force-target]');
+  if (force) { forceSiteTransfer(force.dataset.siteForceTarget, force); return; }
+  const button = event.target.closest('[data-site-target]'); if (!button) return;
+  startSiteTransfer(button.dataset.siteTarget, button);
 });
 $('sitesBootstrap').addEventListener('submit', async event => {
   event.preventDefault(); const button=event.submitter; button.disabled=true;
@@ -5687,9 +5865,9 @@ const PAGE_GUIDES = {
   },
   mirrors: {
     title: '分布式分发',
-    what: '管理家宽边缘节点、自动选路与主题文件同步，数据库由主站统一读写。',
-    abilities: ['添加节点并生成独立部署配置', '自动响应选路或按优先级分发', '检查缓存、同步进度与节点健康'],
-    steps: ['保存主站 HTTPS 地址', '添加节点并在第二台服务器启动 edge 模式', '启用分发，检查同步和实际下载'],
+    what: '管理家宽边缘节点、自动选路与主题文件同步；完整站点模式下数据库由当前写入节点读写，交接时整站迁移。',
+    abilities: ['添加节点并生成独立部署配置', '自动响应选路或按优先级分发', '检查缓存、同步进度与节点健康', '在任意站点指定新的主站并查看交接进度'],
+    steps: ['保存主站 HTTPS 地址', '添加节点并在第二台服务器启动 edge 或 site 模式', '需要换主站时在「完整站点与写入切换」选择目标节点', '启用分发，检查同步和实际下载'],
   },
   authors: {
     title: '作者许可',

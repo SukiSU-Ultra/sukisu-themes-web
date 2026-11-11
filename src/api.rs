@@ -502,6 +502,10 @@ pub fn router(state: AppState) -> Router {
         .merge(crate::distribution::origin_router())
         .merge(crate::client_access::public_router())
         .route("/_site/drain", post(crate::site::drain_child))
+        .route(
+            "/_site/maintenance",
+            post(crate::site::internal_maintenance),
+        )
         .route("/submit", post(submit))
         .route("/health", get(health))
         .route("/healthz", get(health))
@@ -682,7 +686,7 @@ const MAINTENANCE_AUTH_API_PATHS: &[&str] = &[
 /// Routes that stay reachable while the site is in maintenance. The admin console must remain
 /// usable for the administrator to turn the switch off, and `/catalog.json` still carries the
 /// flag so managers can show a clean maintenance screen instead of a stale catalog.
-fn maintenance_path_exempt(path: &str) -> bool {
+pub(crate) fn maintenance_path_exempt(path: &str) -> bool {
     matches!(
         path,
         "/" | "/index.html"
@@ -706,6 +710,9 @@ fn maintenance_path_exempt(path: &str) -> bool {
             | "/account/reset"
     ) || path.starts_with("/admin")
         || path.starts_with("/distribution/")
+        // Complete-site supervision must be able to drain a child or turn the
+        // migration maintenance switch on/off while the site is in maintenance.
+        || path.starts_with("/_site/")
         // Managers need a read credential before they can fetch catalog.json and
         // learn that the site is in maintenance. Blocking credential bootstrap or
         // refresh here makes them fall back to a cached, non-maintenance catalog.
@@ -813,7 +820,7 @@ p{margin:0;font-size:14px;line-height:1.7;color:#49454f}
 </body>
 </html>"#;
 
-fn maintenance_page_response() -> Response {
+pub(crate) fn maintenance_page_response() -> Response {
     Response::builder()
         .status(StatusCode::SERVICE_UNAVAILABLE)
         .header("Content-Type", "text/html; charset=utf-8")
