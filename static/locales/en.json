@@ -649,6 +649,19 @@
     "用于注册验证、找回密码和审核结果通知。密码留空表示保持现有密码。": "Used for registration verification, password recovery, and review result notifications. Leave the password blank to keep the current one.",
     "邮件验证": "Email verification",
     "预览图": "Preview image",
+    "主题图片": "Theme images",
+    "点击查看原图": "Click to view full size",
+    "查看原图": "View full size",
+    "图片查看器": "Image viewer",
+    "缩小": "Zoom out",
+    "放大": "Zoom in",
+    "适应窗口": "Fit to window",
+    "原始尺寸": "Actual size",
+    "下载原图": "Download original",
+    "上一张": "Previous image",
+    "下一张": "Next image",
+    "图片加载失败": "Failed to load image",
+    "滚轮或双指缩放，拖动平移；←/→ 切换图片，Esc 关闭": "Scroll or pinch to zoom, drag to pan; ←/→ to switch images, Esc to close",
     "直接对外提供服务": "Serves traffic directly",
     "Lucky 等反向代理指向此地址": "Lucky or another reverse proxy points here",
     "域名每行一个，可包含端口。DNS、证书和 TLS 终止仍需在 Lucky/域名服务中配置。": "One domain per line; ports are allowed. DNS, certificates, and TLS termination still need to be set up in Lucky or your DNS provider.",
@@ -2671,6 +2684,14 @@
     [
       "^清空 (\\d+) 个随投稿申请？$",
       "Clear $1 submission author {{p:$1|request|requests}}?"
+    ],
+    [
+      "^共 (\\d+) 张 · 点击查看原图$",
+      "$1 {{p:$1|image|images}} · click to view full size"
+    ],
+    [
+      "^截图 ([0-9]+)$",
+      "Screenshot $1"
     ]
   ]
 }

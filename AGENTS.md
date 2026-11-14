@@ -45,6 +45,7 @@
 ## Product notes
 
 - UI languages: Chinese (source in HTML) + English (`static/locales/en.json`); switcher picks the browser language on first visit and stores the choice in `localStorage.sukisu-lang`.
+- Theme previews/screenshots share `static/image-viewer.js` (`SukiSuImageViewer.gallery/attach/open`): the admin `#themes` detail reads `screenshotPaths`/`screenshotUrls` from `admin_themes` (served through `/admin/api/preview`), and the account centre reuses the same viewer for 「我的主题」 and 「主题广场」 details. A new static asset must be registered in `embedded_static`, `embedded_etags` and `maintenance_path_exempt` in `src/api.rs`, otherwise it 404s or is blocked in maintenance mode.
 - Native file-input labels (`选择文件` / `未选择任何文件`) come from the browser and are intentionally not translated.
 - Mention syntax supports Unicode usernames (e.g. `樱檩殇雪@coolapk`) across GitHub, Gitee, Bilibili, Coolapk, Telegram, Weibo, Xiaohongshu, XDA, YouTube, Afdian, X, Zhihu, Threads, Douyin.
 - Storage locations: primary local/S3 is the first write target; writable NAS/OpenList/AList sources are overflow targets. Existing themes stay on their original location; `Meta.storageId` and `_loc` key segments resolve them.

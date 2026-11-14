@@ -43,6 +43,7 @@ const EMBEDDED_ACCOUNT_DEVICE_HTML: &str = include_str!("../static/account-devic
 const EMBEDDED_ACCOUNT_HTML: &str = include_str!("../static/account.html");
 const EMBEDDED_LOGO_SVG: &[u8] = include_bytes!("../static/logo.svg");
 const EMBEDDED_I18N_JS: &str = include_str!("../static/i18n.js");
+const EMBEDDED_IMAGE_VIEWER_JS: &str = include_str!("../static/image-viewer.js");
 const EMBEDDED_UPLOAD_JS: &str = include_str!("../static/distributed-upload.js");
 const EMBEDDED_APP_CSS: &str = include_str!("../static/app.css");
 const EMBEDDED_LOCALE_EN: &str = include_str!("../static/locales/en.json");
@@ -696,6 +697,7 @@ pub(crate) fn maintenance_path_exempt(path: &str) -> bool {
             | "/healthz"
             | "/catalog.json"
             | "/i18n.js"
+            | "/image-viewer.js"
             | "/distributed-upload.js"
             | "/app.css"
             | "/logo.svg"
@@ -2055,6 +2057,10 @@ pub(crate) fn embedded_static(relative: &str) -> Option<(&'static [u8], &'static
             EMBEDDED_I18N_JS.as_bytes(),
             "application/javascript; charset=utf-8",
         )),
+        "image-viewer.js" => Some((
+            EMBEDDED_IMAGE_VIEWER_JS.as_bytes(),
+            "application/javascript; charset=utf-8",
+        )),
         "distributed-upload.js" => Some((
             EMBEDDED_UPLOAD_JS.as_bytes(),
             "application/javascript; charset=utf-8",
@@ -2084,6 +2090,7 @@ fn embedded_etags() -> &'static HashMap<&'static str, String> {
             "account-device.html",
             "logo.svg",
             "i18n.js",
+            "image-viewer.js",
             "distributed-upload.js",
             "app.css",
             "locales/en.json",
