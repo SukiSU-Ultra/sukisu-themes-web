@@ -1179,6 +1179,17 @@ pub async fn admin_themes(paths: &Paths, stats: &HashMap<String, ThemeStats>) ->
                     quote_query(&theme.updated_at)
                 )
             };
+            let screenshot_urls: Vec<String> = theme
+                .screenshot_paths
+                .iter()
+                .map(|path| {
+                    format!(
+                        "/admin/api/preview?path={}&v={}",
+                        quote_query(path),
+                        quote_query(&theme.updated_at)
+                    )
+                })
+                .collect();
             let avatar_url = theme
                 .avatar_path
                 .as_ref()
@@ -1210,6 +1221,9 @@ pub async fn admin_themes(paths: &Paths, stats: &HashMap<String, ThemeStats>) ->
                 "updatedAt": theme.updated_at,
                 "changelog": theme.changelog,
                 "previewUrl": preview_url,
+                "previewPath": theme.preview_path,
+                "screenshotPaths": theme.screenshot_paths,
+                "screenshotUrls": screenshot_urls,
                 "avatarUrl": avatar_url,
                 "path": theme.path,
                 "downloads": theme_stats.downloads,

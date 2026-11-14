@@ -16,6 +16,7 @@
 })();
 </script>
 <script src="/i18n.js"></script>
+<script src="/image-viewer.js"></script>
 <script src="/distributed-upload.js"></script>
 <link rel="stylesheet" href="/app.css">
 </head>
@@ -1946,6 +1947,41 @@ function previewImage(url, name) {
   return img.outerHTML;
 }
 
+// Theme previews and screenshots share one gallery on every detail page. The
+// admin API exposes the screenshot keys/URLs, and clicking a tile opens the
+// shared full screen viewer so the stored image can be inspected at 100%.
+function themeGalleryImages(theme) {
+  const items = [];
+  const id = theme.id || 'theme';
+  const ext = path => (window.SukiSuImageViewer ? SukiSuImageViewer.fileExtension(path) : '.png');
+  if (theme.previewUrl) {
+    items.push({
+      src: theme.previewUrl,
+      label: '预览图',
+      downloadName: id + '-preview' + ext(theme.previewPath),
+    });
+  }
+  const urls = Array.isArray(theme.screenshotUrls) ? theme.screenshotUrls : [];
+  const paths = Array.isArray(theme.screenshotPaths) ? theme.screenshotPaths : [];
+  urls.forEach((url, index) => {
+    if (!url) return;
+    items.push({
+      src: url,
+      label: '截图 ' + (index + 1),
+      downloadName: id + '-screenshot-' + (index + 1) + ext(paths[index]),
+    });
+  });
+  return items;
+}
+
+function themeGalleryMarkup(theme, badges) {
+  const images = themeGalleryImages(theme);
+  if (!images.length) return '';
+  if (window.SukiSuImageViewer) return SukiSuImageViewer.gallery(images, { badges: badges });
+  return '<div class="theme-detail-cover"><img class="theme-detail-hero" src="' +
+    escapeHtml(images[0].src) + '" alt="' + escapeHtml(theme.name || '') + '"></div>';
+}
+
 function renderThemeGrid() {
   const grid = $('themeGrid');
   const filtered = themeItems.filter(theme => matchesQuery(theme, themeQuery));
@@ -2031,9 +2067,9 @@ function openThemeDetail(theme) {
   const dialog = $('themeDetailDialog');
   if (!dialog || typeof dialog.showModal !== 'function') return;
   $('themeDetailTitle').textContent = theme.name || theme.id || '主题详情';
-  const preview = theme.previewUrl
-    ? `<div class="theme-detail-cover"><img class="theme-detail-hero" src="${escapeHtml(theme.previewUrl)}" alt="${escapeHtml(theme.name)}" decoding="async" fetchpriority="high">${isR18Theme(theme) ? r18Badge() : ''}${isAdaptiveTheme(theme) ? adaptiveBadge() : ''}</div>`
-    : '';
+  const galleryImages = themeGalleryImages(theme);
+  const badges = (isR18Theme(theme) ? r18Badge() : '') + (isAdaptiveTheme(theme) ? adaptiveBadge() : '');
+  const gallery = galleryImages.length ? themeGalleryMarkup(theme, badges) : '';
   const tags = renderTagChips(theme.tags);
   const adaptiveMeta = isAdaptiveTheme(theme)
     ? '<span class="adaptive-chip">' + escapeHtml(adaptiveTagLabel()) + '</span>'
@@ -2041,7 +2077,7 @@ function openThemeDetail(theme) {
   const sha = String(theme.sha256 || '');
   const verified = theme.verified !== false && sha.length === 64;
   $('themeDetailBody').innerHTML = `
-    ${preview}
+    ${gallery}
     <div class="row" style="margin:12px 0">
       <button class="primary" type="button" data-theme-detail-action="edit">编辑主题</button>
       <button class="danger" type="button" data-theme-detail-action="delete">删除主题</button>
@@ -2081,11 +2117,19 @@ function openThemeDetail(theme) {
       <div class="comment-list" id="themeDetailCommentList"><div class="comment-empty">正在加载留言…</div></div>
     </div>`;
   themeDetailId = theme.id || '';
+  if (window.SukiSuImageViewer && galleryImages.length) {
+    SukiSuImageViewer.attach($('themeDetailBody'), galleryImages);
+  }
   loadThemeDetailComments(themeDetailId);
   dialog.showModal();
 }
 
 $('themeDetailClose').addEventListener('click', () => $('themeDetailDialog').close());
+// The image viewer is a second modal layer; close it before the theme dialog
+// disappears so the top layer never keeps an orphaned viewer.
+$('themeDetailDialog').addEventListener('close', () => {
+  if (window.SukiSuImageViewer) SukiSuImageViewer.close();
+});
 $('themeDetailBody').addEventListener('click', event => {
   const button = event.target.closest('[data-theme-detail-action]');
   if (!button) return;
