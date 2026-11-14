@@ -16,6 +16,7 @@
 })();
 </script>
 <script src="/i18n.js"></script>
+<script src="/image-viewer.js"></script>
 <script src="/distributed-upload.js"></script>
 <link rel="stylesheet" href="/app.css">
 </head>
@@ -662,6 +663,39 @@
     return path ? API + '/preview?path=' + encodeURIComponent(path) : '';
   }
 
+  // Every theme dialog (my themes, plaza detail) renders the preview plus all
+  // screenshots through one gallery: the cover and every thumbnail open the
+  // shared viewer, which shows the stored image at its real pixel size.
+  function themeGalleryImages(theme) {
+    const items = [];
+    const id = theme.id || 'theme';
+    const ext = path => (window.SukiSuImageViewer ? SukiSuImageViewer.fileExtension(path) : '.png');
+    const previewSrc = theme.previewUrl || assetUrl(theme.previewPath);
+    if (previewSrc) {
+      items.push({ src: previewSrc, label: '预览图', downloadName: id + '-preview' + ext(theme.previewPath) });
+    }
+    const paths = Array.isArray(theme.screenshotPaths) ? theme.screenshotPaths : [];
+    const urls = Array.isArray(theme.screenshotUrls) && theme.screenshotUrls.length
+      ? theme.screenshotUrls
+      : paths.map(assetUrl);
+    (urls || []).forEach((src, index) => {
+      if (!src) return;
+      items.push({
+        src: src,
+        label: '截图 ' + (index + 1),
+        downloadName: id + '-screenshot-' + (index + 1) + ext(paths[index]),
+      });
+    });
+    return items;
+  }
+
+  function themeGalleryMarkup(theme, badges) {
+    const images = themeGalleryImages(theme);
+    if (!images.length) return '';
+    if (window.SukiSuImageViewer) return SukiSuImageViewer.gallery(images, { badges: badges });
+    return '<div class="dialog-cover"><img class="dialog-hero" src="' + escapeHtml(images[0].src) + '" alt=""></div>';
+  }
+
   function updateContentBadge() {
     const badge = $('contentBadge');
     if (!badge) return;
@@ -1129,12 +1163,9 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
     const dialog = $('myThemeDialog');
     if (!dialog || typeof dialog.showModal !== 'function') return;
     $('myThemeTitle').textContent = theme.name || theme.id || '主题详情';
-    const images = [theme.previewPath, ...(theme.screenshotPaths || [])].filter(Boolean);
-    const hero = images.length ? assetUrl(images[0]) : '';
-    const thumbs = images.length > 1
-      ? '<div class="dialog-thumbs">' + images.map((path, index) =>
-        '<button type="button" class="' + (index === 0 ? 'active' : '') + '" data-src="' + escapeHtml(assetUrl(path)) + '"><img src="' + escapeHtml(assetUrl(path)) + '" alt="" loading="lazy" decoding="async"></button>'
-      ).join('') + '</div>'
+    const galleryImages = themeGalleryImages(theme);
+    const gallery = galleryImages.length
+      ? themeGalleryMarkup(theme, isAdaptiveTheme(theme) ? adaptiveBadge() : '')
       : '';
     const sha = String(theme.sha256 || '');
     const withdrawn = theme.status === 'withdrawn';
@@ -1149,8 +1180,7 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
         ? '<button class="btn" id="myThemeRestore" type="button">重新发布</button><button class="btn danger" id="myThemeDelete" type="button">永久删除</button>'
         : '<button class="btn danger" id="myThemeWithdraw" type="button">撤回并下架</button>';
     $('myThemeBody').innerHTML = `
-      ${hero ? '<div class="dialog-cover"><img class="dialog-hero" id="myThemeHero" src="' + escapeHtml(hero) + '" alt="">' + (isAdaptiveTheme(theme) ? adaptiveBadge() : '') + '</div>' : ''}
-      ${thumbs}
+      ${gallery}
       <div class="dialog-meta">
         <span>ID：${escapeHtml(theme.id || '—')}</span>
         <span>v${escapeHtml(String(theme.version || 1))}</span>
@@ -1174,13 +1204,9 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
         <a class="btn" href="${escapeHtml(managerDeepLink(theme.id))}">在管理器中打开</a>
         ${withdrawAction}
       </div>`;
-    $('myThemeBody').querySelectorAll('.dialog-thumbs button').forEach(button => {
-      button.addEventListener('click', () => {
-        const heroImage = $('myThemeHero');
-        if (heroImage) heroImage.src = button.dataset.src;
-        $('myThemeBody').querySelectorAll('.dialog-thumbs button').forEach(item => item.classList.toggle('active', item === button));
-      });
-    });
+    if (window.SukiSuImageViewer && galleryImages.length) {
+      SukiSuImageViewer.attach($('myThemeBody'), galleryImages);
+    }
     const withdrawButton = $('myThemeWithdraw');
     if (withdrawButton) {
       withdrawButton.addEventListener('click', async () => {
@@ -1227,6 +1253,11 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
   $('myThemeClose').addEventListener('click', () => $('myThemeDialog').close());
   $('myThemeDialog').addEventListener('click', event => {
     if (event.target === $('myThemeDialog')) $('myThemeDialog').close();
+  });
+  // The viewer is a second modal layer on top of the theme dialog; close it
+  // first so an orphaned viewer can never keep the top layer blocked.
+  $('myThemeDialog').addEventListener('close', () => {
+    if (window.SukiSuImageViewer) SukiSuImageViewer.close();
   });
 
   function renderSubmissions() {
@@ -1583,12 +1614,9 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
     if (!dialog || typeof dialog.showModal !== 'function') return;
     recordThemeView(theme.id);
     $('discoverTitle').textContent = theme.name || theme.id || '主题预览';
-    const images = [theme.previewPath, ...(theme.screenshotPaths || [])].filter(Boolean);
-    const hero = images.length ? assetUrl(images[0]) : '';
-    const thumbs = images.length > 1
-      ? '<div class="dialog-thumbs">' + images.map((path, index) =>
-        '<button type="button" class="' + (index === 0 ? 'active' : '') + '" data-src="' + escapeHtml(assetUrl(path)) + '"><img src="' + escapeHtml(assetUrl(path)) + '" alt="" loading="lazy" decoding="async"></button>'
-      ).join('') + '</div>'
+    const galleryImages = themeGalleryImages(theme);
+    const gallery = galleryImages.length
+      ? themeGalleryMarkup(theme, isAdaptiveTheme(theme) ? adaptiveBadge() : '')
       : '';
     const sha = String(theme.sha256 || '');
     const tags = renderTagChips(theme.tags);
@@ -1598,8 +1626,7 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
     const author = theme.author || '未知作者';
     const downloadUrl = theme.downloadUrl || (API + '/themes/' + encodeURIComponent(theme.id) + '/download');
     $('discoverBody').innerHTML = `
-      ${hero ? '<div class="dialog-cover"><img class="dialog-hero" id="discoverHero" src="' + escapeHtml(hero) + '" alt="">' + (isAdaptiveTheme(theme) ? adaptiveBadge() : '') + '</div>' : ''}
-      ${thumbs}
+      ${gallery}
       <div class="dialog-meta">
         <span>ID：${escapeHtml(theme.id || '—')}</span>
         <span>v${escapeHtml(String(theme.version || 1))}</span>
@@ -1653,13 +1680,9 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
           </div>
         </div>
       </div>`;
-    $('discoverBody').querySelectorAll('.dialog-thumbs button').forEach(button => {
-      button.addEventListener('click', () => {
-        const heroImage = $('discoverHero');
-        if (heroImage) heroImage.src = button.dataset.src;
-        $('discoverBody').querySelectorAll('.dialog-thumbs button').forEach(item => item.classList.toggle('active', item === button));
-      });
-    });
+    if (window.SukiSuImageViewer && galleryImages.length) {
+      SukiSuImageViewer.attach($('discoverBody'), galleryImages);
+    }
     const authorButton = $('discoverAuthorThemes');
     if (authorButton) {
       authorButton.addEventListener('click', () => {
@@ -2298,6 +2321,9 @@ $('accessCredentialList').addEventListener('click',async event=>{const button=ev
   $('discoverClose').addEventListener('click', () => $('discoverDialog').close());
   $('discoverDialog').addEventListener('click', event => {
     if (event.target === $('discoverDialog')) $('discoverDialog').close();
+  });
+  $('discoverDialog').addEventListener('close', () => {
+    if (window.SukiSuImageViewer) SukiSuImageViewer.close();
   });
 
   function renderCommentMarkdown(value) {
